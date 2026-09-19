@@ -129,7 +129,11 @@ def plan(pins: dict, names, platform: str, digest: str) -> Plan:
     )
     args["DECLARED"] = " ".join(declared)
     args["OPT_EXPECTED"] = " ".join(opt_dirs(declared))
-    return Plan(declared, arch, platform, tag_for(declared, arch, digest), args)
+    tag = tag_for(declared, arch, digest)
+    # ⛔ The runner stage's first RUN reads this, so its layers are cached per
+    # tag and never served to another selection or another set of pins (W379).
+    args["CACHE_KEY"] = tag
+    return Plan(declared, arch, platform, tag, args)
 
 
 def opt_dirs(declared) -> list[str]:
@@ -198,11 +202,15 @@ def dockerfile_findings(text: str) -> list[str]:
     literal `FROM image:tag` is an input no pin governs. ⛔ A bare `FROM scratch`
     stage, copied from, is served from the cache of whatever other stage the
     same COPY last read on the same base (W374): the runtime a set did NOT
-    declare arrives anyway.
+    declare arrives anyway. ⛔ A stage that copies from a SELECTED stage
+    (`FROM java-${WITH_JAVA} AS java`) must first run a RUN that reads
+    `${CACHE_KEY}` (W379): without it, a warm cache served a five-runtime build
+    the `python`-only build's layers.
     """
     found: list[str] = []
     stages: set[str] = set()
     bare: int | None = None
+    found += keyed_copy_findings(text)
     for number, line in enumerate(text.splitlines(), start=1):
         if not line.strip() or line.lstrip().startswith("#"):
             continue
@@ -226,6 +234,32 @@ def dockerfile_findings(text: str) -> list[str]:
                 bare = number
     if bare is not None:
         found.append(f"line {bare}: a scratch stage is bare; give it content (a `-no` stage takes `WORKDIR /opt`)")
+    return found
+
+
+def keyed_copy_findings(text: str) -> list[str]:
+    """Every `COPY --from=<a selected stage>` sits above a RUN that reads `${CACHE_KEY}` in its own stage."""
+    found: list[str] = []
+    stages: set[str] = set()
+    selected: set[str] = set()
+    keyed = False
+    for number, line in enumerate(text.splitlines(), start=1):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        match = _FROM.match(line)
+        if match:
+            keyed = False
+            if _stage_template(match.group("ref"), stages) and match.group("name"):
+                selected.add(match.group("name"))
+            if match.group("name"):
+                stages.add(match.group("name"))
+            continue
+        if re.match(r"^\s*RUN\b", line) and "${CACHE_KEY}" in line:
+            keyed = True
+        copied = re.match(r"^\s*COPY\s+--from=(\S+)", line)
+        if copied and copied.group(1) in selected and not keyed:
+            found.append(f"line {number}: COPY --from={copied.group(1)} copies a selected stage before a RUN "
+                         "reads ${CACHE_KEY}; a warm cache can serve it another selection's layer (W379)")
     return found
 
 

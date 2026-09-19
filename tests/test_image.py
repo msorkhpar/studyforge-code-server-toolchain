@@ -40,6 +40,10 @@ BINARIES = {
 BASE_TOOLS = {"shell"}
 #: One image per runtime in the vocabulary: the runtime and what it runs on.
 SINGLES = sorted({tuple(sorted({name, *PINS["runtimes"][name].get("requires", [])})) for name in EVERYTHING})
+#: A LARGE set built AFTER the singles, `python` among them: the order that served
+#: a five-runtime build the `python`-only build's layers and left /opt empty
+#: (W379, TC-01/13). EVERYTHING before the singles is the other direction (W374).
+LATE = ["gradle", "java", "kotlin", "node", "python"]
 
 
 def run(command: list[str], **kwargs) -> subprocess.CompletedProcess:
@@ -88,7 +92,7 @@ class TheRunnerImage(unittest.TestCase):
         # cache holding every runtime on the python base, which a `python`-only
         # build then came out carrying (W374). The singles are built after it.
         cls.singles = {}
-        for names in [EVERYTHING] + [list(names) for names in SINGLES]:
+        for names in [EVERYTHING] + [list(names) for names in SINGLES] + [LATE]:
             result = build(names)
             if result.returncode != 0:
                 raise RuntimeError(f"the build of {names} failed:\n{result.stdout[-4000:]}{result.stderr[-4000:]}")
@@ -137,6 +141,26 @@ class TheRunnerImage(unittest.TestCase):
                         with self.subTest(runtime=runtime, binary=binary, expect=expect):
                             found = in_image(image, f"command -v {binary}").returncode == 0
                             self.assertEqual(found, expect)
+
+    def test_a_large_set_built_after_a_small_one_holds_exactly_its_declared_set(self):
+        """W379: small then large, from the cache the singles just warmed; the reverse is W374's case."""
+        image = self.singles[tuple(LATE)]
+        self.assertIn(("python",), self.singles, "the small set was built first")
+        held = in_image(image, "ls -A /opt | xargs").stdout.strip()
+        self.assertEqual(held, " ".join(plan.opt_dirs(LATE)))
+        for runtime in LATE:
+            for binary in BINARIES[runtime]:
+                with self.subTest(binary=binary):
+                    self.assertEqual(in_image(image, f"command -v {binary}").returncode, 0)
+
+    def test_every_image_was_built_under_its_own_tag_as_the_cache_key(self):
+        """W379: the runner's keyed RUN carries the image's own tag, so its layers are cached per tag."""
+        for image in self.built:
+            with self.subTest(image=image):
+                history = run(["docker", "history", "--no-trunc", "--format", "{{.CreatedBy}}", image]).stdout
+                keyed = [line for line in history.splitlines() if 'runner ${CACHE_KEY}' in line]
+                self.assertEqual(len(keyed), 1, history[-2000:])
+                self.assertIn(f"CACHE_KEY={image} ", keyed[0])
 
     def test_a_login_shell_finds_the_same_tools(self):
         result = in_image(self.full, "command -v mvn && command -v node && command -v kotlinc", login=True)

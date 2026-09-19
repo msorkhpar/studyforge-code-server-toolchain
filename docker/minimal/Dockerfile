@@ -35,6 +35,19 @@
 # built on the python base, a `python`-only build came out holding every
 # runtime. The `WORKDIR /opt` gives the stage real, content-addressed bytes,
 # and `plan.dockerfile_findings` refuses a bare scratch stage.
+# ⛔ And the runner stage is KEYED before its first COPY (W379). Measured on the
+# same BuildKit (TC-01/13): with a `python`-only runner built, a build of
+# `gradle,java,kotlin,node,python` served every `COPY --from=<runtime> / /` from
+# the `-no` twin's record and /opt came out empty. Each such COPY is cached on
+# two inputs, the runner's layer below it and the selected stage; the second is
+# the one a warm cache has matched wrongly, in both directions. So the first
+# instruction of the runner stage is a RUN that reads CACHE_KEY, which
+# `plan.py` sets to the image's own TAG (the declared set, the architecture and
+# the digest of every input). A RUN's cache key carries its build arguments, so
+# every layer above it is cached per tag: a record made for one selection, or
+# one set of pins, is never a candidate for another, however the second input
+# matches. `plan.dockerfile_findings` refuses a stage that copies from a
+# selected stage before that RUN.
 
 ARG RUNNER_BASE
 ARG UNPACK_IMAGE
@@ -80,8 +93,11 @@ FROM maven-${WITH_MAVEN} AS maven
 # a corpus needs (that is TC-03's). ⛔ `mvn -o test` cannot run on an empty
 # local repository — an offline Maven cannot even resolve its compiler plugin.
 FROM unpack AS maven-fetch
-COPY --from=java / /
-COPY --from=maven / /
+# ⭐ The `-yes` stages by name, not the selected `java` and `maven`: this stage
+# is reached only when maven is declared, and naming them makes its layers
+# independent of the selection by construction (W379).
+COPY --from=java-yes / /
+COPY --from=maven-yes / /
 COPY docker/minimal/smoke/maven /unpack/smoke
 # `-C` is --strict-checksums: every file is checked against Central's own
 # checksum as it arrives. That is the host agreeing with itself, which is why
@@ -154,6 +170,10 @@ FROM node-${WITH_NODE} AS node
 
 # ----------------------------------------------------------------------- runner
 FROM ${RUNNER_BASE} AS runner
+# ⛔ FIRST, before any COPY (W379, see the top of this file): every layer above
+# this one is cached per image tag. It writes nothing.
+ARG CACHE_KEY
+RUN : "runner ${CACHE_KEY}"
 COPY --from=java / /
 COPY --from=maven / /
 COPY --from=mavenrepo / /

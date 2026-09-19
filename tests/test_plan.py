@@ -161,6 +161,43 @@ class TheDockerfile(unittest.TestCase):
                 self.assertTrue(any("bare" in f for f in plan.dockerfile_findings(planted)))
         self.assertNotEqual(plan.dockerfile_findings(DOCKERFILE + "\nFROM scratch AS last\n"), [])
 
+    def test_the_runner_reads_its_cache_key_before_it_copies_any_selected_stage(self):
+        """W379: every layer the runner copies a selection into is cached per image tag."""
+        runner = DOCKERFILE[DOCKERFILE.index("FROM ${RUNNER_BASE} AS runner"):]
+        keyed = runner.index('RUN : "runner ${CACHE_KEY}"')
+        self.assertLess(runner.index("ARG CACHE_KEY"), keyed)
+        self.assertLess(keyed, runner.index("COPY --from="))
+        self.assertEqual(plan.keyed_copy_findings(DOCKERFILE), [])
+
+    def test_a_selected_stage_copied_before_the_cache_key_is_found_each_way_it_can_be_planted(self):
+        """W379, the other way: the unkeyed runner and an unkeyed selected copy elsewhere are named."""
+        key = 'ARG CACHE_KEY\nRUN : "runner ${CACHE_KEY}"\n'
+        self.assertIn(key, DOCKERFILE)
+        selected = ("java", "maven", "mavenrepo", "gradle", "kotlin", "node")
+        plants = {
+            "the key removed": (DOCKERFILE.replace(key, ""), selected),
+            "the key below the first COPY": (
+                DOCKERFILE.replace(key, "").replace("COPY --from=java / /\n", "COPY --from=java / /\n" + key, 1),
+                ("java",)),
+            "maven-fetch copying the selection": (
+                DOCKERFILE.replace("COPY --from=java-yes / /", "COPY --from=java / /"), ("java",)),
+        }
+        for label, (planted, named) in plants.items():
+            with self.subTest(plant=label):
+                self.assertNotEqual(planted, DOCKERFILE)
+                found = plan.keyed_copy_findings(planted)
+                self.assertEqual(sorted(re.findall(r"COPY --from=(\S+) copies", " ".join(found))), sorted(named))
+                self.assertEqual([f for f in plan.dockerfile_findings(planted) if "W379" in f], found)
+
+    def test_the_cache_key_is_the_tag_so_it_moves_with_the_set_and_the_inputs(self):
+        built = plan.plan(PINS, ["python"], AMD64, DIGEST)
+        self.assertEqual(built.build_args["CACHE_KEY"], built.tag)
+        others = [plan.plan(PINS, ["gradle", "java", "kotlin", "node", "python"], AMD64, DIGEST),
+                  plan.plan(PINS, ["python"], AMD64, "1" * 64), plan.plan(PINS, ["python"], "linux/arm64", DIGEST)]
+        for other in others:
+            with self.subTest(other=other.tag):
+                self.assertNotEqual(other.build_args["CACHE_KEY"], built.build_args["CACHE_KEY"])
+
     def test_the_opt_directories_are_exactly_the_dockerfiles_copy_destinations(self):
         copied = set(re.findall(r"^COPY --from=\S+ \S+ /opt/([\w-]+)(?:/\S*)?$", DOCKERFILE, re.M))
         self.assertEqual(copied, {d for dirs in plan.OPT_DIRS.values() for d in dirs})
