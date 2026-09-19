@@ -30,6 +30,13 @@ the runner it copies, the extensions (each names the runtime it serves in
 `for`), TypeScript and readline, `PATH`, `JAVA_HOME` and the seed's
 per-runtime settings blocks. ⛔ A runtime that is not selected leaves no trace:
 no tree, no `PATH` entry, no `JAVA_HOME`, no extension and no setting.
+
+## The prime (TC-03)
+A consumer's prime directory is read by `prime/prime.py` and handed to
+`plan()`, which guards it against `pins.json` (never a pin of its own) and
+turns it into one `WITH_<TOOL>_PRIME` argument per warmer. Its digest is
+folded into the tag, so an image warmed for one prime never carries
+another's name.
 """
 
 from __future__ import annotations
@@ -42,7 +49,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "minimal"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "prime"))
 import plan as runner_plan  # noqa: E402
+import prime as prime_contract  # noqa: E402
 
 Refused = runner_plan.Refused
 EDITOR_PINS = "editor-pins.json"
@@ -50,7 +59,7 @@ DOCKERFILE = "docker/editor/Dockerfile"
 #: The editor's own inputs. The runner's digest is folded in as well, so the
 #: editor's tag moves whenever the runner's does — and `docker/minimal/` is
 #: not touched, so no runner tag moves because the editor exists.
-OWN_INPUTS = (EDITOR_PINS, "docker/editor")
+OWN_INPUTS = (EDITOR_PINS, "docker/editor", "prime")
 REPOSITORY = "code-server-toolchain/editor"
 #: The set built when none is declared: the extraction source's five, which is
 #: the image TC-01 built.
@@ -120,9 +129,9 @@ def inputs_digest(root: Path) -> str:
 def selection(pins: dict, names) -> list[str]:
     """The declared set, checked before the runner is planned, or `Refused`.
 
-    ⭐ An unpinned toolchain is NAMED, unlike the runner's refusal, which
-    echoes nothing that arrived: only a name shaped like a runtime id is ever
-    echoed, so a malformed one gets the runner's answer instead.
+    ⭐ An unpinned toolchain is NAMED, as the runner's refusal names it
+    (`W387`): only a name shaped like a runtime id is ever echoed, and a
+    malformed one is answered with what is pinned, by both components.
     """
     names = list(names)
     pinned = sorted(pins["runtimes"])
@@ -164,10 +173,17 @@ def extensions_for(pins: dict, editor_pins: dict, declared) -> dict:
     return chosen
 
 
-def plan(pins: dict, editor_pins: dict, runner: runner_plan.Plan, digest: str) -> EditorPlan:
-    """Return the editor build for the runner's set and platform, or raise `Refused`."""
+def plan(pins: dict, editor_pins: dict, runner: runner_plan.Plan, digest: str,
+         prime: prime_contract.Prime | None = None) -> EditorPlan:
+    """Return the editor build for the runner's set and platform, or raise `Refused`.
+
+    With a `prime`, it is guarded against `pins` first, and its digest moves the tag.
+    """
     declared, arch = runner.names, runner.arch
     _carried(declared)
+    if prime is not None:
+        prime_contract.guard(prime, pins, declared)
+        digest = hashlib.sha256(f"{digest}\0{prime.digest}".encode()).hexdigest()
     extensions = extensions_for(pins, editor_pins, declared)
     fetch = [f"{ext}-{entry['version']}.vsix|{_file(ext, entry, arch)['url']}|{_file(ext, entry, arch)['sha256']}"
              for ext, entry in sorted(extensions.items())]
@@ -197,9 +213,18 @@ def plan(pins: dict, editor_pins: dict, runner: runner_plan.Plan, digest: str) -
         "JAVA_RUNTIME": java_runtime(pins),
         "DECLARED": " ".join(declared),
         **environment(declared),
+        **primed(prime),
     }
     tag = runner_plan.tag_for(declared, arch, digest).replace(runner_plan.REPOSITORY, REPOSITORY, 1)
     return EditorPlan(declared, arch, runner.platform, tag, args)
+
+
+def primed(prime: prime_contract.Prime | None) -> dict[str, str]:
+    """One switch per warmer, and the key that caches the warm per prime (W379's lesson)."""
+    tools = prime.tools if prime else ()
+    args = {f"WITH_{tool.upper()}_PRIME": "yes" if tool in tools else "no" for tool in prime_contract.TOOLS}
+    args["PRIME_KEY"] = prime.digest if prime else "none"
+    return args
 
 
 def environment(declared) -> dict[str, str]:

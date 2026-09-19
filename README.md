@@ -143,7 +143,62 @@ python3 docker/editor/build.py            # gradle,java,kotlin,node,python
   The settings seed declares the integrated terminal a login shell.
 
 The tag is `code-server-toolchain/editor:<the set>-<arch>-<12 hex>`, and its
-inputs are `editor-pins.json`, `docker/editor/` and the runner's own inputs.
+inputs are `editor-pins.json`, `docker/editor/`, `prime/`, the runner's own
+inputs and, when one is given, the prime directory.
+
+### The prime — the consumer's warm build cache
+
+A reader's first offline build must need no download, and what it needs is
+decided by the CONSUMER's build files. So a consumer supplies a **prime
+directory** at build time, and the image warms its caches from it:
+
+```sh
+python3 docker/editor/build.py --runtimes gradle,java,maven --prime path/to/prime
+```
+
+**What a consumer supplies** (`prime/prime.py` is the contract's code):
+
+| in the prime directory | what it is | warmed when |
+|---|---|---|
+| `gradle/` | a copy of the consumer's Gradle build files (settings, build scripts, wrapper if any) with one trivial source and test per project, and `gradle/verification-metadata.xml` recording a sha256 for every file it fetches | `gradle` is declared |
+| `maven/` | a trivial module whose `pom.xml` reaches the consumer's parent POM, copied verbatim, by `relativePath`, with one trivial source and test | `maven` is declared |
+
+Nothing else may sit at its top but plain files, and it must hold at least one
+of the two. `tests/fixtures/prime/` is a placeholder of the shape, not any
+consumer's project.
+
+**Where it is mounted.** Read-only, as the build's named context
+`consumer-prime`. It is never copied into the image; only what the warm
+produced is.
+
+- ⛔ **The sources must be real.** A compile task with no sources never
+  resolves its classpath, so an empty prime would prime nothing while
+  appearing to succeed. Every Gradle project that compiles must run a main
+  compile, a test compile and `test`; every Maven module must compile
+  sources and run a test. Otherwise the build fails, naming the project.
+- ⛔ **Versions must agree with `pins.json`, or the build is refused before
+  Docker starts**, naming the file and both versions: a Gradle or Maven
+  wrapper naming another version (and a Gradle wrapper that does not pin the
+  pinned distribution's sha256), a Kotlin plugin other than the pinned
+  Kotlin, a Gradle toolchain other than the pinned JDK (an offline build
+  cannot provision one), or a Maven release newer than the pinned JDK. A
+  cache warmed for another version misses in ways nobody looks for.
+- ⭐ **Maven warms what the POM declares**, not what the tests use: running
+  the `test` phase resolves every declared dependency of every module. There
+  is no Maven wrapper to follow, so the image's pinned Maven is the version.
+  Each file is checked against Maven Central's own checksum as it arrives.
+- ⭐ A project directory whose tool is not declared is refused, naming it.
+
+**What the image guarantees.** Built with a prime, it holds a Gradle user home
+at `/opt/code-server/prime/gradle-home` and a Maven repository at
+`/opt/code-server/prime/maven-repo`, and it was tagged only after a fresh
+copy of the prime built with NO network from a copy of each (`gradle build
+--offline`, `mvn -o test`). On start, the entrypoint copies each to where the
+tool looks (`$GRADLE_USER_HOME`, default `~/.gradle`, and
+`~/.m2/repository`) when that directory is empty, and never touches one that
+is not. So a reader's first `gradle build --offline` and `mvn -o test` of a
+project built from the same files need no network. The prime's digest is part
+of the tag.
 
 ⛔ **This section documents no way to run the editor.** How it is served (a
 loopback port, mounts, the user) is the compose contract, which is a later task's.
@@ -155,6 +210,7 @@ python3 -m unittest discover -s tests -v                   # the plans, pins and
 TC_DOCKER=1 python3 -m unittest tests.test_image -v        # builds and runs the runner
 TC_DOCKER=1 python3 -m unittest tests.test_editor_image -v # builds and runs the editor
 TC_DOCKER=1 python3 -m unittest tests.test_editor_selection_image -v # the selected sets
+TC_DOCKER=1 python3 -m unittest tests.test_prime_image -v   # the prime, warm and offline
 ```
 
 The image tests build a full image and a `shell`-only image, run every smoke

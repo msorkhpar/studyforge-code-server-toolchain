@@ -103,6 +103,7 @@ class TheExtensionSet(unittest.TestCase):
             root = Path(tmp)
             shutil.copy(ROOT / "pins.json", root / "pins.json")
             shutil.copytree(ROOT / "docker", root / "docker", ignore=shutil.ignore_patterns("__pycache__"))
+            shutil.copytree(ROOT / "prime", root / "prime", ignore=shutil.ignore_patterns("__pycache__"))
             planted = copy.deepcopy(EPINS)
             del planted["extensions"]["fwcd.kotlin"]
             (root / "editor-pins.json").write_text(json.dumps(planted), encoding="utf-8")
@@ -182,6 +183,7 @@ class TheTag(unittest.TestCase):
         for name in ("pins.json", "editor-pins.json"):
             shutil.copy(ROOT / name, root / name)
         shutil.copytree(ROOT / "docker", root / "docker", ignore=shutil.ignore_patterns("__pycache__"))
+        shutil.copytree(ROOT / "prime", root / "prime", ignore=shutil.ignore_patterns("__pycache__"))
         return root
 
     def test_the_editors_tag_moves_with_every_input_and_the_runners_does_not_move_with_the_editors(self):
@@ -189,7 +191,7 @@ class TheTag(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = self._copy(tmp)
             editor0, runner0 = editor_plan.inputs_digest(root), runner_plan.inputs_digest(root)
-            for path in ("editor-pins.json", "docker/editor/seed/settings.json"):
+            for path in ("editor-pins.json", "docker/editor/seed/settings.json", "prime/warm-maven.sh"):
                 with self.subTest(changed=path):
                     with (root / path).open("a", encoding="utf-8") as handle:
                         handle.write("\n")
@@ -232,7 +234,8 @@ class TheDockerfile(unittest.TestCase):
     def test_the_install_and_typescript_steps_run_with_no_network(self):
         body = without_comments(DOCKERFILE)
         self.assertIn("--network=none --mount=type=bind,from=fetch", body)
-        self.assertEqual(body.count("RUN --network=none"), 2)
+        # The third is the prime's offline proof (TC-03).
+        self.assertEqual(body.count("RUN --network=none"), 3)
 
     def test_path_is_set_by_env_and_again_by_profile_d_with_the_same_trees(self):
         self.assertRegex(DOCKERFILE, r"(?m)^ENV PATH=\$\{EDITOR_PATH\}$")
@@ -258,7 +261,8 @@ class TheEntrypointAndSeed(unittest.TestCase):
         code = without_comments(ENTRYPOINT)
         self.assertEqual(code.strip().splitlines()[-1], 'exec /usr/bin/entrypoint.sh "$@"')
         self.assertNotIn('"exec"', code)
-        self.assertEqual(code.count("exec "), 1)
+        # `find -exec` in the prime's seeding is not a command of its own.
+        self.assertEqual(len(re.findall(r"(?m)^\s*exec ", code)), 1)
 
     def test_the_seed_declares_a_login_terminal_and_derives_the_java_name(self):
         seed = json.loads(re.sub(r"^\s*//.*$", "", SEED, flags=re.M))

@@ -148,8 +148,47 @@ RUN for name in ${SEED_DROP}; do \
 # Named volumes are initialised from the image. Docker creates a mount point
 # that does not exist in the image owned by root, and code-server then cannot
 # write its own config (EACCES on /home/coder/.config). So each is created here,
-# owned by the runtime uid.
-RUN install -d -o 1000 -g 1000 /home/coder/.config /home/coder/.local /home/coder/.gradle
+# owned by the runtime uid. (`.m2` holds the Maven repository the prime seeds.)
+RUN install -d -o 1000 -g 1000 /home/coder/.config /home/coder/.local /home/coder/.gradle /home/coder/.m2
+
+# ----------------------------------------------------------- the prime (TC-03)
+# The build-time warm cache: a consumer's prime directory (`build.py --prime`)
+# arrives as the read-only named context `consumer-prime`, and each warmer in
+# `prime/` builds its project with the network into a seed under
+# /opt/code-server/prime. Without a prime the context is empty and both
+# switches are `no`. ⭐ PRIME_KEY is the prime's digest, so the warm is cached
+# per prime and never served to another (W379's lesson). ⛔ A prime whose
+# compile or test step has no sources fails here, naming the project: it would
+# prime nothing while appearing to succeed. The version guards ran before
+# Docker started (`prime/prime.py`, from pins.json).
+ARG WITH_GRADLE_PRIME
+ARG WITH_MAVEN_PRIME
+ARG PRIME_KEY
+RUN --mount=type=bind,from=consumer-prime,target=/tmp/prime \
+    --mount=type=bind,source=prime,target=/tmp/warmers \
+    set -eu; \
+    echo "prime: ${PRIME_KEY}"; \
+    if [ "${WITH_GRADLE_PRIME}" = yes ]; then \
+      sh /tmp/warmers/warm-gradle.sh warm /tmp/prime/gradle /opt/code-server/prime/gradle-home; \
+    fi; \
+    if [ "${WITH_MAVEN_PRIME}" = yes ]; then \
+      sh /tmp/warmers/warm-maven.sh warm /tmp/prime/maven /opt/code-server/prime/maven-repo; \
+    fi; \
+    rm -rf /root/.m2 /root/.local/share/kotlin /tmp/kotlin-daemon*
+
+# ⭐ What the image guarantees, checked before it is tagged: a FRESH copy of
+# the prime builds with NO network from a copy of the seed. An image whose
+# seed would miss offline is never tagged.
+RUN --network=none --mount=type=bind,from=consumer-prime,target=/tmp/prime \
+    --mount=type=bind,source=prime,target=/tmp/warmers \
+    set -eu; \
+    if [ "${WITH_GRADLE_PRIME}" = yes ]; then \
+      sh /tmp/warmers/warm-gradle.sh prove /tmp/prime/gradle /opt/code-server/prime/gradle-home; \
+    fi; \
+    if [ "${WITH_MAVEN_PRIME}" = yes ]; then \
+      sh /tmp/warmers/warm-maven.sh prove /tmp/prime/maven /opt/code-server/prime/maven-repo; \
+    fi; \
+    rm -rf /root/.m2 /root/.local/share/kotlin /tmp/kotlin-daemon*
 
 # ⛔ /opt holds exactly the declared set's trees plus code-server's, JAVA_HOME
 # is set exactly when java is declared, every /opt entry on PATH exists, and

@@ -121,6 +121,7 @@ class TheRefusals(unittest.TestCase):
         for name in ("pins.json", "editor-pins.json"):
             shutil.copy(ROOT / name, root / name)
         shutil.copytree(ROOT / "docker", root / "docker", ignore=shutil.ignore_patterns("__pycache__"))
+        shutil.copytree(ROOT / "prime", root / "prime", ignore=shutil.ignore_patterns("__pycache__"))
         return root
 
     def test_an_unpinned_toolchain_is_refused_naming_it_and_what_is_pinned(self):

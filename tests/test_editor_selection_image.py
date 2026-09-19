@@ -64,6 +64,7 @@ def planted_copy(name: str, old: str, new: str) -> Path:
     for file in ("pins.json", "editor-pins.json", ".dockerignore"):
         shutil.copy(ROOT / file, target / file)
     shutil.copytree(ROOT / "docker", target / "docker", ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(ROOT / "prime", target / "prime", ignore=shutil.ignore_patterns("__pycache__"))
     path = target / editor_plan.DOCKERFILE
     text = path.read_text(encoding="utf-8")
     assert text.count(old) == 1, old

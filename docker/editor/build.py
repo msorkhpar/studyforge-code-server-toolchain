@@ -12,7 +12,12 @@ has a default, so this script is the only way that Dockerfile builds.
     python3 docker/editor/build.py                            # DEFAULT_SET
     python3 docker/editor/build.py --runtimes java,maven
     python3 docker/editor/build.py --runtimes java,maven --print-tag
+    python3 docker/editor/build.py --runtimes java,maven --prime path/to/prime
 
+`--prime DIR` warms the image's caches from a consumer's prime directory
+(the contract is `prime/prime.py`'s); it is mounted read-only into the build
+as the named context `consumer-prime`, and its digest moves the tag. Without
+it, the context is an empty directory and nothing is warmed.
 `--root DIR` builds a different copy of the component (the tests plant a
 defect in a temporary copy); `--platform` defaults to this machine's.
 
@@ -26,6 +31,7 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -36,34 +42,34 @@ import editor_plan  # noqa: E402
 COMPONENT = Path(__file__).resolve().parents[2]
 
 
-def planned(root: Path, platform: str, names=editor_plan.DEFAULT_SET) -> editor_plan.EditorPlan:
+def planned(root: Path, platform: str, names=editor_plan.DEFAULT_SET, prime=None) -> editor_plan.EditorPlan:
     """The editor's plan for the declared set on `platform`, or `Refused` before Docker is touched."""
     runner = editor_plan.runner_plan
     pins = runner.load(root)
     runner_built = runner.plan(pins, editor_plan.selection(pins, names), platform, runner.inputs_digest(root))
-    return editor_plan.plan(pins, editor_plan.load(root), runner_built, editor_plan.inputs_digest(root))
+    read = editor_plan.prime_contract.read(prime) if prime is not None else None
+    return editor_plan.plan(pins, editor_plan.load(root), runner_built, editor_plan.inputs_digest(root), read)
 
 
 def runner_command(root: Path, platform: str, names=editor_plan.DEFAULT_SET) -> list[str]:
-    """The runner's own build for the editor's set, with its FINAL stage never served from cache.
+    """The runner's own build for the editor's set: exactly the command its own `build.py` runs.
 
-    ⛔ Measured on BuildKit v0.31.1 (TC-01/13): after a `python`-only runner
-    build, the full set's `COPY --from=java / /` on the same base was served from
-    cache and left /opt EMPTY. The runner's own /opt check refused it, so no
-    wrong image was tagged, but the build failed. Rebuilding only the final
-    stage (the downloads stay cached) makes the editor's build deterministic.
-    The runner's own `build.py` is unchanged: that defect is its owner's.
+    ⭐ It once rebuilt the runner's final stage with `--no-cache-filter runner`
+    (TC-01/13: a warm cache served one selection's layers to another). `W379`
+    keyed that stage by the image's own tag, so a warm cache is now correct by
+    construction, and the editor no longer pays for a rebuild (`W379/1`).
     """
     runner = editor_plan.runner_plan
     pins = runner.load(root)
     built = runner.plan(pins, editor_plan.selection(pins, names), platform, runner.inputs_digest(root))
-    command = runner_build.docker_command(root, built)
-    return command[:2] + ["--no-cache-filter", "runner"] + command[2:]
+    return runner_build.docker_command(root, built)
 
 
-def docker_command(root: Path, built: editor_plan.EditorPlan) -> list[str]:
+def docker_command(root: Path, built: editor_plan.EditorPlan, prime: Path) -> list[str]:
+    """`docker build` for the editor, with `prime` as the read-only named context `consumer-prime`."""
     command = ["docker", "build", "--progress=plain", "--platform", built.platform,
-               "-f", str(root / editor_plan.DOCKERFILE), "--target", "editor", "-t", built.tag]
+               "-f", str(root / editor_plan.DOCKERFILE), "--target", "editor", "-t", built.tag,
+               "--build-context", f"consumer-prime={prime}"]
     for key in sorted(built.build_args):
         command += ["--build-arg", f"{key}={built.build_args[key]}"]
     return command + [str(root)]
@@ -76,13 +82,15 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--platform", default=None)
     parser.add_argument("--root", default=str(COMPONENT))
     parser.add_argument("--print-tag", action="store_true")
+    parser.add_argument("--prime", default=None, help="a consumer's prime directory to warm the caches from")
     args = parser.parse_args(argv)
 
     root = Path(args.root).resolve()
     platform = args.platform or runner_build.host_platform()
     names = [name for name in args.runtimes.split(",") if name]
+    prime = Path(args.prime).resolve() if args.prime else None
     try:
-        built = planned(root, platform, names)
+        built = planned(root, platform, names, prime)
     except editor_plan.Refused as refusal:
         print(f"refused: {refusal}", file=sys.stderr)
         return 2
@@ -98,7 +106,8 @@ def main(argv: list[str]) -> int:
         runner = subprocess.run(runner_command(root, platform, names), stdin=subprocess.DEVNULL)
         if runner.returncode != 0:
             return runner.returncode
-    completed = subprocess.run(docker_command(root, built), stdin=subprocess.DEVNULL)
+    with tempfile.TemporaryDirectory(prefix="no-prime-") as empty:
+        completed = subprocess.run(docker_command(root, built, prime or Path(empty)), stdin=subprocess.DEVNULL)
     if completed.returncode == 0:
         print(built.tag)
     return completed.returncode
