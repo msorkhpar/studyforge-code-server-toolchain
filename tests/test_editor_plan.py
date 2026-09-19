@@ -39,7 +39,7 @@ README = (ROOT / "README.md").read_text(encoding="utf-8")
 
 
 def runner_for(platform: str = "linux/amd64", pins: dict = PINS) -> runner_plan.Plan:
-    return runner_plan.plan(pins, list(editor_plan.EDITOR_SET), platform, DIGEST)
+    return runner_plan.plan(pins, list(editor_plan.DEFAULT_SET), platform, DIGEST)
 
 
 def planned(epins: dict = EPINS, platform: str = "linux/amd64", pins: dict = PINS) -> editor_plan.EditorPlan:
@@ -85,10 +85,11 @@ class TheExtensionSet(unittest.TestCase):
     def test_every_required_id_is_pinned_and_the_plan_expects_exactly_the_pins(self):
         expected = planned().build_args["EXPECTED_EXTENSIONS"].split()
         self.assertEqual(expected, [f"{e}@{EPINS['extensions'][e]['version']}" for e in sorted(EPINS["extensions"])])
-        self.assertLessEqual(set(editor_plan.REQUIRED_EXTENSIONS), set(EPINS["extensions"]))
+        required = {ext for exts in editor_plan.REQUIRED_EXTENSIONS.values() for ext in exts}
+        self.assertLessEqual(required, set(EPINS["extensions"]))
 
     def test_removing_a_required_pin_is_refused_naming_it(self):
-        for ext in editor_plan.REQUIRED_EXTENSIONS:
+        for ext in sorted(ext for exts in editor_plan.REQUIRED_EXTENSIONS.values() for ext in exts):
             with self.subTest(extension=ext):
                 planted = copy.deepcopy(EPINS)
                 del planted["extensions"][ext]
@@ -234,8 +235,11 @@ class TheDockerfile(unittest.TestCase):
         self.assertEqual(body.count("RUN --network=none"), 2)
 
     def test_path_is_set_by_env_and_again_by_profile_d_with_the_same_trees(self):
-        env = re.search(r"^ENV PATH=(\S+)$", DOCKERFILE, re.M).group(1).split(":")
-        profile = re.search(r"'export PATH=(\S+)'", DOCKERFILE).group(1).split(":")
+        self.assertRegex(DOCKERFILE, r"(?m)^ENV PATH=\$\{EDITOR_PATH\}$")
+        self.assertIn('printf \'%s\\n\' "${PROFILE_D}"', DOCKERFILE)
+        args = planned().build_args
+        env = args["EDITOR_PATH"].split(":")
+        profile = re.search(r"^export PATH=(\S+)$", args["PROFILE_D"], re.M).group(1).split(":")
         self.assertEqual([p for p in env if p.startswith("/opt/")], [p for p in profile if p.startswith("/opt/")])
         self.assertIn("/etc/profile.d/", DOCKERFILE)
 

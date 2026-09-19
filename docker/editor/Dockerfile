@@ -4,9 +4,12 @@
 #
 # The EDITOR image (TC-01): code-server, with the runner's pinned toolchains and
 # pinned extensions, and a shell that finds every toolchain.
+# ⭐ For a DECLARED SET of runtimes (TC-02): every tree, PATH entry, JAVA_HOME,
+# extension and seed block below belongs to a declared runtime, and nothing to
+# an undeclared one.
 #
 # ⛔ Build it ONLY through `docker/editor/build.py`, from the component root:
-#     python3 docker/editor/build.py
+#     python3 docker/editor/build.py --runtimes java,maven
 # It builds the runner for the same set first, then this file. Every ARG below
 # is passed from `pins.json` / `editor-pins.json` and carries NO default, so a
 # build that bypasses them fails on an empty argument instead of choosing.
@@ -22,6 +25,7 @@
 ARG RUNNER_IMAGE
 ARG EDITOR_BASE
 ARG FETCH_IMAGE
+ARG WITH_JAVA
 
 # ------------------------------------------------------------------- toolchain
 FROM ${RUNNER_IMAGE} AS toolchain
@@ -37,8 +41,18 @@ RUN printf '%s\n' "${FETCH}" > /tmp/fetch.txt \
  && python3 /fetch.py /tmp/fetch.txt /fetch \
  && rm /tmp/fetch.txt
 
+# ------------------------------------------------------------------ JAVA_HOME
+# ⛔ A set without java carries NO JAVA_HOME, not an empty one and not one that
+# points at nothing (TC-01/16). ENV cannot be conditional, so the editor stage
+# starts from one of two stages on the same base.
+FROM ${EDITOR_BASE} AS home-java-yes
+ARG JAVA_HOME_DIR
+ENV JAVA_HOME=${JAVA_HOME_DIR}
+
+FROM ${EDITOR_BASE} AS home-java-no
+
 # ---------------------------------------------------------------------- editor
-FROM ${EDITOR_BASE} AS editor
+FROM home-java-${WITH_JAVA} AS editor
 USER root
 
 # The runtimes, exactly as the runner holds them: /opt is the declared set's
@@ -68,9 +82,10 @@ RUN if [ "${WITH_READLINE}" = yes ]; then \
     fi \
  && ldconfig
 
-# ⭐ ENV reaches `docker exec` and every non-login shell.
-ENV JAVA_HOME=/opt/java/openjdk
-ENV PATH=/opt/java/openjdk/bin:/opt/maven/bin:/opt/gradle/bin:/opt/kotlinc/bin:/opt/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# ⭐ ENV reaches `docker exec` and every non-login shell. Its /opt entries are
+# the declared set's only, then the base's own PATH.
+ARG EDITOR_PATH
+ENV PATH=${EDITOR_PATH}
 
 # TypeScript into the runner's Node prefix, so `tsc` sits beside `node`. From the
 # pinned tarball, with no network: nothing is resolved from a registry.
@@ -95,6 +110,7 @@ RUN --network=none --mount=type=bind,from=fetch,source=/fetch,target=/tmp/fetch 
     set -eu; \
     mkdir -p /opt/code-server/extensions; \
     for vsix in /tmp/fetch/*.vsix; do \
+      [ -e "$vsix" ] || continue; \
       code-server --extensions-dir /opt/code-server/extensions --install-extension "$vsix" >/dev/null 2>&1 \
         || { echo "installing $(basename "$vsix") failed" >&2; exit 1; }; \
     done; \
@@ -107,18 +123,24 @@ RUN --network=none --mount=type=bind,from=fetch,source=/fetch,target=/tmp/fetch 
 # ⭐ A LOGIN shell rebuilds PATH from /etc/profile, which assigns it outright
 # (measured on this base) and silently drops /opt: a tool works under
 # `docker exec` and is "command not found" in the integrated terminal. So the
-# same PATH is set again from profile.d.
-RUN printf '%s\n' \
-      'export JAVA_HOME=/opt/java/openjdk' \
-      'export PATH=/opt/java/openjdk/bin:/opt/maven/bin:/opt/gradle/bin:/opt/kotlinc/bin:/opt/node/bin:$PATH' \
+# same /opt entries (and JAVA_HOME, when java is declared) are set again from
+# profile.d, from the plan.
+ARG PROFILE_D
+RUN printf '%s\n' "${PROFILE_D}" \
       > /etc/profile.d/10-editor-toolchain.sh
 
-# The settings seed. Its Java runtime name is derived from pins.json at build
-# time, never written by hand (TC-01/5).
+# The settings seed. Each `// @runtime <name>` block of an undeclared runtime is
+# dropped, so no setting points at a runtime the image does not hold. Its Java
+# runtime name is derived from pins.json at build time, never written by hand
+# (TC-01/5).
 ARG JAVA_RUNTIME
+ARG SEED_DROP
 COPY docker/editor/entrypoint.sh /opt/code-server/entrypoint.sh
 COPY docker/editor/seed/settings.json /opt/code-server/seed/settings.json
-RUN sed -i "s/@JAVA_RUNTIME@/${JAVA_RUNTIME}/" /opt/code-server/seed/settings.json \
+RUN for name in ${SEED_DROP}; do \
+      sed -i "/\/\/ @runtime $name\$/,/\/\/ @end $name\$/d" /opt/code-server/seed/settings.json; \
+    done \
+ && sed -i "s/@JAVA_RUNTIME@/${JAVA_RUNTIME}/" /opt/code-server/seed/settings.json \
  && ! grep -q '@JAVA_RUNTIME@' /opt/code-server/seed/settings.json \
  && chmod 755 /opt/code-server/entrypoint.sh \
  && chmod 644 /opt/code-server/seed/settings.json
@@ -129,26 +151,41 @@ RUN sed -i "s/@JAVA_RUNTIME@/${JAVA_RUNTIME}/" /opt/code-server/seed/settings.js
 # owned by the runtime uid.
 RUN install -d -o 1000 -g 1000 /home/coder/.config /home/coder/.local /home/coder/.gradle
 
-# ⛔ /opt holds exactly the declared set's trees plus code-server's, and every
-# toolchain reports the version the pins record — under `sh -c` (what
+# ⛔ /opt holds exactly the declared set's trees plus code-server's, JAVA_HOME
+# is set exactly when java is declared, every /opt entry on PATH exists, and
+# every toolchain reports the version the pins record — under `sh -c` (what
 # `docker exec` gets) AND under `bash -lc` (what the integrated terminal gets).
-# An image that fails either is not tagged.
+# An image that fails any of them is not tagged. ⭐ What each toolchain
+# reported is kept in /opt/code-server/toolchain-versions.
 ARG CHECKS
 ARG OPT_EXPECTED
+ARG WITH_JAVA
+ARG JAVA_HOME_DIR
 RUN set -eu; \
     held="$(LC_ALL=C ls -A /opt | xargs)"; \
     [ "$held" = "${OPT_EXPECTED}" ] \
       || { echo "/opt holds '$held'; the declared set places '${OPT_EXPECTED}'" >&2; exit 1; }; \
+    if [ "${WITH_JAVA}" = yes ]; then want="${JAVA_HOME_DIR}"; else want=unset; fi; \
+    : > /opt/code-server/toolchain-versions; \
     for shell in "sh -c" "bash -lc"; do \
+      got="$(HOME=/tmp/check-home $shell 'printf %s "${JAVA_HOME-unset}"')"; \
+      [ "$got" = "$want" ] \
+        || { echo "JAVA_HOME is '$got' under $shell; the declared set gives '$want'" >&2; exit 1; }; \
+      for entry in $(HOME=/tmp/check-home $shell 'printf %s "$PATH"' | tr ':' ' '); do \
+        case "$entry" in /opt/*) [ -d "$entry" ] \
+          || { echo "PATH names $entry under $shell, which the declared set does not place" >&2; exit 1; } ;; \
+        esac; \
+      done; \
       printf '%s\n' "${CHECKS}" | while IFS='|' read -r name command expect; do \
         [ -n "$name" ] || continue; \
         out="$(HOME=/tmp/check-home $shell "$command" 2>&1)" \
           || { echo "$name: '$command' failed under $shell" >&2; exit 1; }; \
         printf '%s' "$out" | grep -qF -- "$expect" \
           || { echo "$name: '$command' does not report '$expect' under $shell" >&2; exit 1; }; \
-        echo "$shell: $name: $expect"; \
+        echo "$shell: $name: $expect" | tee -a /opt/code-server/toolchain-versions; \
       done; \
     done; \
+    chmod 644 /opt/code-server/toolchain-versions; \
     rm -rf /tmp/check-home
 
 ARG DECLARED

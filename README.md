@@ -102,17 +102,25 @@ tool writes caches into the mounted sources.
 
 `docker/editor/` builds code-server with the runner's toolchains, pinned
 extensions, and a shell that finds every toolchain. Build it from this
-directory:
+directory, declaring the runtimes a corpus uses:
 
 ```sh
-python3 docker/editor/build.py
-python3 docker/editor/build.py --print-tag
+python3 docker/editor/build.py --runtimes java,maven
+python3 docker/editor/build.py --runtimes java,maven --print-tag
+python3 docker/editor/build.py            # gradle,java,kotlin,node,python
 ```
 
+- ⭐ **The set is declared, and selected from `pins.json`.** `--runtimes` takes
+  any of the runner's pinned runtimes (the runner's rules hold: `maven`,
+  `gradle` and `kotlin` need `java`). With no `--runtimes`, the build makes the
+  five-runtime image this component first shipped. A name `pins.json` does not
+  pin is refused before Docker starts, naming it. ⚠️ `sqlite` is pinned for the
+  runner but the editor cannot carry it (the runner installs it from Debian's
+  packages into `/usr/bin`, and the editor copies only `/opt` and
+  `/usr/local`), so selecting it is refused the same way.
 - ⭐ **It chooses no runtime version.** The build first builds the runner for
-  the editor's set (`gradle`, `java`, `kotlin`, `node`, `python`), then copies
-  `/opt` and `/usr/local` out of it. `pins.json` stays the one place a runtime
-  version is chosen.
+  the declared set, then copies `/opt` and `/usr/local` out of it. `pins.json`
+  stays the one place a runtime version is chosen.
 - ⭐ **Its own pins live in [`editor-pins.json`](editor-pins.json)**: the
   code-server base (by index digest), each extension's `.vsix` (by sha256, per
   platform where the publisher builds per platform), TypeScript (by sha256),
@@ -122,8 +130,16 @@ python3 docker/editor/build.py --print-tag
   The build then requires the installed set to equal the pins exactly, and every
   declared extension dependency to be installed, or it fails naming the id.
   Removing a required extension's pin is refused before Docker starts.
+- ⭐ **Nothing belongs to a runtime that is not declared.** Each extension
+  names the runtime it serves (`for` in `editor-pins.json`), and only those
+  for declared runtimes are installed; TypeScript comes with `node` and the
+  readline package with `python`. `PATH` names only declared toolchains, and
+  a set without `java` carries no `JAVA_HOME` at all. The settings seed's
+  `java` and `python` blocks are dropped when their runtime is not declared.
 - ⭐ `PATH` is set for `docker exec` and again in `/etc/profile.d`, and the
-  build checks every toolchain's version under both `sh -c` and `bash -lc`.
+  build checks every declared toolchain's version under both `sh -c` and
+  `bash -lc`, and keeps what each reported in
+  `/opt/code-server/toolchain-versions`.
   The settings seed declares the integrated terminal a login shell.
 
 The tag is `code-server-toolchain/editor:<the set>-<arch>-<12 hex>`, and its
@@ -138,6 +154,7 @@ loopback port, mounts, the user) is the compose contract, which is a later task'
 python3 -m unittest discover -s tests -v                   # the plans, pins and static checks
 TC_DOCKER=1 python3 -m unittest tests.test_image -v        # builds and runs the runner
 TC_DOCKER=1 python3 -m unittest tests.test_editor_image -v # builds and runs the editor
+TC_DOCKER=1 python3 -m unittest tests.test_editor_selection_image -v # the selected sets
 ```
 
 The image tests build a full image and a `shell`-only image, run every smoke

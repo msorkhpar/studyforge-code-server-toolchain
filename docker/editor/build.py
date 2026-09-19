@@ -1,16 +1,17 @@
 """Build the editor image: the runner for the editor's set first, then code-server on it.
 
 **What it does.** Reads `pins.json` and `editor-pins.json`, refuses (naming
-what is missing) anything the editor needs that is not pinned, computes the
-editor's tag, builds the runner for the editor's set with the runner's own
-build command (`docker/minimal/build.py`), and then runs `docker build` on
-`docker/editor/Dockerfile` with every ARG it needs. No ARG has a default, so
-this script is the only way that Dockerfile builds.
+it) a declared runtime that is not pinned and anything the editor needs that is
+not pinned, computes the editor's tag, builds the runner for the declared set
+with the runner's own build command (`docker/minimal/build.py`), and then runs
+`docker build` on `docker/editor/Dockerfile` with every ARG it needs. No ARG
+has a default, so this script is the only way that Dockerfile builds.
 
 **How you use it.** From the component root:
 
-    python3 docker/editor/build.py
-    python3 docker/editor/build.py --print-tag
+    python3 docker/editor/build.py                            # DEFAULT_SET
+    python3 docker/editor/build.py --runtimes java,maven
+    python3 docker/editor/build.py --runtimes java,maven --print-tag
 
 `--root DIR` builds a different copy of the component (the tests plant a
 defect in a temporary copy); `--platform` defaults to this machine's.
@@ -35,15 +36,15 @@ import editor_plan  # noqa: E402
 COMPONENT = Path(__file__).resolve().parents[2]
 
 
-def planned(root: Path, platform: str) -> editor_plan.EditorPlan:
-    """The editor's plan on `platform`, or `Refused` before Docker is touched."""
+def planned(root: Path, platform: str, names=editor_plan.DEFAULT_SET) -> editor_plan.EditorPlan:
+    """The editor's plan for the declared set on `platform`, or `Refused` before Docker is touched."""
     runner = editor_plan.runner_plan
     pins = runner.load(root)
-    runner_built = runner.plan(pins, list(editor_plan.EDITOR_SET), platform, runner.inputs_digest(root))
+    runner_built = runner.plan(pins, editor_plan.selection(pins, names), platform, runner.inputs_digest(root))
     return editor_plan.plan(pins, editor_plan.load(root), runner_built, editor_plan.inputs_digest(root))
 
 
-def runner_command(root: Path, platform: str) -> list[str]:
+def runner_command(root: Path, platform: str, names=editor_plan.DEFAULT_SET) -> list[str]:
     """The runner's own build for the editor's set, with its FINAL stage never served from cache.
 
     ⛔ Measured on BuildKit v0.31.1 (TC-01/13): after a `python`-only runner
@@ -54,7 +55,8 @@ def runner_command(root: Path, platform: str) -> list[str]:
     The runner's own `build.py` is unchanged: that defect is its owner's.
     """
     runner = editor_plan.runner_plan
-    built = runner.plan(runner.load(root), list(editor_plan.EDITOR_SET), platform, runner.inputs_digest(root))
+    pins = runner.load(root)
+    built = runner.plan(pins, editor_plan.selection(pins, names), platform, runner.inputs_digest(root))
     command = runner_build.docker_command(root, built)
     return command[:2] + ["--no-cache-filter", "runner"] + command[2:]
 
@@ -69,6 +71,8 @@ def docker_command(root: Path, built: editor_plan.EditorPlan) -> list[str]:
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--runtimes", default=",".join(editor_plan.DEFAULT_SET),
+                        help="the declared set, comma-separated (default: %(default)s)")
     parser.add_argument("--platform", default=None)
     parser.add_argument("--root", default=str(COMPONENT))
     parser.add_argument("--print-tag", action="store_true")
@@ -76,8 +80,9 @@ def main(argv: list[str]) -> int:
 
     root = Path(args.root).resolve()
     platform = args.platform or runner_build.host_platform()
+    names = [name for name in args.runtimes.split(",") if name]
     try:
-        built = planned(root, platform)
+        built = planned(root, platform, names)
     except editor_plan.Refused as refusal:
         print(f"refused: {refusal}", file=sys.stderr)
         return 2
@@ -90,7 +95,7 @@ def main(argv: list[str]) -> int:
     present = subprocess.run(["docker", "image", "inspect", built.build_args["RUNNER_IMAGE"]],
                              stdin=subprocess.DEVNULL, capture_output=True)
     if present.returncode != 0:
-        runner = subprocess.run(runner_command(root, platform), stdin=subprocess.DEVNULL)
+        runner = subprocess.run(runner_command(root, platform, names), stdin=subprocess.DEVNULL)
         if runner.returncode != 0:
             return runner.returncode
     completed = subprocess.run(docker_command(root, built), stdin=subprocess.DEVNULL)

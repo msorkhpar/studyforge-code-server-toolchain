@@ -1,6 +1,6 @@
 {
   "pins_api": 1,
-  "about": "The editor image's OWN pins: the code-server base, its extensions, TypeScript and the one Debian package the runner's Python needs on this base. Kept apart from pins.json so an editor-only bump moves no runner tag (register ruling, PO round 122). ⛔ No runtime version is chosen here: the editor copies every runtime out of the runner image, which pins.json alone governs. Every value is passed to docker/editor/Dockerfile by docker/editor/build.py.",
+  "about": "The editor image's OWN pins: the code-server base, its extensions, TypeScript and the one Debian package the runner's Python needs on this base. Kept apart from pins.json so an editor-only bump moves no runner tag (register ruling, PO round 122). ⛔ No runtime version is chosen here: the editor copies every runtime out of the runner image, which pins.json alone governs. Every value is passed to docker/editor/Dockerfile by docker/editor/build.py. Each extension, TypeScript and the readline package name the one runtime they serve (`for`): a build installs them only when that runtime is in its declared set (TC-02).",
   "base": {
     "image": "codercom/code-server:4.137.0",
     "digest": "sha256:57ac684d44deb6fa94317b3e8f3e128dd7fb897fffd95b4efcd16f56ce607971",
@@ -74,6 +74,7 @@
   "extensions": {
     "ms-python.python": {
       "version": "2026.4.0",
+      "for": "python",
       "files": {
         "universal": {
           "url": "https://open-vsx.org/api/ms-python/python/2026.4.0/file/ms-python.python-2026.4.0.vsix",
@@ -101,6 +102,7 @@
     },
     "ms-python.debugpy": {
       "version": "2026.6.0",
+      "for": "python",
       "files": {
         "linux-x64": {
           "url": "https://open-vsx.org/api/ms-python/debugpy/linux-x64/2026.6.0/file/ms-python.debugpy-2026.6.0@linux-x64.vsix",
@@ -127,6 +129,7 @@
     },
     "ms-python.vscode-python-envs": {
       "version": "1.36.0",
+      "for": "python",
       "files": {
         "universal": {
           "url": "https://open-vsx.org/api/ms-python/vscode-python-envs/1.36.0/file/ms-python.vscode-python-envs-1.36.0.vsix",
@@ -148,6 +151,7 @@
     },
     "redhat.java": {
       "version": "1.56.0",
+      "for": "java",
       "files": {
         "universal": {
           "url": "https://open-vsx.org/api/redhat/java/1.56.0/file/redhat.java-1.56.0.vsix",
@@ -174,6 +178,7 @@
     },
     "vscjava.vscode-java-debug": {
       "version": "0.59.0",
+      "for": "java",
       "files": {
         "universal": {
           "url": "https://open-vsx.org/api/vscjava/vscode-java-debug/0.59.0/file/vscjava.vscode-java-debug-0.59.0.vsix",
@@ -194,6 +199,7 @@
     },
     "vscjava.vscode-java-test": {
       "version": "0.46.0",
+      "for": "java",
       "files": {
         "universal": {
           "url": "https://open-vsx.org/api/vscjava/vscode-java-test/0.46.0/file/vscjava.vscode-java-test-0.46.0.vsix",
@@ -217,6 +223,7 @@
     },
     "vscjava.vscode-gradle": {
       "version": "3.18.0",
+      "for": "gradle",
       "files": {
         "universal": {
           "url": "https://open-vsx.org/api/vscjava/vscode-gradle/3.18.0/file/vscjava.vscode-gradle-3.18.0.vsix",
@@ -237,6 +244,7 @@
     },
     "fwcd.kotlin": {
       "version": "0.2.36",
+      "for": "kotlin",
       "files": {
         "universal": {
           "url": "https://open-vsx.org/api/fwcd/kotlin/0.2.36/file/fwcd.kotlin-0.2.36.vsix",

@@ -1,15 +1,17 @@
 """The editor image's build plan — pure, no I/O beyond reading files.
 
-**What it does.** Turns the editor's runtime set, a platform and the runner's
-own plan into the exact `docker build` arguments and the editor's tag, refusing
-before Docker starts anything `editor-pins.json` does not pin. It also carries
-the editor's own static checks.
+**What it does.** Turns a DECLARED SET of runtimes, a platform and the
+runner's own plan for that set into the exact `docker build` arguments and the
+editor's tag, refusing before Docker starts anything the set or
+`editor-pins.json` does not allow. It also carries the editor's own static
+checks.
 
-**How you use it.** `load(root)` reads `editor-pins.json`; `plan(pins,
-editor_pins, runner, digest)` returns an `EditorPlan` or raises `Refused`
-(the runner's own refusal class); `inputs_digest(root)` names the build's
-inputs; `pins_findings` and `install_findings` return what is wrong, empty when
-nothing is.
+**How you use it.** `load(root)` reads `editor-pins.json`; `selection(pins,
+names)` checks a declared set before the runner is planned; `plan(pins,
+editor_pins, runner, digest)` returns an `EditorPlan` or raises `Refused` (the
+runner's own refusal class); `inputs_digest(root)` names the build's inputs;
+`pins_findings` and `install_findings` return what is wrong, empty when nothing
+is.
 
 **Depends on.** The standard library, and `docker/minimal/plan.py`, whose
 functions are reused unchanged.
@@ -21,10 +23,13 @@ copies every runtime out of the runner image built for the same set, so
 checks, its `/opt` expectation and its tag are therefore read from the
 runner's `Plan`, never re-derived here.
 
-## The seam to TC-02
-In `TC-01` the set is the constant `EDITOR_SET` and the extensions it requires
-are the constant `REQUIRED_EXTENSIONS`. Turning both into functions of a
-corpus's declared runtimes is `TC-02`'s work.
+## The selection (TC-02)
+A consumer declares a subset of `pins.json`'s runtimes; `DEFAULT_SET` is the
+image `TC-01` built. Everything the image carries is a function of that set:
+the runner it copies, the extensions (each names the runtime it serves in
+`for`), TypeScript and readline, `PATH`, `JAVA_HOME` and the seed's
+per-runtime settings blocks. ⛔ A runtime that is not selected leaves no trace:
+no tree, no `PATH` entry, no `JAVA_HOME`, no extension and no setting.
 """
 
 from __future__ import annotations
@@ -47,14 +52,35 @@ DOCKERFILE = "docker/editor/Dockerfile"
 #: not touched, so no runner tag moves because the editor exists.
 OWN_INPUTS = (EDITOR_PINS, "docker/editor")
 REPOSITORY = "code-server-toolchain/editor"
-#: The extraction source's five toolchains. TC-02 turns this into a selection.
-EDITOR_SET = ("gradle", "java", "kotlin", "node", "python")
-#: What the editor needs for EDITOR_SET: the extraction source's list. Removing
-#: one of these from editor-pins.json is refused before Docker starts.
-REQUIRED_EXTENSIONS = (
-    "fwcd.kotlin", "ms-python.debugpy", "ms-python.python", "redhat.java",
-    "vscjava.vscode-gradle", "vscjava.vscode-java-debug", "vscjava.vscode-java-test",
-)
+#: The set built when none is declared: the extraction source's five, which is
+#: the image TC-01 built.
+DEFAULT_SET = ("gradle", "java", "kotlin", "node", "python")
+#: What the editor needs for each declared runtime. Removing one of these from
+#: editor-pins.json, or pinning it for another runtime, is refused before
+#: Docker starts.
+REQUIRED_EXTENSIONS = {
+    "gradle": ("vscjava.vscode-gradle",),
+    "java": ("redhat.java", "vscjava.vscode-java-debug", "vscjava.vscode-java-test"),
+    "kotlin": ("fwcd.kotlin",),
+    "python": ("ms-python.debugpy", "ms-python.python"),
+}
+#: Pinned for the runner, but the editor cannot carry it: it copies only /opt
+#: and /usr/local out of the runner, and this runtime lives in neither.
+NOT_CARRIED = {
+    "sqlite": "the runner installs it from Debian's packages into /usr/bin, and the editor "
+              "copies only /opt and /usr/local out of the runner",
+}
+#: Where each runtime's commands live, in PATH order. A runtime not named here
+#: needs no entry (python is in /usr/local/bin, shell in the base).
+PATH_DIRS = (("java", "/opt/java/openjdk/bin"), ("maven", "/opt/maven/bin"), ("gradle", "/opt/gradle/bin"),
+             ("kotlin", "/opt/kotlinc/bin"), ("node", "/opt/node/bin"))
+JAVA_HOME = "/opt/java/openjdk"
+#: The base image's own PATH, which every set keeps after its toolchains.
+BASE_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+#: The runtimes whose settings the seed carries in a `// @runtime <name>` block;
+#: the build drops each block whose runtime is not declared.
+SEED_RUNTIMES = ("java", "python")
+_NAME = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
 #: The Open VSX target platform for each architecture pins.json names.
 TARGETS = {"amd64": "linux-x64", "arm64": "linux-arm64"}
 
@@ -91,18 +117,58 @@ def inputs_digest(root: Path) -> str:
     return digest.hexdigest()
 
 
+def selection(pins: dict, names) -> list[str]:
+    """The declared set, checked before the runner is planned, or `Refused`.
+
+    ⭐ An unpinned toolchain is NAMED, unlike the runner's refusal, which
+    echoes nothing that arrived: only a name shaped like a runtime id is ever
+    echoed, so a malformed one gets the runner's answer instead.
+    """
+    names = list(names)
+    pinned = sorted(pins["runtimes"])
+    if any(not _NAME.match(name) for name in names):
+        raise Refused(f"a declared name is not a runtime id; the pinned runtimes are {pinned}")
+    unpinned = sorted({name for name in names if name not in pins["runtimes"]})
+    if unpinned:
+        raise Refused(f"{unpinned} not pinned in pins.json, so the editor cannot select it; "
+                      f"the pinned runtimes are {pinned}")
+    _carried(names)
+    return names
+
+
+def _carried(names) -> None:
+    blocked = sorted(set(names) & set(NOT_CARRIED))
+    if blocked:
+        reasons = "; ".join(f"'{name}': {NOT_CARRIED[name]}" for name in blocked)
+        raise Refused(f"{blocked} pinned for the runner, but the editor cannot carry it: {reasons}")
+
+
+def extensions_for(pins: dict, editor_pins: dict, declared) -> dict:
+    """The pinned extensions serving the declared set, or `Refused` naming what is missing."""
+    pinned = editor_pins["extensions"]
+    stray = sorted(ext for ext, entry in pinned.items() if entry.get("for") not in pins["runtimes"])
+    if stray:
+        raise Refused(f"{stray} name no pinned runtime in 'for'; the pinned runtimes are {sorted(pins['runtimes'])}")
+    chosen = {ext: entry for ext, entry in pinned.items() if entry["for"] in declared}
+    for name in declared:
+        missing = [ext for ext in REQUIRED_EXTENSIONS.get(name, ()) if ext not in chosen]
+        if missing:
+            raise Refused(f"the editor requires extension(s) {missing} for '{name}', "
+                          f"which editor-pins.json does not pin for it")
+    for ext, entry in sorted(chosen.items()):
+        unpinned = [d for d in entry["depends"] if d not in chosen]
+        unpinned += [p for p in entry["pack"] if p not in chosen and p not in entry.get("pack_absent", {})]
+        if unpinned:
+            raise Refused(f"'{ext}' needs {unpinned}; pin each for '{entry['for']}', "
+                          f"or record why a pack member is absent")
+    return chosen
+
+
 def plan(pins: dict, editor_pins: dict, runner: runner_plan.Plan, digest: str) -> EditorPlan:
     """Return the editor build for the runner's set and platform, or raise `Refused`."""
     declared, arch = runner.names, runner.arch
-    extensions = editor_pins["extensions"]
-    missing = [ext for ext in REQUIRED_EXTENSIONS if ext not in extensions]
-    if missing:
-        raise Refused(f"the editor requires extension(s) {missing}, which editor-pins.json does not pin")
-    for ext, entry in sorted(extensions.items()):
-        unpinned = [d for d in entry["depends"] if d not in extensions]
-        unpinned += [p for p in entry["pack"] if p not in extensions and p not in entry.get("pack_absent", {})]
-        if unpinned:
-            raise Refused(f"'{ext}' needs {unpinned}; pin each, or record why a pack member is absent")
+    _carried(declared)
+    extensions = extensions_for(pins, editor_pins, declared)
     fetch = [f"{ext}-{entry['version']}.vsix|{_file(ext, entry, arch)['url']}|{_file(ext, entry, arch)['sha256']}"
              for ext, entry in sorted(extensions.items())]
     typescript = editor_pins["typescript"]
@@ -130,9 +196,24 @@ def plan(pins: dict, editor_pins: dict, runner: runner_plan.Plan, digest: str) -
         "OPT_EXPECTED": " ".join(sorted(runner_plan.opt_dirs(declared) + ["code-server"])),
         "JAVA_RUNTIME": java_runtime(pins),
         "DECLARED": " ".join(declared),
+        **environment(declared),
     }
     tag = runner_plan.tag_for(declared, arch, digest).replace(runner_plan.REPOSITORY, REPOSITORY, 1)
     return EditorPlan(declared, arch, runner.platform, tag, args)
+
+
+def environment(declared) -> dict[str, str]:
+    """`PATH`, `JAVA_HOME`, profile.d and the seed, naming ONLY declared runtimes (TC-01/16)."""
+    dirs = [path for name, path in PATH_DIRS if name in declared]
+    profile = [f"export JAVA_HOME={JAVA_HOME}"] if "java" in declared else []
+    profile += [f"export PATH={':'.join(dirs)}:$PATH"] if dirs else []
+    return {
+        "WITH_JAVA": "yes" if "java" in declared else "no",
+        "JAVA_HOME_DIR": JAVA_HOME,
+        "EDITOR_PATH": ":".join(dirs + [BASE_PATH]),
+        "PROFILE_D": "\n".join(profile or ["# the declared set places no toolchain under /opt"]),
+        "SEED_DROP": " ".join(name for name in SEED_RUNTIMES if name not in declared),
+    }
 
 
 def java_runtime(pins: dict) -> str:
@@ -169,6 +250,8 @@ def pins_findings(editor_pins: dict) -> list[str]:
         if set(debs) != set(editor_pins["readline"]["packages"]) or not all(_SHA256.match(v) for v in debs.values()):
             found.append(f"readline ({arch}): every package has a recorded sha256")
     for ext, entry in sorted(editor_pins["extensions"].items()):
+        if not isinstance(entry.get("for"), str) or not entry["for"]:
+            found.append(f"{ext}: every extension names the runtime it serves in 'for'")
         for target, file in entry["files"].items():
             if not _SHA256.match(file.get("sha256", "")):
                 found.append(f"{ext} ({target}): a .vsix is pinned by a recorded sha256")

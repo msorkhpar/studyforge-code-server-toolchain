@@ -39,7 +39,7 @@ BASE_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 #: One version check per declared runtime, and TypeScript's: (name, command, expected text).
 CHECKS = [
     (name, check["command"], check["expect"].format(version=PINS["runtimes"][name]["version"]))
-    for name in editor_plan.EDITOR_SET for check in PINS["runtimes"][name]["checks"]
+    for name in editor_plan.DEFAULT_SET for check in PINS["runtimes"][name]["checks"]
 ] + [("typescript", "tsc --version", f"Version {EPINS['typescript']['version']}")]
 
 
@@ -179,7 +179,7 @@ class TheEditorImage(unittest.TestCase):
     def test_the_editor_holds_the_runners_trees_and_python_resolves_what_the_runners_does(self):
         runner = self.image_label("org.studyforge.editor.runner")
         digest = runner_plan.inputs_digest(ROOT)
-        self.assertEqual(runner, runner_plan.tag_for(editor_plan.EDITOR_SET, self.arch(), digest))
+        self.assertEqual(runner, runner_plan.tag_for(editor_plan.DEFAULT_SET, self.arch(), digest))
 
         def in_runner(script: str) -> str:
             command = ["docker", "run", "--rm", "--network", "none", "--entrypoint", "sh", runner, "-c", script]
@@ -272,7 +272,7 @@ class TheEditorImage(unittest.TestCase):
     def test_the_image_carries_no_docker_and_no_socket_and_declares_its_set(self):
         self.assertNotEqual(self.exec(self.editor, "sh", "-c", "command -v docker").returncode, 0)
         self.assertNotEqual(self.exec(self.editor, "test", "-e", "/var/run/docker.sock").returncode, 0)
-        self.assertEqual(self.image_label("org.studyforge.editor.runtimes"), " ".join(editor_plan.EDITOR_SET))
+        self.assertEqual(self.image_label("org.studyforge.editor.runtimes"), " ".join(editor_plan.DEFAULT_SET))
 
     # --------------------------------------------------------------- support
     @staticmethod
