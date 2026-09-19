@@ -4,9 +4,10 @@ The toolchain images the studyforge framework runs a corpus's code in. It is a
 sibling repository of the framework, pinned by commit in the framework's
 `workspace.json`. ⛔ It has no remote and is never pushed.
 
-Today it holds one image, the **runner** (`docker/minimal/`), built by the
-framework's task `TC-00`. The browser editor image (`TC-01` onward) is added
-here later and **selects** its toolchains from the same pins.
+It holds two images: the **runner** (`docker/minimal/`), built by the
+framework's task `TC-00`, and the browser **editor** (`docker/editor/`), added by
+`TC-01`, which copies its toolchains out of the runner so they come from the same
+pins.
 
 ## What the runner image is, and is not
 
@@ -97,11 +98,46 @@ docker exec -w /work/<directory> studyforge-runner-<source> <command...>
 shell rebuilds `PATH` and would otherwise lose `/opt`. `HOME` is `/tmp`, so no
 tool writes caches into the mounted sources.
 
+## The editor image
+
+`docker/editor/` builds code-server with the runner's toolchains, pinned
+extensions, and a shell that finds every toolchain. Build it from this
+directory:
+
+```sh
+python3 docker/editor/build.py
+python3 docker/editor/build.py --print-tag
+```
+
+- ⭐ **It chooses no runtime version.** The build first builds the runner for
+  the editor's set (`gradle`, `java`, `kotlin`, `node`, `python`), then copies
+  `/opt` and `/usr/local` out of it. `pins.json` stays the one place a runtime
+  version is chosen.
+- ⭐ **Its own pins live in [`editor-pins.json`](editor-pins.json)**: the
+  code-server base (by index digest), each extension's `.vsix` (by sha256, per
+  platform where the publisher builds per platform), TypeScript (by sha256),
+  and the one Debian package the runner's Python needs on this base. Keeping them
+  out of `pins.json` means an editor-only bump moves no runner tag.
+- ⛔ **Extensions are installed with no network, from the pinned files only.**
+  The build then requires the installed set to equal the pins exactly, and every
+  declared extension dependency to be installed, or it fails naming the id.
+  Removing a required extension's pin is refused before Docker starts.
+- ⭐ `PATH` is set for `docker exec` and again in `/etc/profile.d`, and the
+  build checks every toolchain's version under both `sh -c` and `bash -lc`.
+  The settings seed declares the integrated terminal a login shell.
+
+The tag is `code-server-toolchain/editor:<the set>-<arch>-<12 hex>`, and its
+inputs are `editor-pins.json`, `docker/editor/` and the runner's own inputs.
+
+⛔ **This section documents no way to run the editor.** How it is served (a
+loopback port, mounts, the user) is the compose contract, which is a later task's.
+
 ## Tests
 
 ```sh
-python3 -m unittest discover -s tests -v            # the plan, pins and static checks
-TC_DOCKER=1 python3 -m unittest tests.test_image -v # builds and runs the image
+python3 -m unittest discover -s tests -v                   # the plans, pins and static checks
+TC_DOCKER=1 python3 -m unittest tests.test_image -v        # builds and runs the runner
+TC_DOCKER=1 python3 -m unittest tests.test_editor_image -v # builds and runs the editor
 ```
 
 The image tests build a full image and a `shell`-only image, run every smoke

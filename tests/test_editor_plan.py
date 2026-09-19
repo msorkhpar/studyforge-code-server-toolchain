@@ -1,0 +1,329 @@
+"""The editor's plan, pins and static checks — no Docker needed.
+
+Run from the component root: `python3 -m unittest discover -s tests -v`.
+Every rule is asserted BOTH ways: the real file passes, and a planted
+violation is caught.
+"""
+
+from __future__ import annotations
+
+import copy
+import importlib.util
+import json
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+EDITOR = ROOT / "docker" / "editor"
+sys.path.insert(0, str(EDITOR))
+
+import editor_plan  # noqa: E402
+
+runner_plan = editor_plan.runner_plan
+_spec = importlib.util.spec_from_file_location("editor_build", EDITOR / "build.py")
+editor_build = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(editor_build)
+
+PINS = runner_plan.load(ROOT)
+EPINS = editor_plan.load(ROOT)
+DIGEST = "0" * 64
+DOCKERFILE = (ROOT / editor_plan.DOCKERFILE).read_text(encoding="utf-8")
+SEED = (EDITOR / "seed" / "settings.json").read_text(encoding="utf-8")
+ENTRYPOINT = (EDITOR / "entrypoint.sh").read_text(encoding="utf-8")
+README = (ROOT / "README.md").read_text(encoding="utf-8")
+
+
+def runner_for(platform: str = "linux/amd64", pins: dict = PINS) -> runner_plan.Plan:
+    return runner_plan.plan(pins, list(editor_plan.EDITOR_SET), platform, DIGEST)
+
+
+def planned(epins: dict = EPINS, platform: str = "linux/amd64", pins: dict = PINS) -> editor_plan.EditorPlan:
+    return editor_plan.plan(pins, epins, runner_for(platform, pins), DIGEST)
+
+
+def without_comments(text: str) -> str:
+    return "\n".join(line for line in text.splitlines() if not line.lstrip().startswith(("#", "//")))
+
+
+class TheEditorsPins(unittest.TestCase):
+    def test_the_real_pins_are_well_formed(self):
+        self.assertEqual(editor_plan.pins_findings(EPINS), [])
+
+    def test_each_planted_defect_is_found(self):
+        plants = {
+            "base digest": lambda p: p["base"].update(digest="sha256:short"),
+            "typescript sha": lambda p: p["typescript"].update(sha256="abc"),
+            "typescript integrity": lambda p: p["typescript"].pop("integrity"),
+            "readline deb": lambda p: p["readline"]["debs"]["amd64"].pop("readline-common"),
+            "vsix sha": lambda p: p["extensions"]["fwcd.kotlin"]["files"]["universal"].update(sha256="0"),
+            "vsix url off version": lambda p: p["extensions"]["fwcd.kotlin"].update(version="9.9.9"),
+            "no source": lambda p: p["extensions"]["redhat.java"].update(sources=[]),
+            "single-source unexplained": lambda p: p["extensions"]["ms-python.python"].pop("why_single"),
+            "single_source missing": lambda p: p["typescript"].pop("single_source"),
+        }
+        for label, plant in plants.items():
+            with self.subTest(plant=label):
+                planted = copy.deepcopy(EPINS)
+                plant(planted)
+                self.assertNotEqual(editor_plan.pins_findings(planted), [])
+
+    def test_no_runtime_version_is_chosen_in_the_editors_pins(self):
+        """Ruling 1: pins.json is the ONE place a runtime version is chosen."""
+        self.assertEqual(set(EPINS) & {"runtimes", "platforms"}, set())
+        self.assertEqual(set(EPINS), {"pins_api", "about", "base", "typescript", "readline", "extensions"})
+
+    def test_the_readline_snapshot_is_the_one_pins_json_already_uses(self):
+        self.assertEqual(EPINS["readline"]["snapshot"], PINS["runtimes"]["sqlite"]["snapshot"])
+
+
+class TheExtensionSet(unittest.TestCase):
+    def test_every_required_id_is_pinned_and_the_plan_expects_exactly_the_pins(self):
+        expected = planned().build_args["EXPECTED_EXTENSIONS"].split()
+        self.assertEqual(expected, [f"{e}@{EPINS['extensions'][e]['version']}" for e in sorted(EPINS["extensions"])])
+        self.assertLessEqual(set(editor_plan.REQUIRED_EXTENSIONS), set(EPINS["extensions"]))
+
+    def test_removing_a_required_pin_is_refused_naming_it(self):
+        for ext in editor_plan.REQUIRED_EXTENSIONS:
+            with self.subTest(extension=ext):
+                planted = copy.deepcopy(EPINS)
+                del planted["extensions"][ext]
+                with self.assertRaises(editor_plan.Refused) as refused:
+                    planned(planted)
+                self.assertIn(ext, str(refused.exception))
+
+    def test_removing_the_pin_is_refused_by_the_build_before_docker_starts(self):
+        """The CLI's refusal: exit 2 with no Docker on PATH, and the real pins print a tag the same way."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            shutil.copy(ROOT / "pins.json", root / "pins.json")
+            shutil.copytree(ROOT / "docker", root / "docker", ignore=shutil.ignore_patterns("__pycache__"))
+            planted = copy.deepcopy(EPINS)
+            del planted["extensions"]["fwcd.kotlin"]
+            (root / "editor-pins.json").write_text(json.dumps(planted), encoding="utf-8")
+            env = {"PATH": "/nonexistent", "PYTHONDONTWRITEBYTECODE": "1"}
+            command = [sys.executable, str(root / "docker" / "editor" / "build.py"), "--root", str(root)]
+            refused = subprocess.run(command, env=env, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+            self.assertEqual(refused.returncode, 2, refused.stderr)
+            self.assertIn("fwcd.kotlin", refused.stderr)
+            shutil.copy(ROOT / "editor-pins.json", root / "editor-pins.json")
+            real = subprocess.run(command + ["--print-tag"], env=env, capture_output=True, text=True,
+                                  stdin=subprocess.DEVNULL)
+            self.assertEqual(real.returncode, 0, real.stderr)
+            self.assertTrue(real.stdout.startswith(editor_plan.REPOSITORY + ":"))
+
+    def test_an_unpinned_dependency_or_pack_member_is_refused(self):
+        planted = copy.deepcopy(EPINS)
+        planted["extensions"]["fwcd.kotlin"]["depends"] = ["example.missing"]
+        with self.assertRaises(editor_plan.Refused):
+            planned(planted)
+        planted = copy.deepcopy(EPINS)
+        planted["extensions"]["ms-python.python"]["pack_absent"] = {}
+        with self.assertRaises(editor_plan.Refused):
+            planned(planted)
+        planted = copy.deepcopy(EPINS)
+        planted["extensions"]["vscjava.vscode-java-test"]["depends"] = []
+        planned(planted)  # dropping a recorded dependency is not refused here; the image check catches it
+
+    def test_each_architecture_takes_its_own_file_and_falls_back_to_universal(self):
+        for platform, target in (("linux/amd64", "linux-x64"), ("linux/arm64", "linux-arm64")):
+            with self.subTest(platform=platform):
+                fetch = planned(platform=platform).build_args["FETCH"]
+                self.assertIn(EPINS["extensions"]["ms-python.debugpy"]["files"][target]["sha256"], fetch)
+                self.assertIn(EPINS["extensions"]["redhat.java"]["files"]["universal"]["sha256"], fetch)
+        planted = copy.deepcopy(EPINS)
+        del planted["extensions"]["ms-python.debugpy"]["files"]["linux-arm64"]
+        with self.assertRaises(editor_plan.Refused):
+            planned(planted, platform="linux/arm64")
+
+    def test_any_other_platform_is_refused_by_name(self):
+        with self.assertRaises(editor_plan.Refused):
+            runner_for("linux/riscv64")
+
+    def test_every_fetched_file_carries_its_recorded_sha256(self):
+        for line in planned().build_args["FETCH"].splitlines():
+            name, url, sha256 = line.split("|")
+            with self.subTest(file=name):
+                self.assertRegex(sha256, r"^[0-9a-f]{64}$")
+                self.assertTrue(url.startswith("https://"))
+
+
+class TheRuntimes(unittest.TestCase):
+    def test_the_editor_runs_the_runners_checks_and_expects_the_runners_opt(self):
+        runner, editor = runner_for(), planned()
+        self.assertTrue(editor.build_args["CHECKS"].startswith(runner.build_args["CHECKS"]))
+        self.assertIn(f"typescript|tsc --version|Version {EPINS['typescript']['version']}", editor.build_args["CHECKS"])
+        self.assertEqual(editor.build_args["OPT_EXPECTED"].split(),
+                         sorted(runner.build_args["OPT_EXPECTED"].split() + ["code-server"]))
+        self.assertEqual(editor.build_args["RUNNER_IMAGE"], runner.tag)
+
+    def test_a_runtime_version_moves_only_through_pins_json(self):
+        bumped = copy.deepcopy(PINS)
+        bumped["runtimes"]["node"]["version"] = "99.0.0"
+        self.assertIn("node|node --version|v99.0.0", planned(pins=bumped).build_args["CHECKS"])
+        self.assertNotIn("v99.0.0", planned().build_args["CHECKS"])
+
+    def test_the_java_runtime_name_is_derived_from_the_pinned_jdk(self):
+        major = PINS["runtimes"]["java"]["version"].split(".")[0]
+        self.assertEqual(planned().build_args["JAVA_RUNTIME"], f"JavaSE-{major}")
+        bumped = copy.deepcopy(PINS)
+        bumped["runtimes"]["java"]["version"] = "31.0.1+2"
+        self.assertEqual(planned(pins=bumped).build_args["JAVA_RUNTIME"], "JavaSE-31")
+
+
+class TheTag(unittest.TestCase):
+    def _copy(self, tmp: str) -> Path:
+        root = Path(tmp)
+        for name in ("pins.json", "editor-pins.json"):
+            shutil.copy(ROOT / name, root / name)
+        shutil.copytree(ROOT / "docker", root / "docker", ignore=shutil.ignore_patterns("__pycache__"))
+        return root
+
+    def test_the_editors_tag_moves_with_every_input_and_the_runners_does_not_move_with_the_editors(self):
+        """Ruling 2: an editor-only change moves no runner tag; a runner change moves both."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._copy(tmp)
+            editor0, runner0 = editor_plan.inputs_digest(root), runner_plan.inputs_digest(root)
+            for path in ("editor-pins.json", "docker/editor/seed/settings.json"):
+                with self.subTest(changed=path):
+                    with (root / path).open("a", encoding="utf-8") as handle:
+                        handle.write("\n")
+                    self.assertNotEqual(editor_plan.inputs_digest(root), editor0)
+                    self.assertEqual(runner_plan.inputs_digest(root), runner0)
+                    editor0 = editor_plan.inputs_digest(root)
+            for path in ("pins.json", "docker/minimal/Dockerfile"):
+                with self.subTest(changed=path):
+                    with (root / path).open("a", encoding="utf-8") as handle:
+                        handle.write("\n")
+                    self.assertNotEqual(runner_plan.inputs_digest(root), runner0)
+                    self.assertNotEqual(editor_plan.inputs_digest(root), editor0)
+                    runner0, editor0 = runner_plan.inputs_digest(root), editor_plan.inputs_digest(root)
+
+    def test_the_tag_names_the_editor_the_set_and_the_architecture(self):
+        tag = planned().tag
+        self.assertRegex(tag, r"^code-server-toolchain/editor:gradle-java-kotlin-node-python-amd64-0{12}$")
+
+
+class TheDockerfile(unittest.TestCase):
+    def test_the_real_dockerfile_chooses_nothing_and_has_no_scratch_stage(self):
+        self.assertEqual(runner_plan.dockerfile_findings(DOCKERFILE), [])
+        self.assertNotRegex(without_comments(DOCKERFILE), r"(?im)^\s*FROM\s+scratch")
+
+    def test_each_planted_dockerfile_defect_is_found(self):
+        for planted in ("\nARG TS_VERSION=6\n", "\nFROM codercom/code-server:latest AS extra\n",
+                        "\nFROM scratch AS bare\n"):
+            with self.subTest(planted=planted.strip()):
+                self.assertNotEqual(runner_plan.dockerfile_findings(DOCKERFILE + planted), [])
+
+    def test_no_extension_is_installed_by_bare_id(self):
+        self.assertEqual(editor_plan.install_findings(DOCKERFILE), [])
+        planted = DOCKERFILE + "\nRUN code-server --install-extension fwcd.kotlin\n"
+        self.assertNotEqual(editor_plan.install_findings(planted), [])
+
+    def test_the_plan_supplies_exactly_the_args_the_dockerfile_declares(self):
+        declared = set(re.findall(r"^\s*ARG\s+(\w+)\s*$", DOCKERFILE, re.M))
+        self.assertEqual(declared, set(planned().build_args))
+
+    def test_the_install_and_typescript_steps_run_with_no_network(self):
+        body = without_comments(DOCKERFILE)
+        self.assertIn("--network=none --mount=type=bind,from=fetch", body)
+        self.assertEqual(body.count("RUN --network=none"), 2)
+
+    def test_path_is_set_by_env_and_again_by_profile_d_with_the_same_trees(self):
+        env = re.search(r"^ENV PATH=(\S+)$", DOCKERFILE, re.M).group(1).split(":")
+        profile = re.search(r"'export PATH=(\S+)'", DOCKERFILE).group(1).split(":")
+        self.assertEqual([p for p in env if p.startswith("/opt/")], [p for p in profile if p.startswith("/opt/")])
+        self.assertIn("/etc/profile.d/", DOCKERFILE)
+
+    def test_nothing_names_the_extraction_source_or_a_path_outside_the_component(self):
+        """R1 and the one-way extraction (R20): carried properties, never a cited path."""
+        for path in sorted(EDITOR.rglob("*")):
+            if path.is_file() and "__pycache__" not in path.parts:
+                with self.subTest(file=path.name):
+                    text = path.read_text(encoding="utf-8").lower()
+                    self.assertNotIn("codesignal", text)
+                    self.assertNotIn("../", text)
+
+
+class TheEntrypointAndSeed(unittest.TestCase):
+    def test_the_entrypoint_hands_over_to_the_bases_entrypoint_and_has_no_exec_mode(self):
+        code = without_comments(ENTRYPOINT)
+        self.assertEqual(code.strip().splitlines()[-1], 'exec /usr/bin/entrypoint.sh "$@"')
+        self.assertNotIn('"exec"', code)
+        self.assertEqual(code.count("exec "), 1)
+
+    def test_the_seed_declares_a_login_terminal_and_derives_the_java_name(self):
+        seed = json.loads(re.sub(r"^\s*//.*$", "", SEED, flags=re.M))
+        self.assertEqual(seed["terminal.integrated.profiles.linux"]["bash"]["args"], ["-l"])
+        self.assertEqual(seed["terminal.integrated.defaultProfile.linux"], "bash")
+        self.assertEqual(seed["java.configuration.runtimes"][0]["name"], "@JAVA_RUNTIME@")
+        self.assertNotIn("python.testing.pytestArgs", seed)
+        self.assertNotRegex(SEED, r"JavaSE-\d")
+
+
+class TheReadme(unittest.TestCase):
+    def test_the_readme_documents_the_editor_with_no_run_line_of_its_own(self):
+        """TC-01/3: the editor's run shape is TC-05's; the runner's run-line check stays green."""
+        section = README.split("## The editor image", 1)[1].split("\n## ", 1)[0]
+        self.assertNotIn("docker run", section)
+        self.assertIn("docker/editor/build.py", section)
+        self.assertEqual(runner_plan.run_line_findings(README), [])
+        self.assertNotEqual(runner_plan.run_line_findings(README + "\ndocker run -p 8080:8080 editor\n"), [])
+
+
+class TheExtensionVerifier(unittest.TestCase):
+    """The build-time verifier, run by any `node` on PATH; the image tests run it for real."""
+
+    def setUp(self):
+        self.node = shutil.which("node")
+        if not self.node:
+            self.skipTest("no node on PATH; the image tests exercise the verifier")
+
+    def _verify(self, listed: list[str], expected: list[str], packages: dict[str, dict]) -> subprocess.CompletedProcess:
+        with tempfile.TemporaryDirectory() as tmp:
+            for folder, package in packages.items():
+                (Path(tmp) / folder).mkdir()
+                (Path(tmp) / folder / "package.json").write_text(json.dumps(package), encoding="utf-8")
+            return subprocess.run([self.node, str(EDITOR / "verify_extensions.js"), tmp, *expected],
+                                  input="\n".join(listed) + "\n", capture_output=True, text=True)
+
+    def test_exact_agreement_passes_and_each_difference_is_named(self):
+        a = {"a.one-1.0.0": {"publisher": "a", "name": "one"}}
+        b = {"b.two-2.0.0": {"publisher": "b", "name": "two", "extensionDependencies": ["a.one"]}}
+        both = ["a.one@1.0.0", "b.two@2.0.0"]
+        self.assertEqual(self._verify(both, both, a | b).returncode, 0)
+        missing = self._verify(["a.one@1.0.0"], ["a.one@1.0.0", "b.two@2.0.0"], a)
+        self.assertEqual(missing.returncode, 1)
+        self.assertIn("b.two@2.0.0 is pinned but not installed", missing.stderr)
+        extra = self._verify(["a.one@1.0.0", "b.two@2.0.0"], ["a.one@1.0.0"], a | b)
+        self.assertIn("b.two@2.0.0 is installed but not pinned", extra.stderr)
+        unmet = self._verify(["b.two@2.0.0"], ["b.two@2.0.0"], b)
+        self.assertEqual(unmet.returncode, 1)
+        self.assertIn("b.two depends on a.one, which is not installed", unmet.stderr)
+
+
+class TheFetcher(unittest.TestCase):
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location("editor_fetch", EDITOR / "fetch.py")
+        self.fetch = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.fetch)
+
+    def test_the_recorded_sha256_passes_and_any_other_bytes_are_named(self):
+        import hashlib
+
+        data = b"pinned bytes"
+        good = hashlib.sha256(data).hexdigest()
+        self.assertIsNone(self.fetch.check("a.vsix", data, good))
+        self.assertIn("a.vsix", self.fetch.check("a.vsix", data + b"!", good))
+        self.assertEqual(self.fetch.parse("a.vsix|https://x/a|" + good + "\n\n"), [("a.vsix", "https://x/a", good)])
+
+    def test_the_request_carries_a_placeholder_and_no_identity(self):
+        self.assertEqual(self.fetch.USER_AGENT, "Example/0.1 (+https://example.invalid)")
+
+
+if __name__ == "__main__":
+    unittest.main()
