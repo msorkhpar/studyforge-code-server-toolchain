@@ -16,7 +16,13 @@ what is wrong with a Dockerfile or a documented run line, empty when nothing is.
 A Dockerfile cannot say *"this name is not pinned; these are"*. It can only fail
 somewhere later with a message about a missing argument. So every refusal a
 person should read happens before `docker build` starts, and names what IS
-permitted rather than echoing what arrived.
+permitted.
+
+## What a refusal echoes (TC-02/2, W387)
+An unpinned name shaped like a runtime id (`NAME`) is NAMED, with the pinned
+ones listed: `--runtimes java,cobol` says `cobol`, as the editor's refusal does,
+so the two components answer one mistake alike. A name not shaped like an id is
+never echoed: the refusal says only what is pinned.
 """
 
 from __future__ import annotations
@@ -35,6 +41,9 @@ REPOSITORY = "code-server-toolchain/runner"
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
+#: The shape of a runtime id: the only kind of arrived name a refusal echoes.
+#: The editor's `_NAME` is the same pattern (TC-02).
+NAME = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
 _ARCHIVE_STAGES = ("maven", "gradle", "kotlin", "node")
 #: What each runtime places under /opt — the Dockerfile's COPY destinations.
 #: A runtime not named here places nothing there (it arrives in the base, or
@@ -94,14 +103,16 @@ def plan(pins: dict, names, platform: str, digest: str) -> Plan:
     if platform not in platforms:
         raise Refused(f"no pins are recorded for that platform; pinned platforms are {sorted(platforms)}")
     arch = platforms[platform]
+    names = list(names)
+    if any(not isinstance(name, str) or not NAME.match(name) for name in names):
+        raise Refused(f"a declared name is not a runtime id; the pinned runtimes are {sorted(runtimes)}")
     declared = tuple(sorted(set(names)))
-    if len(declared) != len(tuple(names)):
+    if len(declared) != len(names):
         raise Refused("a runtime is declared twice; declare each once")
     unknown = [name for name in declared if name not in runtimes]
     if unknown:
-        raise Refused(
-            f"{len(unknown)} declared runtime(s) are not pinned; the pinned runtimes are {sorted(runtimes)}"
-        )
+        raise Refused(f"{unknown} not pinned in pins.json, so the runner cannot build it; "
+                      f"the pinned runtimes are {sorted(runtimes)}")
     for name in declared:
         missing = [need for need in runtimes[name].get("requires", []) if need not in declared]
         if missing:

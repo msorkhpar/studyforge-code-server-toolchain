@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -37,12 +39,50 @@ class TheDeclaredSet(unittest.TestCase):
         self.assertEqual(built.build_args["WITH_MAVEN"], "yes")
         self.assertEqual(built.build_args["WITH_NODE"], "no")
 
-    def test_an_unpinned_name_is_refused_naming_what_is_pinned(self):
+    def test_an_unpinned_runtime_id_is_refused_naming_it_and_what_is_pinned(self):
         with self.assertRaises(plan.Refused) as caught:
             plan.plan(PINS, ["java", "cobol"], AMD64, DIGEST)
         message = str(caught.exception)
+        self.assertIn("'cobol'", message, "a well-formed unpinned id is named (TC-02/2)")
         self.assertIn(str(sorted(PINS["runtimes"])), message)
-        self.assertNotIn("cobol", message, "a refusal names what is permitted, never what arrived")
+        self.assertNotIn("'java'", message.split(";")[0], "only the unpinned id is named as unpinned")
+        self.assertEqual(plan.plan(PINS, ["java"], AMD64, DIGEST).names, ("java",))
+
+    def test_a_name_not_shaped_like_a_runtime_id_is_refused_and_never_echoed(self):
+        for name in ("../etc", "Java", "a" * 40, "java maven", "cobol;rm", "-x", ""):
+            with self.subTest(name=name):
+                with self.assertRaises(plan.Refused) as caught:
+                    plan.plan(PINS, ["java", name], AMD64, DIGEST)
+                message = str(caught.exception)
+                self.assertIn(str(sorted(PINS["runtimes"])), message)
+                if name:
+                    self.assertNotIn(name, message, "a malformed name is never echoed")
+        # The boundary, the other way: the longest id shape is well-formed, so it is named.
+        with self.assertRaises(plan.Refused) as caught:
+            plan.plan(PINS, ["a" * 32], AMD64, DIGEST)
+        self.assertIn("a" * 32, str(caught.exception))
+
+    def test_the_runner_and_the_editor_accept_the_same_id_shape(self):
+        editor = (ROOT / "docker" / "editor" / "editor_plan.py").read_text(encoding="utf-8")
+        shape = re.search(r'^_NAME = re\.compile\(r"(?P<p>[^"]+)"\)$', editor, re.M)
+        self.assertIsNotNone(shape, "the editor's id shape is where TC-02 put it")
+        self.assertEqual(shape.group("p"), plan.NAME.pattern)
+
+    def test_the_build_names_an_unpinned_id_before_docker_starts(self):
+        env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+        command = [sys.executable, str(ROOT / "docker" / "minimal" / "build.py"), "--platform", AMD64, "--print-tag"]
+        refused = subprocess.run(command + ["--runtimes", "java,cobol"], env=env, capture_output=True,
+                                 text=True, stdin=subprocess.DEVNULL)
+        self.assertEqual(refused.returncode, 2, refused.stderr)
+        self.assertIn("'cobol'", refused.stderr)
+        self.assertNotIn("Traceback", refused.stderr)
+        malformed = subprocess.run(command + ["--runtimes", "java,../etc"], env=env, capture_output=True,
+                                   text=True, stdin=subprocess.DEVNULL)
+        self.assertEqual(malformed.returncode, 2, malformed.stderr)
+        self.assertNotIn("../etc", malformed.stderr)
+        accepted = subprocess.run(command + ["--runtimes", "java"], env=env, capture_output=True,
+                                  text=True, stdin=subprocess.DEVNULL)
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
 
     def test_a_duplicate_is_refused(self):
         with self.assertRaises(plan.Refused):
