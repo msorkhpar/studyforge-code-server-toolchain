@@ -41,6 +41,23 @@ RUN printf '%s\n' "${FETCH}" > /tmp/fetch.txt \
  && python3 /fetch.py /tmp/fetch.txt /fetch \
  && rm /tmp/fetch.txt
 
+# -------------------------------------------------------------------- lockdown
+# The practice-focus extension (TC-04), this repository's own artifact and no
+# consumer's: plain CommonJS against the `vscode` module the workbench
+# provides, no build step and no dependencies. It is PACKAGED into a .vsix here
+# and INSTALLED below, never copied into the extensions directory -- the
+# workbench reads `extensions.json` there and never scans, so a copied folder
+# is present, correct and silently never loaded. Measured.
+# ⭐ The packer is the standard library's `zipfile`, never a marketplace tool,
+# and it refuses a target name its own manifest does not give: the id the build
+# expects and the id inside the file can never drift apart.
+# ⛔ This stage holds `lockdown/` ALONE, so nothing in it may import from
+# `docker/`; the pinned Python image is the only build tool it gets.
+FROM ${FETCH_IMAGE} AS lockdown
+ARG LOCKDOWN_VSIX
+COPY lockdown /lockdown
+RUN --network=none python3 /lockdown/lockdown.py /lockdown "/packed/${LOCKDOWN_VSIX}"
+
 # ------------------------------------------------------------------ JAVA_HOME
 # ⛔ A set without java carries NO JAVA_HOME, not an empty one and not one that
 # points at nothing (TC-01/16). ENV cannot be conditional, so the editor stage
@@ -104,12 +121,18 @@ RUN --network=none --mount=type=bind,from=fetch,source=/fetch,target=/tmp/fetch 
 # declared dependency must be installed, or the build fails naming the id —
 # a marketplace that stops serving an id otherwise yields an image with no
 # language support that still builds and starts.
+# ⭐ The lockdown's .vsix is installed here too, for EVERY declared set: it
+# serves no runtime, so it is no consumer's selection, and its id is in
+# EXPECTED_EXTENSIONS unconditionally. The check below reads the INSTALLED
+# list, never the extensions directory, so the build fails naming the lockdown
+# if it was packed but never loaded.
 ARG EXPECTED_EXTENSIONS
 COPY docker/editor/verify_extensions.js /tmp/verify_extensions.js
 RUN --network=none --mount=type=bind,from=fetch,source=/fetch,target=/tmp/fetch \
+    --mount=type=bind,from=lockdown,source=/packed,target=/tmp/lockdown \
     set -eu; \
     mkdir -p /opt/code-server/extensions; \
-    for vsix in /tmp/fetch/*.vsix; do \
+    for vsix in /tmp/fetch/*.vsix /tmp/lockdown/*.vsix; do \
       [ -e "$vsix" ] || continue; \
       code-server --extensions-dir /opt/code-server/extensions --install-extension "$vsix" >/dev/null 2>&1 \
         || { echo "installing $(basename "$vsix") failed" >&2; exit 1; }; \

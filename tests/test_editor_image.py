@@ -34,6 +34,8 @@ BUILD = ROOT / "docker" / "editor" / "build.py"
 WORK = ROOT / ".work" / "tests-editor"
 PINS = runner_plan.load(ROOT)
 EPINS = editor_plan.load(ROOT)
+#: The lockdown extension every image installs, whatever its set (TC-04).
+LOCKDOWN = editor_plan.lockdown_identity(ROOT)
 EXTENSIONS_DIR = "/opt/code-server/extensions"
 BASE_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 #: One version check per declared runtime, and TypeScript's: (name, command, expected text).
@@ -64,6 +66,7 @@ def planted_copy(name: str, dockerfile=None, pins=None) -> Path:
         shutil.copy(ROOT / file, target / file)
     shutil.copytree(ROOT / "docker", target / "docker", ignore=shutil.ignore_patterns("__pycache__"))
     shutil.copytree(ROOT / "prime", target / "prime", ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(ROOT / "lockdown", target / "lockdown", ignore=shutil.ignore_patterns("__pycache__"))
     if dockerfile:
         path = target / editor_plan.DOCKERFILE
         text = path.read_text(encoding="utf-8")
@@ -204,23 +207,55 @@ class TheEditorImage(unittest.TestCase):
         listed = self.exec(self.editor, "code-server", "--extensions-dir", EXTENSIONS_DIR,
                            "--list-extensions", "--show-versions")
         installed = sorted(line.strip() for line in listed.stdout.splitlines() if "@" in line)
-        self.assertEqual(installed, [f"{e}@{EPINS['extensions'][e]['version']}" for e in sorted(EPINS["extensions"])])
+        self.assertEqual(installed, sorted([f"{e}@{EPINS['extensions'][e]['version']}" for e in EPINS["extensions"]]
+                                           + [LOCKDOWN.expected]))
 
     def test_an_extension_that_is_not_installed_fails_the_build_naming_it(self):
         root = planted_copy("skip-kotlin", dockerfile=(
-            "for vsix in /tmp/fetch/*.vsix; do", "for vsix in $(ls /tmp/fetch/*.vsix | grep -v fwcd.kotlin); do"))
+            "for vsix in /tmp/fetch/*.vsix /tmp/lockdown/*.vsix; do",
+            "for vsix in $(ls /tmp/fetch/*.vsix /tmp/lockdown/*.vsix | grep -v fwcd.kotlin); do"))
         self.planted_build_fails(root, "fwcd.kotlin@0.2.36 is pinned but not installed")
 
     def test_an_installed_extension_whose_dependency_is_missing_fails_the_build_naming_it(self):
         """Offline, code-server installs it with exit 0; only the image's own check refuses it."""
         root = planted_copy("skip-java", dockerfile=(
-            "for vsix in /tmp/fetch/*.vsix; do", "for vsix in $(ls /tmp/fetch/*.vsix | grep -v redhat.java); do"))
+            "for vsix in /tmp/fetch/*.vsix /tmp/lockdown/*.vsix; do",
+            "for vsix in $(ls /tmp/fetch/*.vsix /tmp/lockdown/*.vsix | grep -v redhat.java); do"))
         path = root / editor_plan.DOCKERFILE
         text = path.read_text(encoding="utf-8").replace(
             "/opt/code-server/extensions ${EXPECTED_EXTENSIONS};",
             "/opt/code-server/extensions $(echo ${EXPECTED_EXTENSIONS} | tr ' ' '\\n' | grep -v redhat.java);")
         path.write_text(text, encoding="utf-8")
         self.planted_build_fails(root, "depends on redhat.java, which is not installed")
+
+    # ------------------------------------------------- the workbench lockdown
+    def test_the_lockdown_is_loaded_in_the_running_container_and_a_copied_folder_is_not(self):
+        """TC-04's acceptance, read from the INSTALLED list rather than from a file being there.
+
+        And the other way, which is the whole reason it is packaged: a folder
+        copied into the extensions directory is present, correct, and never
+        loaded, because the workbench reads `extensions.json` and never scans.
+        """
+        listed = self.exec(self.editor, "code-server", "--extensions-dir", EXTENSIONS_DIR,
+                           "--list-extensions", "--show-versions")
+        self.assertIn(LOCKDOWN.expected, [line.strip() for line in listed.stdout.splitlines()])
+        registered = json.loads(self.exec(self.editor, "cat", f"{EXTENSIONS_DIR}/extensions.json").stdout)
+        self.assertIn(LOCKDOWN.id, [entry["identifier"]["id"] for entry in registered])
+        held = self.exec(self.editor, "sh", "-c", f"ls -d {EXTENSIONS_DIR}/{LOCKDOWN.id}-*").stdout.strip()
+        self.assertTrue(held, "the installed extension has a folder of its own")
+        copied = self.start(self.image)
+        self.exec(copied, "sh", "-c",
+                  f"cp -r {held} {EXTENSIONS_DIR}/example.copied-1.0.0 && "
+                  f'sed -i \'s/"practice-focus"/"copied"/; s/"studyforge"/"example"/\' '
+                  f"{EXTENSIONS_DIR}/example.copied-1.0.0/package.json", user="0")
+        after = self.exec(copied, "code-server", "--extensions-dir", EXTENSIONS_DIR, "--list-extensions")
+        self.assertIn(LOCKDOWN.id, after.stdout)
+        self.assertNotIn("example.copied", after.stdout, "a copied folder is never loaded")
+
+    def test_a_lockdown_that_is_packed_but_not_installed_fails_the_build_naming_it(self):
+        root = planted_copy("skip-lockdown", dockerfile=(
+            "for vsix in /tmp/fetch/*.vsix /tmp/lockdown/*.vsix; do", "for vsix in /tmp/fetch/*.vsix; do"))
+        self.planted_build_fails(root, f"{LOCKDOWN.expected} is pinned but not installed")
 
     def test_a_file_that_is_not_the_pinned_one_stops_the_build_before_anything_is_installed(self):
         def wrong(pins):

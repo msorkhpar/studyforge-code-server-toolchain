@@ -36,6 +36,8 @@ DOCKERFILE = (ROOT / editor_plan.DOCKERFILE).read_text(encoding="utf-8")
 SEED = (EDITOR / "seed" / "settings.json").read_text(encoding="utf-8")
 ENTRYPOINT = (EDITOR / "entrypoint.sh").read_text(encoding="utf-8")
 README = (ROOT / "README.md").read_text(encoding="utf-8")
+#: The lockdown extension every set installs; its own tests are tests/test_lockdown.py.
+LOCKDOWN = editor_plan.lockdown_identity(ROOT)
 
 
 def runner_for(platform: str = "linux/amd64", pins: dict = PINS) -> runner_plan.Plan:
@@ -84,7 +86,8 @@ class TheEditorsPins(unittest.TestCase):
 class TheExtensionSet(unittest.TestCase):
     def test_every_required_id_is_pinned_and_the_plan_expects_exactly_the_pins(self):
         expected = planned().build_args["EXPECTED_EXTENSIONS"].split()
-        self.assertEqual(expected, [f"{e}@{EPINS['extensions'][e]['version']}" for e in sorted(EPINS["extensions"])])
+        self.assertEqual(expected, sorted([f"{e}@{EPINS['extensions'][e]['version']}" for e in EPINS["extensions"]]
+                                          + [LOCKDOWN.expected]))
         required = {ext for exts in editor_plan.REQUIRED_EXTENSIONS.values() for ext in exts}
         self.assertLessEqual(required, set(EPINS["extensions"]))
 
@@ -104,6 +107,7 @@ class TheExtensionSet(unittest.TestCase):
             shutil.copy(ROOT / "pins.json", root / "pins.json")
             shutil.copytree(ROOT / "docker", root / "docker", ignore=shutil.ignore_patterns("__pycache__"))
             shutil.copytree(ROOT / "prime", root / "prime", ignore=shutil.ignore_patterns("__pycache__"))
+            shutil.copytree(ROOT / "lockdown", root / "lockdown", ignore=shutil.ignore_patterns("__pycache__"))
             planted = copy.deepcopy(EPINS)
             del planted["extensions"]["fwcd.kotlin"]
             (root / "editor-pins.json").write_text(json.dumps(planted), encoding="utf-8")
@@ -184,6 +188,7 @@ class TheTag(unittest.TestCase):
             shutil.copy(ROOT / name, root / name)
         shutil.copytree(ROOT / "docker", root / "docker", ignore=shutil.ignore_patterns("__pycache__"))
         shutil.copytree(ROOT / "prime", root / "prime", ignore=shutil.ignore_patterns("__pycache__"))
+        shutil.copytree(ROOT / "lockdown", root / "lockdown", ignore=shutil.ignore_patterns("__pycache__"))
         return root
 
     def test_the_editors_tag_moves_with_every_input_and_the_runners_does_not_move_with_the_editors(self):
@@ -234,8 +239,13 @@ class TheDockerfile(unittest.TestCase):
     def test_the_install_and_typescript_steps_run_with_no_network(self):
         body = without_comments(DOCKERFILE)
         self.assertIn("--network=none --mount=type=bind,from=fetch", body)
-        # The third is the prime's offline proof (TC-03).
-        self.assertEqual(body.count("RUN --network=none"), 3)
+        # Every step that must not reach the network: TypeScript from the pinned
+        # tarball, the extension install, the lockdown's pack stage (TC-04) and
+        # the prime's offline proof (TC-03).
+        offline = ("npm install -g --offline", "--install-extension", "/lockdown/lockdown.py", "prove")
+        self.assertEqual(body.count("RUN --network=none"), len(offline))
+        for needle in offline:
+            self.assertIn(needle, body)
 
     def test_path_is_set_by_env_and_again_by_profile_d_with_the_same_trees(self):
         self.assertRegex(DOCKERFILE, r"(?m)^ENV PATH=\$\{EDITOR_PATH\}$")

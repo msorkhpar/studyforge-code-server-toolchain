@@ -141,10 +141,41 @@ python3 docker/editor/build.py            # gradle,java,kotlin,node,python
   `bash -lc`, and keeps what each reported in
   `/opt/code-server/toolchain-versions`.
   The settings seed declares the integrated terminal a login shell.
+- ⭐ **Every image carries the workbench lockdown**, whatever its set — it
+  serves no runtime, so it is nothing a consumer selects (below).
 
 The tag is `code-server-toolchain/editor:<the set>-<arch>-<12 hex>`, and its
-inputs are `editor-pins.json`, `docker/editor/`, `prime/`, the runner's own
-inputs and, when one is given, the prime directory.
+inputs are `editor-pins.json`, `docker/editor/`, `prime/`, `lockdown/`, the
+runner's own inputs and, when one is given, the prime directory.
+
+### The workbench lockdown — `studyforge.practice-focus`
+
+[`lockdown/`](lockdown/) is the practice-focus extension: it makes the embedded
+IDE behave like a practice panel rather than a general workbench, by closing
+every editor but the active one and every surface around it on startup, and
+again whenever the practice changes. Plain CommonJS against the `vscode` module
+the workbench provides — no build step, no dependencies, and nothing fetched.
+
+- ⭐ **The id a consumer pins is `studyforge.practice-focus`.** It is written
+  in one place, [`lockdown/package.json`](lockdown/package.json), and
+  everything else derives from it: the `.vsix` file name, the manifest inside
+  the zip, the build's expected-extension list and this line. A rename moves
+  all of them at once, so a consumer pinning the documented id can never be
+  reading a stale one.
+- ⛔ **It is packaged and INSTALLED, never copied in.** The workbench reads
+  `extensions.json` in its extensions directory and never scans it, so a copied
+  folder is present, correct and silently never loaded. The build packs the
+  `.vsix` with the standard library (`lockdown/lockdown.py`, never a
+  marketplace tool), installs it with the pinned extensions, and then reads the
+  INSTALLED list: an image whose lockdown did not load is not tagged.
+- ⭐ **It reads no setting and knows no corpus.** Which file a window shows is
+  decided by that window's own URL. It contributes
+  `studyforge.practice.main` and `studyforge.practice.test` only so the
+  workbench accepts the keys a study server writes, and treats a change to that
+  section as the one signal that the practice moved.
+- ⚠️ **It is not a security boundary.** code-server is an IDE with a shell;
+  this removes the ways *in*, not the possibility. The boundary is the
+  container and how it is run.
 
 ### The prime — the consumer's warm build cache
 
@@ -212,6 +243,10 @@ TC_DOCKER=1 python3 -m unittest tests.test_editor_image -v # builds and runs the
 TC_DOCKER=1 python3 -m unittest tests.test_editor_selection_image -v # the selected sets
 TC_DOCKER=1 python3 -m unittest tests.test_prime_image -v   # the prime, warm and offline
 ```
+
+`tests/test_lockdown.py` needs no Docker: it packs the extension with the
+standard library, runs it against a stub `vscode` module with `node`, and
+reads the packed identity against this README and the build's expected list.
 
 The image tests build a full image and a `shell`-only image, run every smoke
 project under `docker/minimal/smoke/` with `--network none` (each passes, and a

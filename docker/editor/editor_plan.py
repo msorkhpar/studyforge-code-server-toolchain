@@ -37,6 +37,14 @@ A consumer's prime directory is read by `prime/prime.py` and handed to
 turns it into one `WITH_<TOOL>_PRIME` argument per warmer. Its digest is
 folded into the tag, so an image warmed for one prime never carries
 another's name.
+
+## The lockdown (TC-04)
+⭐ The workbench lockdown extension is this repository's own artifact, not a
+consumer's choice: every declared set installs it. So it is NOT an
+`editor-pins.json` entry with a `for` — `lockdown/lockdown.py` reads its
+identity from the one manifest that carries it, `plan()` puts the file name in
+`LOCKDOWN_VSIX` and the id in `EXPECTED_EXTENSIONS`, and the image's own
+installed-list check fails the build naming the id when it is missing.
 """
 
 from __future__ import annotations
@@ -48,18 +56,23 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+COMPONENT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "minimal"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "prime"))
+sys.path.insert(0, str(COMPONENT / "prime"))
+sys.path.insert(0, str(COMPONENT / "lockdown"))
+import lockdown as lockdown_extension  # noqa: E402
 import plan as runner_plan  # noqa: E402
 import prime as prime_contract  # noqa: E402
 
 Refused = runner_plan.Refused
 EDITOR_PINS = "editor-pins.json"
 DOCKERFILE = "docker/editor/Dockerfile"
+#: Where the workbench lockdown extension lives, relative to the component.
+LOCKDOWN = "lockdown"
 #: The editor's own inputs. The runner's digest is folded in as well, so the
 #: editor's tag moves whenever the runner's does — and `docker/minimal/` is
 #: not touched, so no runner tag moves because the editor exists.
-OWN_INPUTS = (EDITOR_PINS, "docker/editor", "prime")
+OWN_INPUTS = (EDITOR_PINS, "docker/editor", "prime", LOCKDOWN)
 REPOSITORY = "code-server-toolchain/editor"
 #: The set built when none is declared: the extraction source's five, which is
 #: the image TC-01 built.
@@ -173,12 +186,28 @@ def extensions_for(pins: dict, editor_pins: dict, declared) -> dict:
     return chosen
 
 
+def lockdown_identity(root: Path = COMPONENT) -> lockdown_extension.Lockdown:
+    """This repository's lockdown extension, with its own refusal translated into ours.
+
+    ⭐ `lockdown/` imports nothing from this component — the image packs it in
+    a stage that holds that directory alone — so its refusal class is its own,
+    and this is the one place the two meet.
+    """
+    try:
+        return lockdown_extension.identity(Path(root) / LOCKDOWN)
+    except lockdown_extension.Refused as refusal:
+        raise Refused(f"the lockdown extension: {refusal}") from refusal
+
+
 def plan(pins: dict, editor_pins: dict, runner: runner_plan.Plan, digest: str,
-         prime: prime_contract.Prime | None = None) -> EditorPlan:
+         prime: prime_contract.Prime | None = None,
+         lock: lockdown_extension.Lockdown | None = None) -> EditorPlan:
     """Return the editor build for the runner's set and platform, or raise `Refused`.
 
     With a `prime`, it is guarded against `pins` first, and its digest moves the tag.
+    `lock` defaults to this repository's own lockdown extension, which every set installs.
     """
+    lock = lock or lockdown_identity()
     declared, arch = runner.names, runner.arch
     _carried(declared)
     if prime is not None:
@@ -203,7 +232,9 @@ def plan(pins: dict, editor_pins: dict, runner: runner_plan.Plan, digest: str,
         # the editor only through the runner, when python is declared.
         "FETCH_IMAGE": runner.build_args["UNPACK_IMAGE"],
         "FETCH": "\n".join(fetch),
-        "EXPECTED_EXTENSIONS": " ".join(f"{ext}@{extensions[ext]['version']}" for ext in sorted(extensions)),
+        "EXPECTED_EXTENSIONS": " ".join(sorted([f"{ext}@{extensions[ext]['version']}" for ext in extensions]
+                                               + [lock.expected])),
+        "LOCKDOWN_VSIX": lock.filename,
         "WITH_TYPESCRIPT": "yes" if with_typescript else "no",
         "WITH_READLINE": "yes" if readline["for"] in declared else "no",
         "READLINE_SNAPSHOT": readline["snapshot"],

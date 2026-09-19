@@ -36,6 +36,8 @@ SEED = EDITOR / "seed" / "settings.json"
 #: TC-01's image, as its Dockerfile wrote PATH for the constant five.
 TC01_PATH = ("/opt/java/openjdk/bin:/opt/maven/bin:/opt/gradle/bin:/opt/kotlinc/bin:/opt/node/bin:"
              "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+#: The lockdown extension: no runtime's, so every set installs it (TC-04).
+LOCKDOWN = editor_plan.lockdown_identity(ROOT)
 
 
 def planned(names, epins: dict = EPINS, pins: dict = PINS) -> editor_plan.EditorPlan:
@@ -69,9 +71,9 @@ class TheJavaMavenSet(unittest.TestCase):
         self.assertEqual(built.names, ("java", "maven"))
         self.assertEqual(check_names(built), {"java", "maven"})
         self.assertEqual(built.build_args["OPT_EXPECTED"].split(), ["code-server", "java", "maven", "maven-repo"])
-        java = sorted(e for e in EPINS["extensions"] if EPINS["extensions"][e]["for"] == "java")
+        java = [e for e in EPINS["extensions"] if EPINS["extensions"][e]["for"] == "java"]
         self.assertEqual(built.build_args["EXPECTED_EXTENSIONS"].split(),
-                         [f"{e}@{EPINS['extensions'][e]['version']}" for e in java])
+                         sorted([f"{e}@{EPINS['extensions'][e]['version']}" for e in java] + [LOCKDOWN.expected]))
         self.assertEqual((built.build_args["WITH_TYPESCRIPT"], built.build_args["WITH_READLINE"]), ("no", "no"))
         self.assertNotIn("typescript.tgz", built.build_args["FETCH"])
         self.assertRegex(built.tag, r"^code-server-toolchain/editor:java-maven-amd64-0{12}$")
@@ -96,7 +98,8 @@ class TheDefaultSet(unittest.TestCase):
         built = planned(editor_plan.DEFAULT_SET)
         self.assertEqual(built.names, ("gradle", "java", "kotlin", "node", "python"))
         self.assertEqual(built.build_args["EXPECTED_EXTENSIONS"].split(),
-                         [f"{e}@{EPINS['extensions'][e]['version']}" for e in sorted(EPINS["extensions"])])
+                         sorted([f"{e}@{EPINS['extensions'][e]['version']}" for e in EPINS["extensions"]]
+                                + [LOCKDOWN.expected]))
         self.assertEqual((built.build_args["WITH_TYPESCRIPT"], built.build_args["WITH_READLINE"]), ("yes", "yes"))
         self.assertEqual(built.build_args["EDITOR_PATH"], TC01_PATH.replace("/opt/maven/bin:", ""))
         self.assertEqual(built.build_args["SEED_DROP"], "")
@@ -122,6 +125,7 @@ class TheRefusals(unittest.TestCase):
             shutil.copy(ROOT / name, root / name)
         shutil.copytree(ROOT / "docker", root / "docker", ignore=shutil.ignore_patterns("__pycache__"))
         shutil.copytree(ROOT / "prime", root / "prime", ignore=shutil.ignore_patterns("__pycache__"))
+        shutil.copytree(ROOT / "lockdown", root / "lockdown", ignore=shutil.ignore_patterns("__pycache__"))
         return root
 
     def test_an_unpinned_toolchain_is_refused_naming_it_and_what_is_pinned(self):
@@ -200,7 +204,8 @@ class TheExtensions(unittest.TestCase):
     def test_every_carried_set_installs_exactly_the_extensions_for_its_runtimes(self):
         for names in carried_sets():
             with self.subTest(names=names):
-                expected = sorted(f"{e}@{v['version']}" for e, v in EPINS["extensions"].items() if v["for"] in names)
+                expected = sorted([f"{e}@{v['version']}" for e, v in EPINS["extensions"].items()
+                                   if v["for"] in names] + [LOCKDOWN.expected])
                 self.assertEqual(sorted(planned(names).build_args["EXPECTED_EXTENSIONS"].split()), expected)
 
     def test_every_extension_names_a_pinned_runtime_and_a_planted_one_is_refused_naming_it(self):

@@ -35,6 +35,8 @@ BUILD = ROOT / "docker" / "editor" / "build.py"
 WORK = ROOT / ".work" / "tests-editor-selection"
 PINS = editor_plan.runner_plan.load(ROOT)
 EPINS = editor_plan.load(ROOT)
+#: The lockdown extension every image installs, whatever its set (TC-04).
+LOCKDOWN = editor_plan.lockdown_identity(ROOT)
 EXTENSIONS_DIR = "/opt/code-server/extensions"
 SHELLS = (["sh", "-c"], ["bash", "-lc"], ["bash", "-ic"])
 JAVA_MAVEN, PYTHON = ("java", "maven"), ("python",)
@@ -65,6 +67,7 @@ def planted_copy(name: str, old: str, new: str) -> Path:
         shutil.copy(ROOT / file, target / file)
     shutil.copytree(ROOT / "docker", target / "docker", ignore=shutil.ignore_patterns("__pycache__"))
     shutil.copytree(ROOT / "prime", target / "prime", ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(ROOT / "lockdown", target / "lockdown", ignore=shutil.ignore_patterns("__pycache__"))
     path = target / editor_plan.DOCKERFILE
     text = path.read_text(encoding="utf-8")
     assert text.count(old) == 1, old
@@ -213,9 +216,10 @@ class TheSelectedImages(unittest.TestCase):
     def test_each_image_installs_exactly_the_extensions_for_its_runtimes(self):
         for names in (JAVA_MAVEN, PYTHON):
             with self.subTest(names=names):
-                want = sorted(f"{e}@{v['version']}" for e, v in EPINS["extensions"].items() if v["for"] in names)
+                want = sorted([f"{e}@{v['version']}" for e, v in EPINS["extensions"].items()
+                               if v["for"] in names] + [LOCKDOWN.expected])
                 self.assertEqual(self.installed(names), want)
-                self.assertTrue(want)
+                self.assertIn(LOCKDOWN.expected, want, "the lockdown is installed whatever the set")
 
     def test_the_seed_carries_settings_only_for_the_selected_runtimes(self):
         for names, kept, dropped in ((JAVA_MAVEN, "java.", "python."), (PYTHON, "python.", "java.")):
