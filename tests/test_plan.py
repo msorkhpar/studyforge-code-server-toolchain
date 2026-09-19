@@ -151,6 +151,33 @@ class TheDockerfile(unittest.TestCase):
     def test_a_planted_literal_image_is_found(self):
         self.assertNotEqual(plan.dockerfile_findings(DOCKERFILE + "\nFROM node:24 AS extra\n"), [])
 
+    def test_a_planted_bare_scratch_stage_is_found_and_the_real_no_stages_are_not_bare(self):
+        """W374: a bare `-no` stage let a `python` build hold every runtime."""
+        for name in ("java", "maven", "mavenrepo", "gradle", "kotlin", "node"):
+            with self.subTest(stage=f"{name}-no"):
+                stage = f"FROM scratch AS {name}-no\nWORKDIR /opt\n"
+                self.assertIn(stage, DOCKERFILE)
+                planted = DOCKERFILE.replace(stage, f"FROM scratch AS {name}-no\n")
+                self.assertTrue(any("bare" in f for f in plan.dockerfile_findings(planted)))
+        self.assertNotEqual(plan.dockerfile_findings(DOCKERFILE + "\nFROM scratch AS last\n"), [])
+
+    def test_the_opt_directories_are_exactly_the_dockerfiles_copy_destinations(self):
+        copied = set(re.findall(r"^COPY --from=\S+ \S+ /opt/([\w-]+)(?:/\S*)?$", DOCKERFILE, re.M))
+        self.assertEqual(copied, {d for dirs in plan.OPT_DIRS.values() for d in dirs})
+        self.assertLessEqual(set(plan.OPT_DIRS), set(PINS["runtimes"]))
+
+    def test_each_set_expects_exactly_its_own_opt_directories(self):
+        expected = {
+            ("python",): "", ("shell",): "", ("sqlite",): "", ("node",): "node", ("java",): "java",
+            ("java", "maven"): "java maven maven-repo", ("gradle", "java"): "gradle java",
+            ("java", "kotlin"): "java kotlinc",
+        }
+        for names, opt in expected.items():
+            with self.subTest(names=names):
+                self.assertEqual(plan.plan(PINS, list(names), AMD64, DIGEST).build_args["OPT_EXPECTED"], opt)
+        self.assertEqual(set(n for names in expected for n in names), set(PINS["runtimes"]),
+                         "every runtime in the vocabulary is named")
+
     def test_no_editor_is_named(self):
         for word in ("code-server", "--install-extension", "EXPOSE"):
             self.assertNotIn(word, "\n".join(l for l in DOCKERFILE.splitlines() if not l.lstrip().startswith("#")))

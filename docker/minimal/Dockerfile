@@ -26,8 +26,15 @@
 #
 # How a runtime is LEFT OUT: each optional runtime has a `-yes` and a `-no`
 # stage, and `FROM <name>-${WITH_<NAME>}` selects one. BuildKit never builds a
-# stage nothing selects, and a `-no` stage is empty `scratch`, so an undeclared
-# runtime is absent from the image, not merely off PATH.
+# stage nothing selects, and a `-no` stage holds only an empty `/opt` (which
+# every base already has), so an undeclared runtime is absent from the image,
+# not merely off PATH.
+# ⛔ A `-no` stage is NEVER bare `scratch` (W374). Measured on BuildKit v0.31.1:
+# `COPY --from=<a bare scratch stage> / /` is served from the cache the `-yes`
+# twin's COPY recorded on the same base, so once a set with the runtime was
+# built on the python base, a `python`-only build came out holding every
+# runtime. The `WORKDIR /opt` gives the stage real, content-addressed bytes,
+# and `plan.dockerfile_findings` refuses a bare scratch stage.
 
 ARG RUNNER_BASE
 ARG UNPACK_IMAGE
@@ -42,6 +49,7 @@ ARG WITH_NODE
 # --------------------------------------------------------------------------- java
 FROM ${JAVA_IMAGE} AS java-image
 FROM scratch AS java-no
+WORKDIR /opt
 FROM scratch AS java-yes
 # The JDK is a self-contained tree, so it is copied whole out of the official
 # image onto the Debian base (the Temurin images are Ubuntu-based; the tree
@@ -63,6 +71,7 @@ ADD --checksum=sha256:${MAVEN_SHA256} ${MAVEN_URL} /unpack/maven.tar.gz
 RUN mkdir -p /opt/maven \
  && tar -xzf maven.tar.gz -C /opt/maven --strip-components=1 --no-same-owner
 FROM scratch AS maven-no
+WORKDIR /opt
 FROM scratch AS maven-yes
 COPY --from=maven-work /opt/maven /opt/maven
 FROM maven-${WITH_MAVEN} AS maven
@@ -97,6 +106,7 @@ FROM scratch AS maven-record-out
 COPY --from=maven-record /record /
 
 FROM scratch AS mavenrepo-no
+WORKDIR /opt
 FROM scratch AS mavenrepo-yes
 COPY --from=maven-warm /opt/maven-repo /opt/maven-repo
 FROM mavenrepo-${WITH_MAVENREPO} AS mavenrepo
@@ -111,6 +121,7 @@ RUN python3 -m zipfile -e gradle.zip /unpack/out \
  && mv /unpack/out/gradle-* /opt/gradle \
  && chmod 755 /opt/gradle/bin/gradle
 FROM scratch AS gradle-no
+WORKDIR /opt
 FROM scratch AS gradle-yes
 COPY --from=gradle-work /opt/gradle /opt/gradle
 FROM gradle-${WITH_GRADLE} AS gradle
@@ -123,6 +134,7 @@ ADD --checksum=sha256:${KOTLIN_SHA256} ${KOTLIN_URL} /unpack/kotlin.zip
 RUN python3 -m zipfile -e kotlin.zip /opt \
  && chmod 755 /opt/kotlinc/bin/*
 FROM scratch AS kotlin-no
+WORKDIR /opt
 FROM scratch AS kotlin-yes
 COPY --from=kotlin-work /opt/kotlinc /opt/kotlinc
 FROM kotlin-${WITH_KOTLIN} AS kotlin
@@ -135,6 +147,7 @@ ADD --checksum=sha256:${NODE_SHA256} ${NODE_URL} /unpack/node.tar.gz
 RUN mkdir -p /opt/node \
  && tar -xzf node.tar.gz -C /opt/node --strip-components=1 --no-same-owner
 FROM scratch AS node-no
+WORKDIR /opt
 FROM scratch AS node-yes
 COPY --from=node-work /opt/node /opt/node
 FROM node-${WITH_NODE} AS node
@@ -186,8 +199,15 @@ RUN if [ "${WITH_SQLITE}" = yes ]; then \
 # ⛔ Every declared runtime reports the version pins.json records, or the build
 # fails naming it. An image whose contents do not match its pins is not shipped.
 ARG CHECKS
+ARG OPT_EXPECTED
 ENV HOME=/tmp
-RUN printf '%s\n' "${CHECKS}" | while IFS='|' read -r name command expect; do \
+# ⛔ /opt holds exactly what the declared set places there, or the build fails
+# naming both (W374): an undeclared runtime is ABSENT, and this is where the
+# image says so before it is tagged.
+RUN held="$(ls -A /opt | xargs)"; \
+    [ "$held" = "${OPT_EXPECTED}" ] \
+      || { echo "/opt holds '$held'; the declared set places '${OPT_EXPECTED}'" >&2; exit 1; } \
+ && printf '%s\n' "${CHECKS}" | while IFS='|' read -r name command expect; do \
       [ -n "$name" ] || continue; \
       out="$(sh -c "$command" 2>&1)" || { echo "$name: '$command' failed" >&2; exit 1; }; \
       printf '%s' "$out" | grep -qF -- "$expect" \

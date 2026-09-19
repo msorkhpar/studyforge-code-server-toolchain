@@ -36,6 +36,12 @@ REPOSITORY = "code-server-toolchain/runner"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _ARCHIVE_STAGES = ("maven", "gradle", "kotlin", "node")
+#: What each runtime places under /opt — the Dockerfile's COPY destinations.
+#: A runtime not named here places nothing there (it arrives in the base, or
+#: from Debian's packages), so the image's /opt is exactly the union for the
+#: declared set, and the build refuses one that is not (W374).
+OPT_DIRS = {"java": ("java",), "maven": ("maven", "maven-repo"), "gradle": ("gradle",),
+            "kotlin": ("kotlinc",), "node": ("node",)}
 
 
 class Refused(ValueError):
@@ -122,7 +128,13 @@ def plan(pins: dict, names, platform: str, digest: str) -> Plan:
         for check in runtimes[name]["checks"]
     )
     args["DECLARED"] = " ".join(declared)
+    args["OPT_EXPECTED"] = " ".join(opt_dirs(declared))
     return Plan(declared, arch, platform, tag_for(declared, arch, digest), args)
+
+
+def opt_dirs(declared) -> list[str]:
+    """The directories the declared set places under /opt, sorted as `ls` sorts them."""
+    return sorted(d for name in declared for d in OPT_DIRS.get(name, ()))
 
 
 def _image(entry: dict) -> str:
@@ -179,16 +191,26 @@ _FROM = re.compile(r"^\s*FROM\s+(?:--platform=\S+\s+)?(?P<ref>\S+)(?:\s+AS\s+(?P
 
 
 def dockerfile_findings(text: str) -> list[str]:
-    """No ARG carries a default, and every FROM is a stage, `scratch` or an ARG.
+    """No ARG carries a default, every FROM is a stage, `scratch` or an ARG, and
+    no `scratch` stage is bare.
 
     ⛔ An `ARG X=value` is a second place a version could be chosen, and a
-    literal `FROM image:tag` is an input no pin governs.
+    literal `FROM image:tag` is an input no pin governs. ⛔ A bare `FROM scratch`
+    stage, copied from, is served from the cache of whatever other stage the
+    same COPY last read on the same base (W374): the runtime a set did NOT
+    declare arrives anyway.
     """
     found: list[str] = []
     stages: set[str] = set()
+    bare: int | None = None
     for number, line in enumerate(text.splitlines(), start=1):
-        if line.lstrip().startswith("#"):
+        if not line.strip() or line.lstrip().startswith("#"):
             continue
+        if bare is not None and not _FROM.match(line):
+            bare = None
+        elif bare is not None:
+            found.append(f"line {bare}: a scratch stage is bare; give it content (a `-no` stage takes `WORKDIR /opt`)")
+            bare = None
         arg = _ARG.match(line)
         if arg and "=" in arg.group("body"):
             found.append(f"line {number}: an ARG carries a default; every value comes from pins.json")
@@ -200,6 +222,10 @@ def dockerfile_findings(text: str) -> list[str]:
                 found.append(f"line {number}: FROM names an image directly; name it by an ARG from pins.json")
             if match.group("name"):
                 stages.add(match.group("name"))
+            if ref == "scratch":
+                bare = number
+    if bare is not None:
+        found.append(f"line {bare}: a scratch stage is bare; give it content (a `-no` stage takes `WORKDIR /opt`)")
     return found
 
 

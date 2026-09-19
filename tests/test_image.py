@@ -35,6 +35,11 @@ BINARIES = {
     "java": ["java", "javac"], "maven": ["mvn"], "gradle": ["gradle"], "kotlin": ["kotlinc"],
     "node": ["node"], "python": ["python3", "pytest"], "sqlite": ["sqlite3"], "shell": ["bash"],
 }
+#: What the base brings to EVERY image, declared or not — named so an absence
+#: assertion never pretends otherwise (W374).
+BASE_TOOLS = {"shell"}
+#: One image per runtime in the vocabulary: the runtime and what it runs on.
+SINGLES = sorted({tuple(sorted({name, *PINS["runtimes"][name].get("requires", [])})) for name in EVERYTHING})
 
 
 def run(command: list[str], **kwargs) -> subprocess.CompletedProcess:
@@ -79,12 +84,17 @@ class TheRunnerImage(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         WORK.mkdir(parents=True, exist_ok=True)
-        for names in (EVERYTHING, ["shell"]):
+        # ⭐ EVERYTHING first, on purpose: it is the build that left BuildKit's
+        # cache holding every runtime on the python base, which a `python`-only
+        # build then came out carrying (W374). The singles are built after it.
+        cls.singles = {}
+        for names in [EVERYTHING] + [list(names) for names in SINGLES]:
             result = build(names)
             if result.returncode != 0:
                 raise RuntimeError(f"the build of {names} failed:\n{result.stdout[-4000:]}{result.stderr[-4000:]}")
             cls.built.append(tag(names))
-        cls.full, cls.shell_only = cls.built
+            cls.singles[tuple(names)] = tag(names)
+        cls.full, cls.shell_only = cls.built[0], cls.singles[("shell",)]
 
     @classmethod
     def tearDownClass(cls):
@@ -111,6 +121,22 @@ class TheRunnerImage(unittest.TestCase):
                     if name != "shell":
                         self.assertNotEqual(in_image(self.shell_only, f"command -v {binary}").returncode, 0)
         self.assertEqual(in_image(self.shell_only, "ls /opt").stdout.strip(), "")
+
+    def test_every_runtime_alone_builds_an_image_holding_exactly_its_declared_set(self):
+        """W374: for EVERY runtime in the vocabulary, present iff declared or the base's own."""
+        for names, image in self.singles.items():
+            with self.subTest(declared=names):
+                label = run(["docker", "image", "inspect", "--format",
+                             '{{index .Config.Labels "org.studyforge.runner.runtimes"}}', image])
+                self.assertEqual(label.stdout.split(), list(names))
+                held = in_image(image, "ls -A /opt | xargs").stdout.strip()
+                self.assertEqual(held, " ".join(plan.opt_dirs(names)), f"{image} holds /opt: {held}")
+                for runtime, binaries in BINARIES.items():
+                    expect = runtime in names or runtime in BASE_TOOLS
+                    for binary in binaries:
+                        with self.subTest(runtime=runtime, binary=binary, expect=expect):
+                            found = in_image(image, f"command -v {binary}").returncode == 0
+                            self.assertEqual(found, expect)
 
     def test_a_login_shell_finds_the_same_tools(self):
         result = in_image(self.full, "command -v mvn && command -v node && command -v kotlinc", login=True)
@@ -183,7 +209,10 @@ class TheRunnerImage(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertRegex(result.stdout + result.stderr, re.compile("checksum", re.I))
         self.assertEqual(build(["node"], planted_copy("right-checksum")).returncode, 0)
-        run(["docker", "image", "rm", tag(["node"], WORK / "right-checksum")])
+        # The copy's inputs are the tree's, so its tag is the `node` image the class built
+        # and still reads; only an image the class did not build is removed here.
+        if tag(["node"], WORK / "right-checksum") not in self.built:
+            run(["docker", "image", "rm", tag(["node"], WORK / "right-checksum")])
 
     def test_a_version_the_runtime_does_not_report_stops_the_build(self):
         root = planted_copy("wrong-version")
@@ -191,6 +220,18 @@ class TheRunnerImage(unittest.TestCase):
         result = build(["node"], root)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("does not report", result.stdout + result.stderr)
+
+    def test_an_undeclared_runtime_under_opt_stops_the_build(self):
+        """W374: the build refuses an image whose /opt is not the declared set's."""
+        root = planted_copy("undeclared-opt")
+        dockerfile = root / "docker" / "minimal" / "Dockerfile"
+        stage = "FROM scratch AS node-no\nWORKDIR /opt\n"
+        text = dockerfile.read_text(encoding="utf-8")
+        self.assertIn(stage, text)
+        dockerfile.write_text(text.replace(stage, stage + "COPY pins.json /opt/node/planted\n"), encoding="utf-8")
+        result = build(["python"], root)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("/opt holds 'node'; the declared set places ''", result.stdout + result.stderr)
 
     def test_a_warm_file_that_differs_from_its_pin_stops_the_build(self):
         plants = {
