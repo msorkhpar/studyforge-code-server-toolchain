@@ -33,11 +33,22 @@ be complete, and a consumer still adapts every part that must differ.
 
 ## ⛔ What the rendered file may never say
 
-§8.3 is the non-negotiable: no Docker socket reaches a serving process. The four
+§8.3 is the non-negotiable: no Docker socket reaches a serving process. The five
 rulings E12 gives a consumer are the rest — loopback-only publishing, the sources
-and nothing else, the repository owner's uid:gid, and a bind source that exists
-before the container starts. `findings` asserts each of them against the data, so
-a contract edited into breaking one stops here instead of in somebody's browser.
+and nothing else, the repository owner's uid:gid, a bind source that exists
+before the container starts, and a writable root filesystem. `findings` asserts
+each of them against the data, so a contract edited into breaking one stops here
+instead of in somebody's browser.
+
+## ⭐ What a tag promises, and what `provides` does
+
+The image has no registry, so a consumer builds it from a pinned checkout and
+pins the tag the build prints. That tag is a **function of the build's inputs**,
+which is the whole of its promise: the same inputs compute it, different inputs
+compute another one, and no later build can take a pinned name away. The
+**consuming half** — this file, its document and its renderer — is versioned by
+`provides` instead, and moves without moving any tag. `findings` refuses a tag
+block that claims otherwise, and refuses a `provides` bump with no upgrade note.
 """
 
 from __future__ import annotations
@@ -55,6 +66,8 @@ CONSUMING = "consuming.json"
 REFERENCE = "docs/compose.reference.yaml"
 #: The addresses that keep an unencrypted IDE on this machine.
 LOOPBACK = ("127.0.0.1", "::1", "localhost")
+#: A named part of the tag scheme, which `image.tag.parts` must describe.
+_PLACEHOLDER = re.compile(r"\{([a-z_]+)\}")
 #: The header every rendered file carries: it is a template, never an include.
 HEADER = (
     "# ⛔ A TEMPLATE TO COPY AND ADAPT — never an `include:` and never a file to",
@@ -88,6 +101,9 @@ def findings(contract: dict) -> list[str]:
     found += _mount_findings(editor)
     found += _ordering_findings(editor)
     found += _environment_findings(editor)
+    found += _filesystem_findings(editor)
+    found += _tag_findings(editor)
+    found += _release_findings(contract)
     return found
 
 
@@ -171,6 +187,71 @@ def _environment_findings(editor: dict) -> list[str]:
     return found
 
 
+def _filesystem_findings(editor: dict) -> list[str]:
+    """The image writes outside its mounts, so a read-only root breaks it at start."""
+    filesystem = editor.get("filesystem", {})
+    found = []
+    if filesystem.get("read_only_root") is not False or filesystem.get("compose_value") is not False:
+        found.append("filesystem does not declare the root writable: the entrypoint repairs the passwd "
+                     "record at every start and the primed caches are written under /opt, so a read-only "
+                     "root filesystem breaks the editor at start and every graded run in it")
+    protected = filesystem.get("never_read_only") or []
+    if not protected:
+        found.append("filesystem names no path that must never be mounted read-only")
+    for mount in editor.get("mounts", []):
+        path = mount.get("container_path", "")
+        under = [kept for kept in protected if path == kept or path.startswith(f"{kept}/")]
+        if mount.get("read_only") and under:
+            found.append(f"the mount at {path} is read-only and {under[0]} must stay writable")
+    return found
+
+
+def _tag_findings(editor: dict) -> list[str]:
+    """A tag is computed from its inputs; nothing about it is kept by hand."""
+    tag = editor.get("image", {}).get("tag", {})
+    if not tag:
+        return ["image.tag is absent: a consumer pins a tag with nothing saying what one promises"]
+    found = []
+    named = set(_PLACEHOLDER.findall(tag.get("scheme", "")))
+    described = set(tag.get("parts", {}))
+    found += [f"the tag scheme names {{{part}}} and image.tag.parts does not say what it is"
+              for part in sorted(named - described)]
+    found += [f"image.tag.parts describes {part!r}, which the tag scheme does not name"
+              for part in sorted(described - named)]
+    if tag.get("is_a_function_of_its_inputs") is not True or tag.get("mutated_in_place") is not False:
+        found.append("image.tag does not say the tag is computed from its inputs and never mutated in "
+                     "place: a consumer pins a content, not a name a later build may take away")
+    if "--print-tag" not in (tag.get("computed_by") or []):
+        found.append("image.tag.computed_by is not a command that prints a tag, so nothing computes one")
+    for key in ("build_inputs", "moved_by", "not_moved_by", "promises", "does_not_promise"):
+        if not tag.get(key):
+            found.append(f"image.tag.{key} is empty: what a tag promises is stated, not inferred")
+    if not (tag.get("upgrade") or {}).get("re_verify"):
+        found.append("image.tag.upgrade names nothing to re-verify, which is not an upgrade note")
+    return found
+
+
+def _release_findings(contract: dict) -> list[str]:
+    """Every `provides` a consumer can be holding has an upgrade note, newest first."""
+    releases = contract.get("releases") or []
+    if not releases:
+        return ["releases is empty: a consumer that re-pins has nothing saying what to re-verify"]
+    found = []
+    numbers = [entry.get("provides") for entry in releases]
+    if numbers[0] != contract.get("provides"):
+        found.append(f"the newest release is provides {numbers[0]!r} and the contract provides "
+                     f"{contract.get('provides')!r}: a bump with no upgrade note is one nobody can act on")
+    if numbers != list(range(len(numbers), 0, -1)):
+        found.append("releases is not one entry per provides, from 1 and newest first")
+    for entry in releases:
+        where = entry.get("provides")
+        if not entry.get("summary") or not entry.get("re_verify"):
+            found.append(f"the release for provides {where!r} says nothing to re-verify")
+        if entry.get("moves_every_tag") not in (True, False):
+            found.append(f"the release for provides {where!r} does not say whether it moved every tag")
+    return found
+
+
 # ------------------------------------------------------------- the rendering
 def render(contract: dict, *, project: str = "studyforge-editor", service: str = "editor") -> str:
     """The compose file this contract describes, or `Refused` naming the ruling it breaks."""
@@ -192,11 +273,14 @@ def _service(editor: dict) -> list[str]:
         *_comment("The image a consumer PINS. It has no registry: build it from this component's "
                   "checkout and pin the tag the build prints:", at),
         f"{at}#   {' '.join(editor['image']['tag_from'])}",
+        *_comment(editor["image"]["tag"]["how_to_pin"], at),
         _scalar("image", editor["image"]["compose_value"], at),
         *_comment(editor["runs_as"]["why"], at),
         _scalar(editor["runs_as"]["compose_key"], editor["runs_as"]["compose_value"], at),
         *_comment(editor["why_restart_no"], at),
         _scalar("restart", editor["restart"], at),
+        *_comment(editor["filesystem"]["why"], at),
+        _scalar(editor["filesystem"]["compose_key"], editor["filesystem"]["compose_value"], at),
         f"{at}environment:",
     ]
     for entry in editor["environment"]:
@@ -240,7 +324,9 @@ def _healthcheck(health: dict, at: str) -> list[str]:
 
 
 def _scalar(key: str, value, at: str = "") -> str:
-    if isinstance(value, bool) or isinstance(value, int):
+    if isinstance(value, bool):  # YAML's spelling, not Python's
+        return f"{at}{key}: {str(value).lower()}"
+    if isinstance(value, int):
         return f"{at}{key}: {value}"
     return f'{at}{key}: "{_escaped(str(value))}"'
 

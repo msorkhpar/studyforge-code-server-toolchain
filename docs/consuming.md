@@ -53,11 +53,83 @@ in the label `editor.runtimes.read_back_from`.
 
 **The image has no registry** (`editor.image.registry` is `null`): this
 component has no remote and is never pushed, so a consumer builds the image from
-its checkout and pins the tag the build prints. ⚠️ What a tag *promises* — what
-may change inside one and what forces a new one — is not in this file yet; it is
-named in `not_yet_declared` and belongs to the versioning task.
+its checkout and pins the tag the build prints. What that tag promises is the
+next section.
 
-## The four rulings a consumer inherits
+## Versioning and pinning — what a tag promises
+
+⭐ **A tag is a function of the build's inputs, and that is the whole of its
+promise.** `editor.image.tag.scheme` is its shape and
+`editor.image.tag.parts` says what each part is:
+
+| part | what it is |
+|---|---|
+| repository | `editor.image.repository` — one editor image, named once |
+| set | `editor.image.tag.parts.set` |
+| arch | `editor.image.tag.parts.arch` |
+| inputs | `editor.image.tag.parts.inputs`, over `editor.image.tag.build_inputs` |
+
+`editor.image.tag.example` is one: `code-server-toolchain/editor:java-maven-amd64-0123456789ab`.
+
+⛔ **Never parse a tag.** The set is joined with hyphens, so it cannot be split
+back out unambiguously — `editor.image.tag.computed_not_parsed`. Ask the build
+for the tag, and read the set back off the image you pinned, from the label
+`editor.runtimes.read_back_from`.
+
+### What forces a new tag, and what does not
+
+`editor.image.tag.moved_by` is the list. In one line: **the declared set, the
+architecture, and any byte under `editor.image.tag.build_inputs`** — which is
+every pin file, the Dockerfiles, the entrypoint, the prime warmers and the
+lockdown extension, and the prime directory's own digest when one is supplied.
+⭐ **So a toolchain version bump computes a NEW tag; it cannot mutate the one you
+pinned.** `editor.image.tag.mutated_in_place` is `false` and
+`editor.image.tag.why_it_cannot_be` says why: a changed input computes a
+different name, so no later build can take away a name a consumer is holding.
+
+`editor.image.tag.not_moved_by` is the other half, and it is the one that
+surprises people: **this contract, its document, its renderer and the tests move
+without moving any tag.** They are versioned by `provides`, which a tag does not
+encode. ⛔ **Read both**: the tag for the image, `provides` for what you may read
+out of this file.
+
+`editor.image.tag.promises` and `editor.image.tag.does_not_promise` are exact.
+⚠️ **The one a consumer most often assumes is in the second list:** two hosts
+that build the same tag ran the same pinned inputs, **not** the same bytes. A
+Docker build is not bit-reproducible and this component does not claim it is.
+
+### Two consumers, two tags, at once
+
+⭐ **Nothing serialises them.** Two projects that declare different sets compute
+different tags, build them and run them side by side; the compose file's
+`name:`, its volumes and `editor.ports[0].host` are all per-project, so the two
+containers share nothing. Two projects on two *checkouts* of this component do
+the same, because the checkout is an input.
+
+```sh
+# consumer A, in its own repository, pinned at this component's commit
+export EDITOR_IMAGE="$(python3 docker/editor/build.py --runtimes java,maven --print-tag)"
+# consumer B, which also wants Gradle — a different set, so a different tag
+export EDITOR_IMAGE="$(python3 docker/editor/build.py --runtimes gradle,java --print-tag)"
+```
+
+### Upgrading
+
+`editor.image.tag.upgrade.how`: re-run `editor.image.tag.computed_by` in the new
+checkout and compare it with the tag you hold. When it differs, rebuild, re-pin,
+and work `editor.image.tag.upgrade.re_verify` — the set off the label, `provides`
+in this file, a health check that answers, and a file the container writes into
+your sources that belongs to you.
+
+⭐ **Per release there is a short note saying what to re-verify**, in this file's
+top-level `releases` array, newest first
+(`editor.image.tag.upgrade.notes_per_release`). Each entry carries its
+`provides`, a summary, and **whether it moved every tag** — because a change to
+the image and a change to this contract are different events and a consumer acts
+on them differently. `consuming/consuming.py` refuses a `provides` bump that
+arrives with no entry.
+
+## The five rulings a consumer inherits
 
 Each of these was paid for once. The failure is written beside it so nobody
 re-derives it, and `consuming/consuming.py`'s `findings()` refuses a contract
@@ -126,6 +198,25 @@ project creates one of these directories, gate the editor on it with
 `depends_on: <that service>: condition: service_healthy`, so the editor starts
 only after the directory exists. Where you create it yourself, create it before
 `docker compose up`.
+
+### 5. The root filesystem stays writable
+
+`editor.filesystem.read_only_root` is `false`, `editor.filesystem.compose_key`
+is what carries it into your file, and `editor.filesystem.never_read_only` names
+the paths a mount must never make read-only.
+
+⛔ **The failure: the image writes outside its mounts, and a read-only root stops
+it twice over.** The entrypoint's `fixuid` repairs the passwd record at every
+start, which writes under `/etc`; and the warmed practice caches live under
+`/opt`, where Gradle and Maven write on every build — so a container with a
+read-only root filesystem either never starts or fails every graded run in it.
+`editor.filesystem.why` is the line, and `findings()` reports a contract that
+declares the root read-only and a mount that makes one of those paths read-only.
+
+⚠️ **This is not an argument for mounting anything else.** Ruling 2 still holds:
+writable does not mean shared. `editor.filesystem.what_is_discarded_with_the_container`
+says what happens to those writes — everything outside `editor.mounts` goes with
+the container.
 
 ## The restart policy
 

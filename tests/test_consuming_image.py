@@ -12,8 +12,15 @@ So this module copies the CHECKED-IN reference fragment verbatim into an empty
 directory, supplies only what the fragment itself asks for by name, and brings
 it up. Nothing in the fragment is edited.
 
-Every image, container and volume it creates is removed afterwards — the editor
-image too, unless `TC_KEEP_IMAGES=1`. The planted half of the bind-source ruling
+⭐ **The versioning half (`TC-06`).** One clause builds a SECOND image from a
+second declared set and brings it up beside the first, in its own compose
+project and on its own port: two consumers holding two tags, both healthy at
+once, each container wearing its own set's label. Another runs the image with a
+read-only root filesystem and measures that it never starts, which is the
+failure ruling 5 is made of.
+
+Every image, container and volume it creates is removed afterwards — both editor
+images too, unless `TC_KEEP_IMAGES=1`. The planted half of the bind-source ruling
 leaves a root-owned directory behind on purpose; it is removed from inside a
 container, since the host user cannot.
 """
@@ -48,6 +55,10 @@ REFERENCE = ROOT / consuming.REFERENCE
 #: The cheapest declared set that still carries a build tool; the contract is
 #: about the run shape, which no runtime changes.
 RUNTIMES = "java,maven"
+#: A SECOND consumer's declared set, for the two-tags-at-once acceptance. It is
+#: a subset of the first, so its runner stages and its extensions are already
+#: built and only the layers the set changes are paid for.
+OTHER_RUNTIMES = "java"
 PASSWORD = "a-password-for-this-test"
 SOURCES = Path(EDITOR["mounts"][0]["host_path"])
 PORT = EDITOR["ports"][0]["host"]
@@ -125,9 +136,10 @@ class TheComposeContract(unittest.TestCase):
         return project, directory
 
     @classmethod
-    def compose(cls, project: str, directory: Path, *arguments: str) -> subprocess.CompletedProcess:
+    def compose(cls, project: str, directory: Path, *arguments: str,
+                image: str | None = None) -> subprocess.CompletedProcess:
         """`docker compose` with only what the fragment asks for by name, in its own project."""
-        environment = dict(os.environ, EDITOR_IMAGE=cls.image, CODE_SERVER_PASSWORD=PASSWORD,
+        environment = dict(os.environ, EDITOR_IMAGE=image or cls.image, CODE_SERVER_PASSWORD=PASSWORD,
                            HOST_UID=str(os.getuid()), HOST_GID=str(os.getgid()))
         return run(["docker", "compose", "--project-name", project, "-f", str(directory / "compose.yaml"),
                     *arguments], cwd=directory, env=environment)
@@ -255,6 +267,48 @@ class TheComposeContract(unittest.TestCase):
         self.assertTrue(binds)
         for mount in binds:
             self.assertIs(mount["must_exist_before_start"], True, mount["container_path"])
+
+    # ------------------- ruling 5: the root filesystem stays writable (W390/3)
+    def test_a_read_only_root_filesystem_never_starts_and_the_declared_one_does(self):
+        """The entrypoint repairs the passwd record at every start; /etc is written."""
+        self.assertIs(EDITOR["filesystem"]["read_only_root"], False)
+        refused = self.editor_as(f"{os.getuid()}:{os.getgid()}", "--read-only")
+        self.assertFalse(self.wait_healthy(refused, seconds=20), "a read-only root started anyway")
+        logged = run(["docker", "logs", refused])
+        self.assertIn("Read-only file system", logged.stdout + logged.stderr)
+        self.assertEqual(self.inspect(self.container)["HostConfig"]["ReadonlyRootfs"], False)
+
+    def test_the_fragment_covers_none_of_the_paths_that_must_stay_writable(self):
+        protected = EDITOR["filesystem"]["never_read_only"]
+        self.assertTrue(protected)
+        for mount in self.inspect(self.container)["Mounts"]:
+            for path in protected:
+                with self.subTest(mount=mount["Destination"], path=path):
+                    self.assertFalse(mount["Destination"] == path
+                                     or mount["Destination"].startswith(f"{path}/"), mount)
+
+    # ----------------- TC-06: two consumers pin two tags and run them at once
+    def test_two_consumers_pin_two_tags_and_run_them_side_by_side(self):
+        """Acceptance: two consumers can pin different tags simultaneously."""
+        built = run([sys.executable, str(BUILD), "--runtimes", OTHER_RUNTIMES])
+        self.assertEqual(built.returncode, 0, built.stdout[-3000:] + built.stderr[-3000:])
+        other = built.stdout.strip().splitlines()[-1]
+        self.assertNotEqual(other, self.image, "two declared sets computed one tag")
+        project, directory = self.consumer("other-tag", sources=True, port=free_port())
+        if os.environ.get("TC_KEEP_IMAGES") != "1":
+            self.addCleanup(run, ["docker", "image", "rm", "-f", other])
+        self.addCleanup(self.compose, project, directory, "down", "-v", "--remove-orphans")
+
+        brought = self.compose(project, directory, "up", "-d", "--wait", image=other)
+        self.assertEqual(brought.returncode, 0, brought.stdout[-2000:] + brought.stderr[-2000:])
+        second = self.compose(project, directory, "ps", "-q", "editor").stdout.strip()
+        label = EDITOR["image"]["labels"]["runtimes"]
+        for container, declared in ((self.container, RUNTIMES), (second, OTHER_RUNTIMES)):
+            with self.subTest(container=declared):
+                found = self.inspect(container)
+                self.assertEqual(found["State"]["Health"]["Status"], "healthy")
+                self.assertEqual(found["Config"]["Labels"][label].split(), declared.split(","))
+        self.assertNotEqual(self.inspect(self.container)["Image"], self.inspect(second)["Image"])
 
     # ---------------------------------------------- §8.3: never a Docker socket
     def test_no_docker_socket_and_no_docker_cli_is_inside_the_container(self):

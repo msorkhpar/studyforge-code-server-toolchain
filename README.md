@@ -174,7 +174,12 @@ python3 docker/editor/build.py            # gradle,java,kotlin,node,python
 
 The tag is `code-server-toolchain/editor:<the set>-<arch>-<12 hex>`, and its
 inputs are `editor-pins.json`, `docker/editor/`, `prime/`, `lockdown/`, the
-runner's own inputs and, when one is given, the prime directory.
+runner's own inputs and, when one is given, the prime directory. ⭐ **What a
+tag promises, what forces a new one, and what to re-verify after re-pinning are
+[`docs/consuming.md`](docs/consuming.md)'s section *Versioning and pinning*** —
+in `consuming.json` under `editor.image.tag` for a generator.
+⛔ **A tag is computed, never mutated and never hand-written:** a version bump
+computes a new one instead of taking away the one somebody pinned.
 
 ### The workbench lockdown — `studyforge.practice-focus`
 
@@ -278,9 +283,12 @@ python3 consuming/consuming.py --check    # the rulings, on the real contract
 python3 consuming/consuming.py --write docs/compose.reference.yaml
 ```
 
-The four rulings a consumer inherits, each with the failure that bought it, are
+The five rulings a consumer inherits, each with the failure that bought it, are
 loopback-only publishing, the sources and nothing else, the repository owner's
-uid:gid, and a bind source that exists on the host before the container starts.
+uid:gid, a bind source that exists on the host before the container starts, and
+a writable root filesystem — the entrypoint repairs the passwd record at every
+start and the primed caches are written under `/opt`, so a read-only root breaks
+the editor at start and every graded run in it.
 ⛔ **No Docker socket is mounted into the editor, or anywhere else** (spec
 §8.3): it is an IDE with a shell on a port.
 
@@ -310,7 +318,10 @@ brings it up: the editor answers its health path on loopback and nowhere else,
 a file it writes into the mounted sources belongs to the host user, a uid that
 is not the image's own starts (and the same image without its entrypoint's
 `fixuid` does not), a missing bind source is created root-owned and cannot be
-written, and no Docker socket is anywhere near it.
+written, a read-only root filesystem never starts at all, and no Docker socket
+is anywhere near it. It also builds a SECOND image from a second declared set
+and brings it up beside the first, on its own port: two consumers holding two
+tags, both healthy at once.
 
 The image tests build a full image and a `shell`-only image, run every smoke
 project under `docker/minimal/smoke/` with `--network none` (each passes, and a

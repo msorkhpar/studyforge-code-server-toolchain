@@ -1,10 +1,31 @@
 {
   "consuming_api": 1,
-  "provides": 1,
+  "provides": 2,
   "component": "code-server-toolchain",
   "not_yet_declared": [
-    "the runner image (docker/minimal/): how a corpus runs it is documented in README.md under 'Running it for a corpus' and nothing renders it from this file yet",
-    "the tagging scheme a consumer pins (TC-06): this file names the repository and how to ask the build for a tag, and says nothing about what a tag promises"
+    "the runner image (docker/minimal/): how a corpus runs it is documented in README.md under 'Running it for a corpus' and nothing renders it from this file yet"
+  ],
+  "releases": [
+    {
+      "provides": 2,
+      "summary": "the tagging scheme: what a tag encodes, what moves it, what it promises, and what a consumer re-verifies after re-pinning; and the writable-filesystem ruling",
+      "moves_every_tag": false,
+      "re_verify": [
+        "nothing in a running container: this release adds keys to this contract and changes no build input, so the tag you already pinned is still the tag this checkout computes",
+        "your compose file: regenerate it from this contract, because the rendered service now states read_only explicitly",
+        "that you never mount any path in editor.filesystem.never_read_only read-only, and never set the compose read_only key true"
+      ]
+    },
+    {
+      "provides": 1,
+      "summary": "the compose and mount contract, the four rulings it refuses to render against, and the entrypoint that repairs the container's uid before it seeds anything",
+      "moves_every_tag": true,
+      "re_verify": [
+        "recompute the tag with editor.image.tag.computed_by and re-pin it: the entrypoint changed, so every editor tag moved",
+        "bring the editor up as the uid that owns your sources, and confirm a file it writes there belongs to you and not to root",
+        "that your compose file publishes the editor on editor.ports[0].host_bind and on no other address"
+      ]
+    }
   ],
   "editor": {
     "what_it_is": "code-server with the runtimes a corpus declares, served to a browser on loopback",
@@ -19,6 +40,53 @@
       "labels": {
         "runtimes": "org.studyforge.editor.runtimes",
         "runner": "org.studyforge.editor.runner"
+      },
+      "tag": {
+        "scheme": "{repository}:{set}-{arch}-{inputs}",
+        "example": "code-server-toolchain/editor:java-maven-amd64-0123456789ab",
+        "parts": {
+          "repository": "always editor.image.repository; this component publishes one editor image and names it once",
+          "set": "the declared runtimes, sorted and joined with a hyphen, or the word none when the set is empty",
+          "arch": "the architecture the image was built for, as this component's pins name it",
+          "inputs": "the leading twelve characters of a hash over every build input's relative path and bytes"
+        },
+        "computed_by": ["python3", "docker/editor/build.py", "--runtimes", "<the declared set>", "--print-tag"],
+        "computed_not_parsed": "a set joined with hyphens cannot be split back out of the tag unambiguously, and nothing should try: ask the build for the tag, and read the set back from editor.runtimes.read_back_from on the image you pinned",
+        "is_a_function_of_its_inputs": true,
+        "build_inputs": ["editor-pins.json", "docker/editor", "prime", "lockdown", "pins.json", "docker/minimal"],
+        "moved_by": [
+          "a runtime added to or removed from the declared set",
+          "a version bump in pins.json or editor-pins.json: every pinned toolchain, extension and package is a build input",
+          "an edit to any file under editor.image.tag.build_inputs, including the Dockerfile and the entrypoint",
+          "a different architecture",
+          "a prime directory supplied to the build, or a change to the one supplied: its digest is folded in, so an image warmed for one corpus never carries another's tag"
+        ],
+        "not_moved_by": [
+          "this contract file, docs/, tests/, README.md and consuming/: the consuming half is versioned by provides, not by the tag",
+          "anything on the host that built it: the build cache, the daemon, the day"
+        ],
+        "promises": [
+          "the declared set: the same tag always names the same runtimes, and editor.image.labels.runtimes on the image states them",
+          "the pinned versions: every toolchain, extension and package version that went into it, because each pin file is a build input",
+          "the run shape of this contract's consuming_api: what a compose file must supply does not change under a tag"
+        ],
+        "does_not_promise": [
+          "byte-identical images: two hosts that build the same tag ran the same pinned inputs, not the same bytes; a Docker build is not bit-reproducible and this component does not claim it is",
+          "the keys of this contract: those move with provides, which a tag does not encode. Read both"
+        ],
+        "mutated_in_place": false,
+        "why_it_cannot_be": "the tag is computed from the inputs, so a changed input computes a different tag rather than overwriting one: there is no name a consumer pinned that a later build can take away. Two consumers on two sets, or on two checkouts, hold two tags and can run them at once",
+        "how_to_pin": "Record the tag that command prints beside the commit this component is pinned at, and set editor.image.env_var to it. Never pin a tag you did not compute and never edit one by hand: a tag is a function of the build's inputs, so a hand-made one names nothing.",
+        "upgrade": {
+          "how": "re-run editor.image.tag.computed_by in the new checkout and compare it with the tag you hold; when it differs, rebuild, re-pin, and work the re_verify list below and the one in the releases entry you moved to",
+          "re_verify": [
+            "the set: read editor.image.labels.runtimes off the image you pinned, and confirm it is the set you declared",
+            "the contract: read provides in this file; keys may have been added since you generated your compose file, and a release entry says what they are",
+            "the run: bring your own compose file up and confirm editor.healthcheck.path answers editor.healthcheck.expect_status",
+            "the ownership: confirm a file the container writes into your sources belongs to you and not to root"
+          ],
+          "notes_per_release": "the top-level releases array, newest first: one entry per change a consumer must act on, each saying whether it moved every tag"
+        }
       }
     },
     "runtimes": {
@@ -46,6 +114,14 @@
       "kind": "tmpfs",
       "opened_by": "the last argument of command",
       "why": "the workspace ROOT is not in the image, so docker would create it root-owned and no build could write .gradle/, .kotlin/ or build/ into it; a named volume there is root-owned for the same reason. A tmpfs is world-writable, holds only those scratch directories, and is discarded with the container. The source binds sit inside it"
+    },
+    "filesystem": {
+      "read_only_root": false,
+      "compose_key": "read_only",
+      "compose_value": false,
+      "never_read_only": ["/opt", "/etc"],
+      "why": "the image must be able to write outside the mounts. The entrypoint's fixuid repairs the passwd record before it seeds anything, so /etc is written at every start; and the warmed practice caches live under /opt, where Gradle and Maven write on every build. A read-only root filesystem, or a mount that makes one of these read-only, breaks the editor at start or breaks every graded run in it",
+      "what_is_discarded_with_the_container": "everything outside editor.mounts: the workspace root is a tmpfs and the rest of the writes are the container's own layer"
     },
     "mounts": [
       {

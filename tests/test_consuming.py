@@ -18,6 +18,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -31,6 +32,7 @@ import editor_plan  # noqa: E402
 runner_plan = editor_plan.runner_plan
 CONTRACT = consuming.load(ROOT)
 EDITOR = CONTRACT["editor"]
+TAG = EDITOR["image"]["tag"]
 PINS = runner_plan.load(ROOT)
 DOCKERFILE = (ROOT / editor_plan.DOCKERFILE).read_text(encoding="utf-8")
 ENTRYPOINT = (ROOT / "docker" / "editor" / "entrypoint.sh").read_text(encoding="utf-8")
@@ -95,6 +97,28 @@ class TheContract(unittest.TestCase):
             "no health check": (planted(healthcheck={}), "ordering is enforced by a health check"),
             "required and defaulted": (planted(**{"environment.0.default": "letmein"}),
                                        "is required and defaulted"),
+            "a read-only root": (planted(**{"filesystem.read_only_root": True}),
+                                 "does not declare the root writable"),
+            "a read-only root in the compose file": (planted(**{"filesystem.compose_value": True}),
+                                                     "does not declare the root writable"),
+            "nothing named writable": (planted(**{"filesystem.never_read_only": []}),
+                                       "names no path that must never be mounted read-only"),
+            "the primed caches mounted read-only": (planted(**{"mounts.0.container_path": "/opt/prime",
+                                                               "mounts.0.read_only": True}),
+                                                    "/opt must stay writable"),
+            "a tag that may be mutated": (planted(**{"image.tag.mutated_in_place": True}),
+                                          "never mutated in place"),
+            "a scheme that drops a part": (planted(**{"image.tag.scheme": "{repository}:{set}-{arch}"}),
+                                           "which the tag scheme does not name"),
+            "a part nothing describes": (planted(**{"image.tag.parts": {}}),
+                                         "does not say what it is"),
+            "a command that prints no tag": (planted(**{"image.tag.computed_by": ["python3", "x.py"]}),
+                                             "is not a command that prints a tag"),
+            "nothing said to move a tag": (planted(**{"image.tag.moved_by": []}),
+                                           "image.tag.moved_by is empty"),
+            "an upgrade note that says nothing": (planted(**{"image.tag.upgrade.re_verify": []}),
+                                                  "nothing to re-verify"),
+            "no tag block at all": (planted(**{"image.tag": {}}), "a consumer pins a tag with nothing"),
         }
         for name, (contract, needle) in plants.items():
             with self.subTest(plant=name):
@@ -115,6 +139,133 @@ class TheContract(unittest.TestCase):
 
         self.assertEqual(cli("--check").returncode, 0)
         self.assertEqual(cli("--render").stdout, REFERENCE)
+
+
+class TheTaggingScheme(unittest.TestCase):
+    """What a tag encodes, what moves it, and what a consumer pins (TC-06).
+
+    ⭐ The scheme is asserted against the tag the BUILD computes, not against a
+    second copy of it: `editor.image.tag.scheme` is formatted with the parts and
+    compared with `tag_for`'s own output, so a change to either side is RED.
+    """
+
+    ARCH = "amd64"
+    PLATFORM = "linux/amd64"
+
+    @classmethod
+    def computed(cls, names, root: Path = ROOT) -> str:
+        """The tag the build prints for that set, planned end to end and never Docker."""
+        pins = runner_plan.load(root)
+        runner = runner_plan.plan(pins, editor_plan.selection(pins, names), cls.PLATFORM,
+                                  runner_plan.inputs_digest(root))
+        return editor_plan.plan(pins, editor_plan.load(root), runner,
+                                editor_plan.inputs_digest(root)).tag
+
+    def tree(self) -> Path:
+        """A copy of the build inputs alone, cleaned up with the test."""
+        tree = Path(tempfile.mkdtemp(prefix="tc06-inputs-"))
+        self.addCleanup(shutil.rmtree, tree, ignore_errors=True)
+        for entry in TAG["build_inputs"]:
+            source, target = ROOT / entry, tree / entry
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if source.is_file():
+                shutil.copy2(source, target)
+            else:
+                shutil.copytree(source, target, ignore=shutil.ignore_patterns("__pycache__"))
+        return tree
+
+    def test_the_scheme_is_the_tag_the_build_actually_computes(self):
+        digest = editor_plan.inputs_digest(ROOT)
+        formatted = TAG["scheme"].format(repository=EDITOR["image"]["repository"],
+                                         set="java-maven", arch=self.ARCH, inputs=digest[:12])
+        self.assertEqual(formatted, self.computed(("java", "maven")))
+
+    def test_an_empty_set_is_the_word_the_parts_promise(self):
+        self.assertIn("the word none", TAG["parts"]["set"])
+        self.assertIn(f":none-{self.ARCH}-", self.computed(()))
+
+    def test_the_declared_build_inputs_are_the_ones_the_digest_reads(self):
+        reads = set(editor_plan.OWN_INPUTS) | set(runner_plan.INPUT_ROOTS)
+        self.assertEqual(sorted(TAG["build_inputs"]), sorted(reads))
+        for entry in TAG["build_inputs"]:
+            self.assertTrue((ROOT / entry).exists(), entry)
+
+    def test_a_pinned_version_bump_computes_a_new_tag_rather_than_mutating_one(self):
+        """Acceptance: a toolchain version bump produces a NEW tag."""
+        tree = self.tree()
+        before = editor_plan.inputs_digest(tree)
+        self.assertEqual(before, editor_plan.inputs_digest(ROOT), "the copy is not the same inputs")
+        pins = json.loads((tree / "pins.json").read_text(encoding="utf-8"))
+        pins["runtimes"]["java"]["version"] = pins["runtimes"]["java"]["version"] + ".1"
+        (tree / "pins.json").write_text(json.dumps(pins), encoding="utf-8")
+        after = editor_plan.inputs_digest(tree)
+        self.assertNotEqual(before, after, "a version bump left the digest where it was")
+        self.assertNotEqual(self.computed(("java", "maven"), tree), self.computed(("java", "maven")),
+                            "the bumped checkout computes the tag the unbumped one does")
+        self.assertEqual(before, editor_plan.inputs_digest(ROOT),
+                         "the tag already pinned no longer names what it named")
+
+    def test_the_consuming_half_is_no_build_input_so_moving_it_moves_no_tag(self):
+        """`releases[0].moves_every_tag` is false, and this is why."""
+        inputs = [ROOT / entry for entry in TAG["build_inputs"]]
+        moved = ("consuming.json", "consuming/consuming.py", "docs/consuming.md",
+                 "docs/compose.reference.yaml", "README.md", "tests/test_consuming.py",
+                 "tests/test_consuming_image.py")
+        for path in moved:
+            where = ROOT / path
+            with self.subTest(path=path):
+                self.assertTrue(where.is_file(), path)
+                self.assertFalse(any(where == entry or entry in where.parents for entry in inputs))
+        self.assertIs(CONTRACT["releases"][0]["moves_every_tag"], False)
+
+    def test_two_declared_sets_are_two_tags_two_consumers_can_hold_at_once(self):
+        """Acceptance: two consumers pin different tags simultaneously — the host half."""
+        sets = (("java",), ("java", "maven"), ("gradle", "java"))
+        tags = {names: self.computed(names) for names in sets}
+        self.assertEqual(len(set(tags.values())), len(sets), tags)
+        self.assertEqual(tags[("java", "maven")], self.computed(("maven", "java")),
+                         "the set is sorted, so the order it was declared in is not part of the tag")
+        with self.assertRaises(runner_plan.Refused):
+            self.computed(("java", "maven", "java"))  # and a duplicate is refused, not quietly folded
+
+
+class TheReleaseNotes(unittest.TestCase):
+    """One entry per `provides`, newest first, each saying what to re-verify."""
+
+    @staticmethod
+    def with_releases(**changes) -> dict:
+        contract = copy.deepcopy(CONTRACT)
+        contract.update(changes)
+        return contract
+
+    def test_the_newest_entry_is_this_contracts_own(self):
+        self.assertEqual(CONTRACT["releases"][0]["provides"], CONTRACT["provides"])
+        for entry in CONTRACT["releases"]:
+            with self.subTest(provides=entry["provides"]):
+                self.assertTrue(entry["summary"] and entry["re_verify"])
+                self.assertIn(entry["moves_every_tag"], (True, False))
+
+    def test_a_provides_bump_with_no_note_and_a_gap_are_both_found(self):
+        plants = {
+            "a bump with no note": (self.with_releases(provides=CONTRACT["provides"] + 1),
+                                    "a bump with no upgrade note"),
+            "no notes at all": (self.with_releases(releases=[]), "releases is empty"),
+            "a gap": (self.with_releases(provides=3, releases=[{"provides": 3, "summary": "s",
+                                                                "re_verify": ["r"], "moves_every_tag": True},
+                                                               CONTRACT["releases"][0]]),
+                      "not one entry per provides"),
+            "an entry that says nothing": (self.with_releases(
+                releases=[dict(CONTRACT["releases"][0], re_verify=[]), CONTRACT["releases"][1]]),
+                "says nothing to re-verify"),
+            "an entry that will not say": (self.with_releases(
+                releases=[{k: v for k, v in CONTRACT["releases"][0].items() if k != "moves_every_tag"},
+                          CONTRACT["releases"][1]]),
+                "does not say whether it moved every tag"),
+        }
+        for name, (contract, needle) in plants.items():
+            with self.subTest(plant=name):
+                found = consuming.findings(contract)
+                self.assertTrue(any(needle in finding for finding in found), found)
 
 
 class TheRenderedFragment(unittest.TestCase):
@@ -236,15 +387,32 @@ class TheDocument(unittest.TestCase):
             with self.subTest(section=section):
                 self.assertIn(f"editor.{section}", DOCUMENT)
 
-    def test_it_states_each_of_the_four_rulings_with_its_failure(self):
+    def test_it_states_each_of_the_five_rulings_with_its_failure(self):
         rulings = ("Loopback-only port binding", "Mount only the sources",
                    "Run as the repository owner's uid:gid",
-                   "A bind source must exist on the host before the container starts")
+                   "A bind source must exist on the host before the container starts",
+                   "The root filesystem stays writable")
         for ruling in rulings:
             with self.subTest(ruling=ruling):
                 section = DOCUMENT.split(ruling, 1)
                 self.assertEqual(len(section), 2, "the ruling is not stated")
                 self.assertIn("The failure", section[1].split("\n### ", 1)[0])
+
+    def test_it_states_the_tagging_scheme_with_a_worked_example(self):
+        self.assertIn("## Versioning and pinning", DOCUMENT)
+        self.assertIn(TAG["example"], DOCUMENT)
+        worked = DOCUMENT.split("### Two consumers, two tags, at once", 1)
+        self.assertEqual(len(worked), 2, "the worked example is not there")
+        example = worked[1].split("\n### ", 1)[0]
+        self.assertEqual(example.count("export EDITOR_IMAGE="), 2, "one consumer is not two")
+        self.assertIn("--print-tag", example)
+
+    def test_it_says_which_half_provides_versions_and_which_half_the_tag_does(self):
+        self.assertIn("versioned by `provides`", DOCUMENT)
+        self.assertIn("`releases`", DOCUMENT)
+        for key in ("moved_by", "not_moved_by", "promises", "does_not_promise", "mutated_in_place"):
+            with self.subTest(key=key):
+                self.assertIn(f"editor.image.tag.{key}", DOCUMENT)
 
     def test_it_marks_the_fragment_a_template_and_forbids_reading_the_dockerfile(self):
         self.assertIn("TEMPLATE, not an include", DOCUMENT)
@@ -254,6 +422,12 @@ class TheDocument(unittest.TestCase):
         self.assertIn("docs/consuming.md", README)
         self.assertNotIn("which is a later task's", README)
         self.assertEqual(runner_plan.run_line_findings(README), [])
+
+    def test_the_readme_sends_a_consumer_here_for_what_a_tag_promises_too(self):
+        self.assertIn("Versioning and pinning", README)
+        self.assertNotIn("belongs to the versioning task", DOCUMENT)
+        self.assertNotIn("says nothing about what a tag promises",
+                         "".join(CONTRACT["not_yet_declared"]))
 
 
 if __name__ == "__main__":

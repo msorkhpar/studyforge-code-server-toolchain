@@ -15,6 +15,10 @@ services:
     # The image a consumer PINS. It has no registry: build it from this
     # component's checkout and pin the tag the build prints:
     #   python3 docker/editor/build.py --runtimes <the declared set> --print-tag
+    # Record the tag that command prints beside the commit this component is
+    # pinned at, and set editor.image.env_var to it. Never pin a tag you did not
+    # compute and never edit one by hand: a tag is a function of the build's
+    # inputs, so a hand-made one names nothing.
     image: "${EDITOR_IMAGE:?build it with docker/editor/build.py and pin the tag it prints}"
     # a container that runs as root writes root-owned files into the mounted
     # sources, and the reader can then never edit their own repository
@@ -22,6 +26,13 @@ services:
     # an IDE with a shell comes up when the reader asks for it, not on every
     # boot
     restart: "no"
+    # the image must be able to write outside the mounts. The entrypoint's
+    # fixuid repairs the passwd record before it seeds anything, so /etc is
+    # written at every start; and the warmed practice caches live under /opt,
+    # where Gradle and Maven write on every build. A read-only root filesystem,
+    # or a mount that makes one of these read-only, breaks the editor at start
+    # or breaks every graded run in it
+    read_only: false
     environment:
       # there is deliberately no default: the IDE must never start
       # unauthenticated
