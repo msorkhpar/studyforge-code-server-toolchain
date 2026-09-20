@@ -116,6 +116,14 @@ docker run -d --name studyforge-runner-<source> --init --network none \
 - `--init`: the idle process is reaped, so a stop is prompt.
 - No `-p`: nothing listens.
 
+⛔ **That line is not the authority; it is a rendering of one.** The runner's
+run shape is declared as data in [`consuming.json`](consuming.json) under
+`runner`, beside the editor's block, and the line above is what
+`python3 consuming/consuming.py --run-line` prints from it. A test asserts the
+two are the same, so a consumer copying this prose and a generator reading that
+block get the same container. [`docs/consuming.md`](docs/consuming.md) is the
+prose half of both blocks.
+
 A command then runs inside it from outside:
 
 ```sh

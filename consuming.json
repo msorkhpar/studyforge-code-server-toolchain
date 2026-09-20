@@ -1,9 +1,8 @@
 {
   "consuming_api": 1,
-  "provides": 1,
+  "provides": 2,
   "component": "code-server-toolchain",
   "not_yet_declared": [
-    "the runner image (docker/minimal/): how a corpus runs it is documented in README.md under 'Running it for a corpus' and nothing renders it from this file yet",
     "the tagging scheme a consumer pins (TC-06): this file names the repository and how to ask the build for a tag, and says nothing about what a tag promises"
   ],
   "editor": {
@@ -167,5 +166,110 @@
     },
     "restart": "no",
     "why_restart_no": "an IDE with a shell comes up when the reader asks for it, not on every boot"
+  },
+  "runner": {
+    "what_it_is": "the runtimes a corpus declares and nothing else, idling offline, for a reader's graded run",
+    "started_by": "the reader, never the framework: the runner only probes that it is up and execs into it, and runs on the host when it is not",
+    "image": {
+      "repository": "code-server-toolchain/runner",
+      "registry": null,
+      "why_no_registry": "this component has no remote and is never pushed; a consumer builds the image from this checkout and pins the tag the build prints",
+      "built_by": ["python3", "docker/minimal/build.py", "--runtimes", "<the declared set>"],
+      "tag_from": ["python3", "docker/minimal/build.py", "--runtimes", "<the declared set>", "--print-tag"],
+      "env_var": "STUDYFORGE_RUNNER_IMAGE",
+      "run_value": "<tag>",
+      "labels": {
+        "runtimes": "org.studyforge.runner.runtimes"
+      }
+    },
+    "runtimes": {
+      "declared_by": "--runtimes",
+      "default_set": [],
+      "why_no_default": "a corpus declares what its practices need, and the image carries exactly the union that set places under /opt; an empty set builds the base and nothing else",
+      "selectable": ["gradle", "java", "kotlin", "maven", "node", "python", "shell", "sqlite"],
+      "read_back_from": "the image label org.studyforge.runner.runtimes"
+    },
+    "runs_as": {
+      "uid": null,
+      "gid": null,
+      "per_project": true,
+      "required": true,
+      "run_flag": "--user",
+      "run_value": "$(id -u):$(id -g)",
+      "quote_in_shell": true,
+      "set_to": "the uid:gid that owns the mounted source root on the host",
+      "why": "this image declares no USER, so without the flag a graded run writes root-owned build output into the reader's own sources and the reader can then never edit their own repository",
+      "how": "there is no fixuid here and none is needed: nothing under HOME is seeded, HOME is a world-writable path outside the mount, and the only directory a run writes is the bind"
+    },
+    "workspace": {
+      "container_path": "/work",
+      "kind": "bind",
+      "opened_by": "the image's WORKDIR, and the -w of every docker exec",
+      "why": "the corpus's source root and nothing else. A graded run reads and writes the reader's own sources in place, so unlike the editor there is no tmpfs to discard and no copy to keep in step"
+    },
+    "mounts": [
+      {
+        "container_path": "/work",
+        "kind": "bind",
+        "host_path": "<source root>",
+        "per_project": true,
+        "read_only": false,
+        "required": true,
+        "must_exist_before_start": true,
+        "purpose": "the corpus's source root, and nothing else: not the repository, not $HOME"
+      }
+    ],
+    "network": {
+      "mode": "none",
+      "run_flag": "--network",
+      "why": "a graded run resolves what it needs from the caches the prime warmed into the image. Nothing it does reaches off the machine, so a practice cannot pass because the reader happened to be online"
+    },
+    "ports": [],
+    "why_no_ports": "nothing in this image listens: it idles on its CMD and every command arrives through docker exec. A published port would be a surface with no service behind it",
+    "init": {
+      "enabled": true,
+      "run_flag": "--init",
+      "why": "the container idles on `sleep infinity` as pid 1, which reaps nothing; without an init a stopped run leaves zombies behind and the stop itself is slow"
+    },
+    "environment": [
+      {
+        "name": "HOME",
+        "default": "/tmp",
+        "required": false,
+        "set_by": "the image",
+        "note": "chosen once in docker/minimal/plan.py's RUNNER_HOME and read by the Dockerfile, so no tool writes its caches into the mounted sources"
+      }
+    ],
+    "command": [],
+    "command_notes": {
+      "keeps_cmd": "the run line passes no command: the image's own CMD idles it, and replacing that is how a consumer gets a container that exits before the first exec arrives",
+      "exec_template": ["docker", "exec", "-w", "/work/<directory>", "<name>", "<command...>"],
+      "path": "PATH is set for docker exec and again in /etc/profile.d, because a login shell rebuilds PATH and would otherwise lose /opt"
+    },
+    "run": {
+      "detached": true,
+      "detach_flag": "-d",
+      "name_flag": "--name",
+      "name_template": "studyforge-runner-<source>",
+      "documented_in": "README.md, under 'Running it for a corpus'",
+      "rendered_by": ["python3", "consuming/consuming.py", "--run-line"],
+      "why_rendered": "the README's line and this block are the same sentence twice. A test asserts the documented one is what this block renders, so prose that drifts is a red test rather than a stale instruction a consumer follows"
+    },
+    "prime": {
+      "root": "/opt/prime",
+      "seeds": {
+        "gradle": "gradle-home",
+        "maven": "maven-repo"
+      },
+      "declared_by": "--prime <directory>",
+      "folded_into_tag": true,
+      "why": "a reader's graded run happens in this image under --network none, so a corpus's practice dependencies are already inside it; a corpus that declares none is unaffected"
+    },
+    "healthcheck": null,
+    "why_no_healthcheck": "nothing here answers a request. A consumer that must wait asks docker whether the container is running and execs a command that exits zero, which is what the framework's runner does before it uses one",
+    "docker_socket": false,
+    "why_no_docker_socket": "spec 8.3: the Docker socket is never mounted into a serving process, not behind a flag and not only locally. A socket here would hand a graded run - which is a reader's unreviewed code - the host's daemon",
+    "restart": "no",
+    "why_restart_no": "the reader starts this container for a session of study and removes it after; a restart policy would bring a stranger's sources back up on every boot"
   }
 }

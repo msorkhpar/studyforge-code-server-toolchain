@@ -9,11 +9,17 @@ and renders a complete, working compose file from it and nothing else.
     python3 consuming/consuming.py --check           # the rulings, on the real contract
     python3 consuming/consuming.py --render          # the reference fragment, to stdout
     python3 consuming/consuming.py --write docs/compose.reference.yaml
+    python3 consuming/consuming.py --run-line        # the runner's documented run line
 
 `load(root)` reads the file; `findings(contract)` returns what is wrong with it,
 empty when nothing is; `render(contract, ...)` returns the compose file's text
 and **refuses** a contract with a finding rather than emitting one that breaks a
 ruling.
+
+⭐ The contract has one block per image this component builds. The EDITOR is
+rendered into a compose file here; the RUNNER has no compose file — a reader
+starts one container by hand — and its checks and its two documented command
+lines live in `consuming/runner.py`, which `findings` calls per block.
 
 **Depends on.** The standard library only. ⛔ It reads no Dockerfile, starts no
 container and mounts no socket.
@@ -49,6 +55,8 @@ import sys
 import textwrap
 from pathlib import Path
 
+import runner
+
 COMPONENT = Path(__file__).resolve().parents[1]
 CONSUMING = "consuming.json"
 #: Where the rendered reference lives, relative to the component root.
@@ -79,7 +87,13 @@ def load(root: Path = COMPONENT) -> dict:
 
 # --------------------------------------------------------------- the rulings
 def findings(contract: dict) -> list[str]:
-    """What is wrong with the contract, empty when nothing is."""
+    """What is wrong with the contract, empty when nothing is.
+
+    ⭐ One call per BLOCK, not per ruling (`TC-05/3`): the editor publishes a
+    port, mounts named volumes and answers a health check, and the runner does
+    none of the three, so `runner.findings` states the rulings they share in
+    the runner's own terms rather than threading exceptions through these.
+    """
     editor = contract.get("editor", {})
     found: list[str] = []
     found += _socket_findings(editor)
@@ -88,6 +102,7 @@ def findings(contract: dict) -> list[str]:
     found += _mount_findings(editor)
     found += _ordering_findings(editor)
     found += _environment_findings(editor)
+    found += [f"{runner.BLOCK}: {finding}" for finding in runner.findings(contract.get(runner.BLOCK, {}))]
     return found
 
 
@@ -256,6 +271,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--check", action="store_true", help="report what breaks a ruling and stop")
     parser.add_argument("--render", action="store_true", help="write the reference fragment to stdout")
     parser.add_argument("--write", default=None, help="write it to this path instead")
+    parser.add_argument("--run-line", action="store_true",
+                        help="write the runner's documented `docker run` line to stdout")
     args = parser.parse_args(argv)
 
     root = Path(args.root).resolve()
@@ -265,6 +282,9 @@ def main(argv: list[str]) -> int:
         print(f"finding: {finding}", file=sys.stderr)
     if broken:
         return 2
+    if args.run_line:
+        print(runner.run_line(contract[runner.BLOCK]))
+        return 0
     if args.check and not (args.render or args.write):
         print(f"{CONSUMING}: no findings")
         return 0

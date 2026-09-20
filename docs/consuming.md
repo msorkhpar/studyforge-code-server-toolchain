@@ -1,7 +1,11 @@
-# Consuming the editor image — the compose and mount contract
+# Consuming this component's images — the compose and mount contract
 
 This is what a project must provide to serve the editor image
-(`editor.what_it_is`), and the rulings it must not break. ⛔ **It is the
+(`editor.what_it_is`) and to run the runner image (`runner.what_it_is`),
+and the rulings it must not break. ⭐ **The editor has a compose file and
+the runner does not** — a reader starts one runner container by hand — so
+everything up to [The runner image](#the-runner-image) is the editor's, and
+that last section is the runner's whole half. ⛔ **It is the
 consumer-side half of the seam: the image is shared, the compose file and its
 mounts are not.**
 
@@ -182,3 +186,81 @@ docker compose up -d --wait
 The editor is then at `http://127.0.0.1:8443/` — that literal host, and no
 other. `docker compose down -v` removes the containers and the volumes with
 them.
+
+## The runner image
+
+A reader's **graded run** happens in the runner image, not in the editor: the
+editor is where they read and type, the runner is where their code is compiled
+and their tests are run, offline. ⛔ **The framework never starts one**
+(`runner.started_by`) — it probes that the reader's container is up, execs into
+it, and runs on the host when it is not.
+
+⚠️ **There is no compose file here and that is deliberate.** One container, one
+bind, no port and no second service is a `docker run` line, and a compose
+project would add a file for a consumer to keep in step for nothing. So the
+runner's half of this contract is the `runner` block and the two command lines
+rendered from it:
+
+```sh
+python3 consuming/consuming.py --run-line   # exactly the line below
+```
+
+```sh
+docker run -d --name studyforge-runner-<source> --init --network none \
+  --user "$(id -u):$(id -g)" -v "<source root>:/work" <tag>
+```
+
+⭐ **That line is GENERATED from the block and a test asserts the one in
+[`../README.md`](../README.md) is what it renders** (`runner.run.why_rendered`),
+so the prose a consumer copies and the data a generator reads cannot drift
+apart. A command then runs inside it from outside, from
+`runner.command_notes.exec_template`.
+
+### What you supply
+
+- **The image**, built from this checkout and pinned by the tag the build
+  prints (`runner.image.tag_from`, `runner.image.repository`, and
+  `runner.image.registry`, which is `null` for the same reason the editor's is).
+  The framework's own tests name it in `runner.image.env_var`. The set a corpus
+  declares comes from `runner.runtimes.selectable`; there is no default set and
+  `runner.runtimes.why_no_default` says why.
+- **The source root**, at `runner.workspace.container_path`. It is the one bind
+  (`runner.mounts`), it must exist before the container starts, and
+  `runner.workspace.why` is why it is a bind here and a tmpfs in the editor.
+- **The uid:gid that owns it**, as `runner.runs_as.run_value`. ⛔ This image
+  declares no `USER` (`runner.runs_as.why`), so a run without the flag is root
+  and every file a graded run writes into the reader's sources is root's.
+  ⚠️ Write it in **double** quotes: `runner.runs_as.quote_in_shell` is true
+  because a shell must still substitute it.
+- **No environment of your own.** `runner.environment` is what the IMAGE sets
+  and a consumer does not: `HOME` is outside the mount, so no tool writes its
+  caches into the reader's sources, and a primed image sets each tool's cache
+  variable to the seed the warmer wrote.
+- **Nothing else.** `runner.command` is empty on purpose
+  (`runner.command_notes.keeps_cmd`): the image's own `CMD` idles it, and a
+  command on the run line would replace that and exit before the first exec
+  arrived.
+
+### The rulings this block carries
+
+- ⛔ **Offline.** `runner.network.mode` is `none`
+  (`runner.network.why`): a practice must not pass because the reader happened
+  to be online. What a corpus's practices need is warmed into the image instead
+  — `runner.prime` names where the seeds land and that the prime's digest is
+  folded into the tag.
+- ⛔ **Nothing listens.** `runner.ports` is empty and `runner.why_no_ports` is
+  why; `runner.healthcheck` is `null` and `runner.why_no_healthcheck` says what
+  a consumer does instead of waiting on one.
+- ⛔ **The owner's uid:gid**, above — the editor's ruling 3, in an image with no
+  `fixuid` and none needed (`runner.runs_as.how`).
+- ⛔ **A bind source that exists first**, above — the editor's ruling 4, and
+  docker creates a missing one root-owned here exactly as it does there.
+- ⛔ **No Docker socket.** `runner.docker_socket` is `false` and
+  `runner.why_no_docker_socket` is the reason, which is sharper here than for
+  the editor: a graded run is a reader's unreviewed code.
+- ⭐ **Reaped and detached.** `runner.init` and `runner.run`: the container
+  idles on `sleep infinity` as pid 1, so without an init a stop is slow and
+  leaves zombies.
+
+⛔ **`runner.restart` is `"no"`** (`runner.why_restart_no`): a restart policy
+would bring a stranger's sources back up on every boot.
