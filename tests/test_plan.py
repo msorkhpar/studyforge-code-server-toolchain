@@ -11,7 +11,6 @@ import copy
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -19,8 +18,10 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(ROOT / "docker" / "minimal"))
 
+import build_inputs  # noqa: E402
 import plan  # noqa: E402
 import verify_repo  # noqa: E402
 
@@ -172,9 +173,7 @@ class TheTag(unittest.TestCase):
 
     def test_the_inputs_digest_moves_when_an_input_changes(self):
         with tempfile.TemporaryDirectory() as scratch:
-            copy_root = Path(scratch)
-            shutil.copy(ROOT / plan.PINS, copy_root / plan.PINS)
-            shutil.copytree(ROOT / "docker", copy_root / "docker")
+            copy_root = build_inputs.copy_inputs(scratch, inputs=plan.INPUT_ROOTS)
             before = plan.inputs_digest(copy_root)
             self.assertEqual(before, plan.inputs_digest(ROOT))
             (copy_root / "docker" / "minimal" / "Dockerfile").write_text(DOCKERFILE + "\n# planted\n")

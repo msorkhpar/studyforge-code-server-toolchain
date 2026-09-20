@@ -23,8 +23,10 @@ import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(ROOT / "docker" / "minimal"))
 
+import build_inputs  # noqa: E402
 import plan  # noqa: E402
 
 BUILD = ROOT / "docker" / "minimal" / "build.py"
@@ -65,13 +67,7 @@ def in_image(image: str, script: str, login: bool = False) -> subprocess.Complet
 
 def planted_copy(name: str) -> Path:
     """A copy of the build's inputs, to plant a defect in without touching the tree."""
-    target = WORK / name
-    shutil.rmtree(target, ignore_errors=True)
-    target.mkdir(parents=True)
-    shutil.copy(ROOT / "pins.json", target / "pins.json")
-    shutil.copy(ROOT / ".dockerignore", target / ".dockerignore")
-    shutil.copytree(ROOT / "docker", target / "docker", ignore=shutil.ignore_patterns("__pycache__"))
-    return target
+    return build_inputs.copy_inputs(WORK / name, inputs=plan.INPUT_ROOTS)
 
 
 def rewrite_pins(root: Path, mutate) -> None:

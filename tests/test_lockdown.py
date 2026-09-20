@@ -24,9 +24,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 EDITOR = ROOT / "docker" / "editor"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(EDITOR))
 sys.path.insert(0, str(ROOT / "lockdown"))
 
+import build_inputs  # noqa: E402
 import editor_plan  # noqa: E402
 import lockdown  # noqa: E402
 
@@ -113,12 +115,7 @@ def planted_manifest(**changes) -> dict:
 
 def planted_root(tmp: str) -> Path:
     """A copy of the build's inputs, never touching the tree."""
-    root = Path(tmp)
-    for name in ("pins.json", "editor-pins.json"):
-        shutil.copy(ROOT / name, root / name)
-    for folder in ("docker", "prime", editor_plan.LOCKDOWN):
-        shutil.copytree(ROOT / folder, root / folder, ignore=shutil.ignore_patterns("__pycache__"))
-    return root
+    return build_inputs.copy_inputs(tmp)
 
 
 class TheManifest(unittest.TestCase):
