@@ -231,8 +231,30 @@ is not. So a reader's first `gradle build --offline` and `mvn -o test` of a
 project built from the same files need no network. The prime's digest is part
 of the tag.
 
-⛔ **This section documents no way to run the editor.** How it is served (a
-loopback port, mounts, the user) is the compose contract, which is a later task's.
+### The compose and mount contract — how a consumer SERVES the editor
+
+The image is shared; the compose file and its mounts are not. What a consuming
+project must provide, and the rulings it must not break, are in
+[`docs/consuming.md`](docs/consuming.md) for a person and in
+[`consuming.json`](consuming.json) for a generator — ⛔ **a consumer reads those
+and never this repository's `Dockerfile`.**
+
+[`docs/compose.reference.yaml`](docs/compose.reference.yaml) is a complete,
+working compose file, ⛔ **a template to copy and adapt, never an `include:`**:
+the mount list is exactly the part that must differ per project. It is
+**generated** from `consuming.json` and nothing else, so the contract and the
+template cannot drift.
+
+```sh
+python3 consuming/consuming.py --check    # the rulings, on the real contract
+python3 consuming/consuming.py --write docs/compose.reference.yaml
+```
+
+The four rulings a consumer inherits, each with the failure that bought it, are
+loopback-only publishing, the sources and nothing else, the repository owner's
+uid:gid, and a bind source that exists on the host before the container starts.
+⛔ **No Docker socket is mounted into the editor, or anywhere else** (spec
+§8.3): it is an IDE with a shell on a port.
 
 ## Tests
 
@@ -242,11 +264,24 @@ TC_DOCKER=1 python3 -m unittest tests.test_image -v        # builds and runs the
 TC_DOCKER=1 python3 -m unittest tests.test_editor_image -v # builds and runs the editor
 TC_DOCKER=1 python3 -m unittest tests.test_editor_selection_image -v # the selected sets
 TC_DOCKER=1 python3 -m unittest tests.test_prime_image -v   # the prime, warm and offline
+TC_DOCKER=1 python3 -m unittest tests.test_consuming_image -v # the compose contract, brought up
 ```
 
 `tests/test_lockdown.py` needs no Docker: it packs the extension with the
 standard library, runs it against a stub `vscode` module with `node`, and
 reads the packed identity against this README and the build's expected list.
+`tests/test_consuming.py` needs none either: it reads every value
+`consuming.json` states about the image back out of the build's own plan, the
+Dockerfile and the lockdown manifest, resolves every key `docs/consuming.md`
+names, and plants a violation of each ruling to see it refused.
+
+`tests/test_consuming_image.py` copies `docs/compose.reference.yaml` VERBATIM
+into an empty directory, supplies only what that file asks for by name, and
+brings it up: the editor answers its health path on loopback and nowhere else,
+a file it writes into the mounted sources belongs to the host user, a uid that
+is not the image's own starts (and the same image without its entrypoint's
+`fixuid` does not), a missing bind source is created root-owned and cannot be
+written, and no Docker socket is anywhere near it.
 
 The image tests build a full image and a `shell`-only image, run every smoke
 project under `docker/minimal/smoke/` with `--network none` (each passes, and a
