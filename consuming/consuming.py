@@ -9,11 +9,17 @@ and renders a complete, working compose file from it and nothing else.
     python3 consuming/consuming.py --check           # the rulings, on the real contract
     python3 consuming/consuming.py --render          # the reference fragment, to stdout
     python3 consuming/consuming.py --write docs/compose.reference.yaml
+    python3 consuming/consuming.py --run-line        # the runner's documented run line
 
 `load(root)` reads the file; `findings(contract)` returns what is wrong with it,
 empty when nothing is; `render(contract, ...)` returns the compose file's text
 and **refuses** a contract with a finding rather than emitting one that breaks a
 ruling.
+
+⭐ The contract has one block per image this component builds. The EDITOR is
+rendered into a compose file here; the RUNNER has no compose file — a reader
+starts one container by hand — and its checks and its two documented command
+lines live in `consuming/runner.py`, which `findings` calls per block.
 
 **Depends on.** The standard library only. ⛔ It reads no Dockerfile, starts no
 container and mounts no socket.
@@ -42,13 +48,17 @@ instead of in somebody's browser.
 
 ## ⭐ What a tag promises, and what `provides` does
 
-The image has no registry, so a consumer builds it from a pinned checkout and
-pins the tag the build prints. That tag is a **function of the build's inputs**,
-which is the whole of its promise: the same inputs compute it, different inputs
-compute another one, and no later build can take a pinned name away. The
-**consuming half** — this file, its document and its renderer — is versioned by
-`provides` instead, and moves without moving any tag. `findings` refuses a tag
-block that claims otherwise, and refuses a `provides` bump with no upgrade note.
+Neither image has a registry, so a consumer builds each from a pinned checkout
+and pins the tag the build prints. That tag is a **function of the build's
+inputs**, which is the whole of its promise: the same inputs compute it,
+different inputs compute another one, and no later build can take a pinned name
+away. The two images read DIFFERENT inputs — the editor folds the runner's
+digest into its own and adds four roots of its own, and the runner knows nothing
+about the editor — which is what keeps an editor-only change from moving a
+runner tag. The **consuming half** — this file, its document and its renderer —
+is versioned by `provides` instead, and moves without moving either tag.
+`findings` refuses a tag block that claims otherwise, on either image, and
+refuses a `provides` bump with no upgrade note.
 """
 
 from __future__ import annotations
@@ -59,6 +69,8 @@ import re
 import sys
 import textwrap
 from pathlib import Path
+
+import runner
 
 COMPONENT = Path(__file__).resolve().parents[1]
 CONSUMING = "consuming.json"
@@ -92,7 +104,19 @@ def load(root: Path = COMPONENT) -> dict:
 
 # --------------------------------------------------------------- the rulings
 def findings(contract: dict) -> list[str]:
-    """What is wrong with the contract, empty when nothing is."""
+    """What is wrong with the contract, empty when nothing is.
+
+    ⭐ One call per BLOCK, not per ruling (`TC-05/3`): the editor publishes a
+    port, mounts named volumes and answers a health check, and the runner does
+    none of the three, so `runner.findings` states the rulings they share in
+    the runner's own terms rather than threading exceptions through these.
+
+    ⭐ `_tag_findings` is the exception that proves it, and it runs on BOTH
+    blocks: nothing about what a tag promises is editor-specific, so the check
+    takes a block rather than being copied per image (`TC-06/2`). What differs
+    between the two — the repository, the build command, and which input roots
+    the digest reads — is data each block states for itself.
+    """
     editor = contract.get("editor", {})
     found: list[str] = []
     found += _socket_findings(editor)
@@ -103,6 +127,9 @@ def findings(contract: dict) -> list[str]:
     found += _environment_findings(editor)
     found += _filesystem_findings(editor)
     found += _tag_findings(editor)
+    block = contract.get(runner.BLOCK, {})
+    found += [f"{runner.BLOCK}: {finding}"
+              for finding in runner.findings(block) + _tag_findings(block)]
     found += _release_findings(contract)
     return found
 
@@ -342,6 +369,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--check", action="store_true", help="report what breaks a ruling and stop")
     parser.add_argument("--render", action="store_true", help="write the reference fragment to stdout")
     parser.add_argument("--write", default=None, help="write it to this path instead")
+    parser.add_argument("--run-line", action="store_true",
+                        help="write the runner's documented `docker run` line to stdout")
     args = parser.parse_args(argv)
 
     root = Path(args.root).resolve()
@@ -351,6 +380,9 @@ def main(argv: list[str]) -> int:
         print(f"finding: {finding}", file=sys.stderr)
     if broken:
         return 2
+    if args.run_line:
+        print(runner.run_line(contract[runner.BLOCK]))
+        return 0
     if args.check and not (args.render or args.write):
         print(f"{CONSUMING}: no findings")
         return 0

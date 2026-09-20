@@ -2,17 +2,18 @@
   "consuming_api": 1,
   "provides": 2,
   "component": "code-server-toolchain",
-  "not_yet_declared": [
-    "the runner image (docker/minimal/): how a corpus runs it is documented in README.md under 'Running it for a corpus' and nothing renders it from this file yet"
-  ],
+  "not_yet_declared": [],
+  "why_nothing_is_undeclared": "this component builds two images and both are declared here: the editor with the compose file a consumer renders, the runner with the run and exec lines a consumer issues, and each with what its tag promises. A hole found later is a finding against this file, and it is named in this list rather than left to a reader to discover",
   "releases": [
     {
       "provides": 2,
-      "summary": "the tagging scheme: what a tag encodes, what moves it, what it promises, and what a consumer re-verifies after re-pinning; and the writable-filesystem ruling",
+      "summary": "both images declared and both tags explained: the runner's run shape as data beside the editor's compose contract, and, for each, what its tag encodes, what moves it, what it promises and what a consumer re-verifies after re-pinning; plus the writable-filesystem ruling the editor inherits",
       "moves_every_tag": false,
+      "measured": "the runner's inputs digest and the editor's are unchanged from the release this follows: both halves of this release add declarations and tests and touch no file under either block's image.tag.build_inputs",
       "re_verify": [
-        "nothing in a running container: this release adds keys to this contract and changes no build input, so the tag you already pinned is still the tag this checkout computes",
-        "your compose file: regenerate it from this contract, because the rendered service now states read_only explicitly",
+        "nothing in a running container: this release adds keys to this contract and changes no build input, so both tags you already pinned are still the tags this checkout computes",
+        "your compose file: regenerate it from this contract, because the rendered editor service now states read_only explicitly",
+        "your run line: the runner's docker run and docker exec lines are rendered from runner.run and runner.command_notes.exec_template now, so take them from there rather than from prose you copied",
         "that you never mount any path in editor.filesystem.never_read_only read-only, and never set the compose read_only key true"
       ]
     },
@@ -20,6 +21,7 @@
       "provides": 1,
       "summary": "the compose and mount contract, the four rulings it refuses to render against, and the entrypoint that repairs the container's uid before it seeds anything",
       "moves_every_tag": true,
+      "measured": "the editor's inputs digest moved at this release, because docker/editor/entrypoint.sh is one of its build inputs; the runner's did not move, because nothing under its own inputs changed",
       "re_verify": [
         "recompute the tag with editor.image.tag.computed_by and re-pin it: the entrypoint changed, so every editor tag moved",
         "bring the editor up as the uid that owns your sources, and confirm a file it writes there belongs to you and not to root",
@@ -85,7 +87,7 @@
             "the run: bring your own compose file up and confirm editor.healthcheck.path answers editor.healthcheck.expect_status",
             "the ownership: confirm a file the container writes into your sources belongs to you and not to root"
           ],
-          "notes_per_release": "the top-level releases array, newest first: one entry per change a consumer must act on, each saying whether it moved every tag"
+          "notes_per_release": "the top-level releases array, newest first: one entry per provides, each saying whether it moved every tag. Two changes that arrive in one release share its entry, because a consumer never held a version with only one of them"
         }
       }
     },
@@ -243,5 +245,160 @@
     },
     "restart": "no",
     "why_restart_no": "an IDE with a shell comes up when the reader asks for it, not on every boot"
+  },
+  "runner": {
+    "what_it_is": "the runtimes a corpus declares and nothing else, idling offline, for a reader's graded run",
+    "started_by": "the reader, never the framework: the runner only probes that it is up and execs into it, and runs on the host when it is not",
+    "image": {
+      "repository": "code-server-toolchain/runner",
+      "registry": null,
+      "why_no_registry": "this component has no remote and is never pushed; a consumer builds the image from this checkout and pins the tag the build prints",
+      "built_by": ["python3", "docker/minimal/build.py", "--runtimes", "<the declared set>"],
+      "tag_from": ["python3", "docker/minimal/build.py", "--runtimes", "<the declared set>", "--print-tag"],
+      "env_var": "STUDYFORGE_RUNNER_IMAGE",
+      "run_value": "<tag>",
+      "labels": {
+        "runtimes": "org.studyforge.runner.runtimes"
+      },
+      "tag": {
+        "scheme": "{repository}:{set}-{arch}-{inputs}",
+        "example": "code-server-toolchain/runner:java-maven-amd64-0123456789ab",
+        "parts": {
+          "repository": "always runner.image.repository; this component publishes one runner image and names it once",
+          "set": "the declared runtimes, sorted and joined with a hyphen, or the word none when the set is empty",
+          "arch": "the architecture the image was built for, as this component's pins name it",
+          "inputs": "the leading twelve characters of a hash over every build input's relative path and bytes"
+        },
+        "computed_by": ["python3", "docker/minimal/build.py", "--runtimes", "<the declared set>", "--print-tag"],
+        "computed_not_parsed": "a set joined with hyphens cannot be split back out of the tag unambiguously, and nothing should try: ask the build for the tag, and read the set back from runner.runtimes.read_back_from on the image you pinned",
+        "is_a_function_of_its_inputs": true,
+        "build_inputs": ["pins.json", "docker/minimal"],
+        "why_fewer_inputs_than_the_editor": "the editor is built ON the runner, so it folds the runner's digest into its own and adds its own four roots. The runner knows nothing about the editor, which is what keeps an editor-only change from moving a runner tag",
+        "moved_by": [
+          "a runtime added to or removed from the declared set",
+          "a version bump in pins.json: every pinned toolchain, package and warm file is a build input",
+          "an edit to any file under runner.image.tag.build_inputs, including the Dockerfile and the build",
+          "a different architecture",
+          "a prime directory supplied to the build, or a change to the one supplied: prime/ and that directory are folded into a PRIMED build's digest only, which is why runner.prime.folded_into_tag is true while prime/ is not in build_inputs"
+        ],
+        "not_moved_by": [
+          "this contract file, docs/, tests/, README.md and consuming/: the consuming half is versioned by provides, not by the tag",
+          "anything under the editor's own inputs: editor-pins.json, docker/editor/ and lockdown/ move no runner tag",
+          "anything on the host that built it: the build cache, the daemon, the day"
+        ],
+        "promises": [
+          "the declared set: the same tag always names the same runtimes, and runner.image.labels.runtimes on the image states them",
+          "the pinned versions: every toolchain and package version that went into it, because pins.json is a build input",
+          "the warmed caches: a tag built with a prime names that prime, so a graded run offline resolves what that corpus declared",
+          "the run shape of this contract's consuming_api: what a run line must supply does not change under a tag"
+        ],
+        "does_not_promise": [
+          "byte-identical images: two hosts that build the same tag ran the same pinned inputs, not the same bytes; a Docker build is not bit-reproducible and this component does not claim it is",
+          "the keys of this contract: those move with provides, which a tag does not encode. Read both"
+        ],
+        "mutated_in_place": false,
+        "why_it_cannot_be": "the tag is computed from the inputs, so a changed input computes a different tag rather than overwriting one: there is no name a consumer pinned that a later build can take away. Two corpora on two declared sets, or on two checkouts, hold two tags and can run them at once",
+        "how_to_pin": "Record the tag that command prints beside the commit this component is pinned at, and set runner.image.env_var to it. Never pin a tag you did not compute and never edit one by hand: a tag is a function of the build's inputs, so a hand-made one names nothing.",
+        "upgrade": {
+          "how": "re-run runner.image.tag.computed_by in the new checkout and compare it with the tag you hold; when it differs, rebuild, re-pin, and work the re_verify list below and the one in the releases entry you moved to",
+          "re_verify": [
+            "the set: read runner.image.labels.runtimes off the image you pinned, and confirm it is the set your corpus declared",
+            "the contract: read provides in this file; keys may have been added since you wrote your run line, and a release entry says what they are",
+            "the run: start one with runner.run and confirm a docker exec of a practice's command exits zero with no network",
+            "the ownership: confirm a file the run writes into your source root belongs to you and not to root"
+          ],
+          "notes_per_release": "the top-level releases array, newest first: one entry per provides, each saying whether it moved every tag"
+        }
+      }
+    },
+    "runtimes": {
+      "declared_by": "--runtimes",
+      "default_set": [],
+      "why_no_default": "a corpus declares what its practices need, and the image carries exactly the union that set places under /opt; an empty set builds the base and nothing else",
+      "selectable": ["gradle", "java", "kotlin", "maven", "node", "python", "shell", "sqlite"],
+      "read_back_from": "the image label org.studyforge.runner.runtimes"
+    },
+    "runs_as": {
+      "uid": null,
+      "gid": null,
+      "per_project": true,
+      "required": true,
+      "run_flag": "--user",
+      "run_value": "$(id -u):$(id -g)",
+      "quote_in_shell": true,
+      "set_to": "the uid:gid that owns the mounted source root on the host",
+      "why": "this image declares no USER, so without the flag a graded run writes root-owned build output into the reader's own sources and the reader can then never edit their own repository",
+      "how": "there is no fixuid here and none is needed: nothing under HOME is seeded, HOME is a world-writable path outside the mount, and the only directory a run writes is the bind"
+    },
+    "workspace": {
+      "container_path": "/work",
+      "kind": "bind",
+      "opened_by": "the image's WORKDIR, and the -w of every docker exec",
+      "why": "the corpus's source root and nothing else. A graded run reads and writes the reader's own sources in place, so unlike the editor there is no tmpfs to discard and no copy to keep in step"
+    },
+    "mounts": [
+      {
+        "container_path": "/work",
+        "kind": "bind",
+        "host_path": "<source root>",
+        "per_project": true,
+        "read_only": false,
+        "required": true,
+        "must_exist_before_start": true,
+        "purpose": "the corpus's source root, and nothing else: not the repository, not $HOME"
+      }
+    ],
+    "network": {
+      "mode": "none",
+      "run_flag": "--network",
+      "why": "a graded run resolves what it needs from the caches the prime warmed into the image. Nothing it does reaches off the machine, so a practice cannot pass because the reader happened to be online"
+    },
+    "ports": [],
+    "why_no_ports": "nothing in this image listens: it idles on its CMD and every command arrives through docker exec. A published port would be a surface with no service behind it",
+    "init": {
+      "enabled": true,
+      "run_flag": "--init",
+      "why": "the container idles on `sleep infinity` as pid 1, which reaps nothing; without an init a stopped run leaves zombies behind and the stop itself is slow"
+    },
+    "environment": [
+      {
+        "name": "HOME",
+        "default": "/tmp",
+        "required": false,
+        "set_by": "the image",
+        "note": "chosen once in docker/minimal/plan.py's RUNNER_HOME and read by the Dockerfile, so no tool writes its caches into the mounted sources"
+      }
+    ],
+    "command": [],
+    "command_notes": {
+      "keeps_cmd": "the run line passes no command: the image's own CMD idles it, and replacing that is how a consumer gets a container that exits before the first exec arrives",
+      "exec_template": ["docker", "exec", "-w", "/work/<directory>", "<name>", "<command...>"],
+      "path": "PATH is set for docker exec and again in /etc/profile.d, because a login shell rebuilds PATH and would otherwise lose /opt"
+    },
+    "run": {
+      "detached": true,
+      "detach_flag": "-d",
+      "name_flag": "--name",
+      "name_template": "studyforge-runner-<source>",
+      "documented_in": "README.md, under 'Running it for a corpus'",
+      "rendered_by": ["python3", "consuming/consuming.py", "--run-line"],
+      "why_rendered": "the README's line and this block are the same sentence twice. A test asserts the documented one is what this block renders, so prose that drifts is a red test rather than a stale instruction a consumer follows"
+    },
+    "prime": {
+      "root": "/opt/prime",
+      "seeds": {
+        "gradle": "gradle-home",
+        "maven": "maven-repo"
+      },
+      "declared_by": "--prime <directory>",
+      "folded_into_tag": true,
+      "why": "a reader's graded run happens in this image under --network none, so a corpus's practice dependencies are already inside it; a corpus that declares none is unaffected"
+    },
+    "healthcheck": null,
+    "why_no_healthcheck": "nothing here answers a request. A consumer that must wait asks docker whether the container is running and execs a command that exits zero, which is what the framework's runner does before it uses one",
+    "docker_socket": false,
+    "why_no_docker_socket": "spec 8.3: the Docker socket is never mounted into a serving process, not behind a flag and not only locally. A socket here would hand a graded run - which is a reader's unreviewed code - the host's daemon",
+    "restart": "no",
+    "why_restart_no": "the reader starts this container for a session of study and removes it after; a restart policy would bring a stranger's sources back up on every boot"
   }
 }

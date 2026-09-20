@@ -33,6 +33,7 @@ runner_plan = editor_plan.runner_plan
 CONTRACT = consuming.load(ROOT)
 EDITOR = CONTRACT["editor"]
 TAG = EDITOR["image"]["tag"]
+RUNNER_TAG = CONTRACT["runner"]["image"]["tag"]
 PINS = runner_plan.load(ROOT)
 DOCKERFILE = (ROOT / editor_plan.DOCKERFILE).read_text(encoding="utf-8")
 ENTRYPOINT = (ROOT / "docker" / "editor" / "entrypoint.sh").read_text(encoding="utf-8")
@@ -218,6 +219,76 @@ class TheTaggingScheme(unittest.TestCase):
                 self.assertFalse(any(where == entry or entry in where.parents for entry in inputs))
         self.assertIs(CONTRACT["releases"][0]["moves_every_tag"], False)
 
+    # ------------------------------------------- the runner block (TC-06/2)
+    def runner_tag(self, names, root: Path = ROOT) -> str:
+        """The tag the RUNNER's own build prints, planned end to end and never Docker."""
+        pins = runner_plan.load(root)
+        return runner_plan.plan(pins, editor_plan.selection(pins, names), self.PLATFORM,
+                                runner_plan.inputs_digest(root)).tag
+
+    def test_the_runners_scheme_is_the_tag_its_own_build_computes(self):
+        digest = runner_plan.inputs_digest(ROOT)
+        formatted = RUNNER_TAG["scheme"].format(repository=CONTRACT["runner"]["image"]["repository"],
+                                                set="java-maven", arch=self.ARCH, inputs=digest[:12])
+        self.assertEqual(formatted, self.runner_tag(("java", "maven")))
+
+    def test_the_runner_declares_the_two_input_roots_its_digest_reads(self):
+        self.assertEqual(sorted(RUNNER_TAG["build_inputs"]), sorted(runner_plan.INPUT_ROOTS))
+        self.assertLess(len(RUNNER_TAG["build_inputs"]), len(TAG["build_inputs"]),
+                        "the editor folds the runner in and adds its own; the runner does not")
+        self.assertNotIn("prime", RUNNER_TAG["build_inputs"],
+                         "prime/ is folded into a PRIMED build's digest only (W390)")
+        self.assertIs(CONTRACT["runner"]["prime"]["folded_into_tag"], True)
+
+    def test_an_editor_only_change_moves_no_runner_tag(self):
+        """The property both blocks' `not_moved_by` claims, measured both ways."""
+        tree = self.tree()
+        editor_before, runner_before = editor_plan.inputs_digest(tree), runner_plan.inputs_digest(tree)
+        self.assertEqual((editor_before, runner_before),
+                         (editor_plan.inputs_digest(ROOT), runner_plan.inputs_digest(ROOT)))
+
+        pins = json.loads((tree / "editor-pins.json").read_text(encoding="utf-8"))
+        pins["base"]["image"] = pins["base"]["image"] + "-moved"
+        (tree / "editor-pins.json").write_text(json.dumps(pins), encoding="utf-8")
+        self.assertNotEqual(editor_plan.inputs_digest(tree), editor_before, "the editor's tag did not move")
+        self.assertEqual(runner_plan.inputs_digest(tree), runner_before,
+                         "an editor-only change moved a runner tag")
+
+        runtimes = json.loads((tree / "pins.json").read_text(encoding="utf-8"))
+        runtimes["runtimes"]["java"]["version"] = runtimes["runtimes"]["java"]["version"] + ".1"
+        (tree / "pins.json").write_text(json.dumps(runtimes), encoding="utf-8")
+        self.assertNotEqual(runner_plan.inputs_digest(tree), runner_before,
+                            "a runtime bump did not move the runner's tag")
+
+    def test_the_runners_consuming_half_is_no_build_input_either(self):
+        inputs = [ROOT / entry for entry in RUNNER_TAG["build_inputs"]]
+        for path in ("consuming.json", "consuming/runner.py", "consuming/consuming.py",
+                     "docs/consuming.md", "tests/test_consuming_runner.py"):
+            where = ROOT / path
+            with self.subTest(path=path):
+                self.assertTrue(where.is_file(), path)
+                self.assertFalse(any(where == entry or entry in where.parents for entry in inputs))
+
+    def test_the_same_plants_are_caught_in_the_runners_block_and_named_as_its_own(self):
+        """`_tag_findings` takes a BLOCK, so the runner inherits every clause."""
+        plants = {
+            "a tag that may be mutated": ({"mutated_in_place": True}, "never mutated in place"),
+            "a scheme that drops a part": ({"scheme": "{repository}:{set}-{arch}"},
+                                           "which the tag scheme does not name"),
+            "a command that prints no tag": ({"computed_by": ["python3", "x.py"]},
+                                             "is not a command that prints a tag"),
+            "nothing said to move a tag": ({"moved_by": []}, "image.tag.moved_by is empty"),
+            "an upgrade note that says nothing": ({"upgrade": {}}, "nothing to re-verify"),
+        }
+        for name, (change, needle) in plants.items():
+            with self.subTest(plant=name):
+                contract = copy.deepcopy(CONTRACT)
+                contract["runner"]["image"]["tag"].update(change)
+                found = [f for f in consuming.findings(contract) if needle in f]
+                self.assertTrue(found, consuming.findings(contract))
+                self.assertTrue(all(f.startswith("runner: ") for f in found),
+                                f"the runner's finding is not named as the runner's: {found}")
+
     def test_two_declared_sets_are_two_tags_two_consumers_can_hold_at_once(self):
         """Acceptance: two consumers pin different tags simultaneously — the host half."""
         sets = (("java",), ("java", "maven"), ("gradle", "java"))
@@ -244,6 +315,31 @@ class TheReleaseNotes(unittest.TestCase):
             with self.subTest(provides=entry["provides"]):
                 self.assertTrue(entry["summary"] and entry["re_verify"])
                 self.assertIn(entry["moves_every_tag"], (True, False))
+                self.assertTrue(entry["measured"], "a tag claim is measured, never assumed")
+
+    def test_this_releases_moves_every_tag_is_false_because_neither_half_is_a_build_input(self):
+        """Two rows converged into `provides` 2; the claim is the property, not convenience."""
+        newest = CONTRACT["releases"][0]
+        self.assertIs(newest["moves_every_tag"], False)
+        roots = set(EDITOR["image"]["tag"]["build_inputs"]) | set(RUNNER_TAG["build_inputs"])
+        inputs = [ROOT / entry for entry in roots]
+        changed = ("consuming.json", "consuming/consuming.py", "consuming/runner.py",
+                   "docs/consuming.md", "docs/compose.reference.yaml", "README.md",
+                   "tests/test_consuming.py", "tests/test_consuming_image.py",
+                   "tests/test_consuming_runner.py")
+        for path in changed:
+            where = ROOT / path
+            with self.subTest(path=path):
+                self.assertTrue(where.is_file(), path)
+                self.assertFalse(any(where == entry or entry in where.parents for entry in inputs))
+
+    def test_one_entry_carries_both_halves_of_this_release(self):
+        """The format is one entry per `provides`, NOT one per change (they converged)."""
+        newest = CONTRACT["releases"][0]
+        self.assertIn("runner", newest["summary"])
+        self.assertIn("tag", newest["summary"])
+        self.assertIn("one entry per provides", TAG["upgrade"]["notes_per_release"])
+        self.assertIn("one entry per provides", RUNNER_TAG["upgrade"]["notes_per_release"])
 
     def test_a_provides_bump_with_no_note_and_a_gap_are_both_found(self):
         plants = {
@@ -406,6 +502,16 @@ class TheDocument(unittest.TestCase):
         example = worked[1].split("\n### ", 1)[0]
         self.assertEqual(example.count("export EDITOR_IMAGE="), 2, "one consumer is not two")
         self.assertIn("--print-tag", example)
+
+    def test_the_versioning_section_speaks_for_both_images(self):
+        section = DOCUMENT.split("## Versioning and pinning", 1)
+        self.assertEqual(len(section), 2)
+        opening = section[1].split("\n### ", 1)[0]
+        self.assertIn("runner.image.tag", opening, "the shared scheme names only one image")
+        runner_section = DOCUMENT.split("### What the runner's tag promises", 1)
+        self.assertEqual(len(runner_section), 2, "the runner's tag is not documented")
+        self.assertIn(RUNNER_TAG["example"], runner_section[1])
+        self.assertIn("moves no runner tag", DOCUMENT)
 
     def test_it_says_which_half_provides_versions_and_which_half_the_tag_does(self):
         self.assertIn("versioned by `provides`", DOCUMENT)

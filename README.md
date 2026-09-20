@@ -70,7 +70,12 @@ The build refuses a name `pins.json` does not pin, and a build tool (`maven`,
 where the inputs are `pins.json` and everything under `docker/minimal/`, plus —
 for a build given a `--prime` — that prime and the warmers in `prime/`, which
 run only in such a build. Anyone with the same inputs recomputes the same tag,
-so a report can name the toolchain that produced a measurement.
+so a report can name the toolchain that produced a measurement. ⭐ **What that
+tag promises, and what forces a new one, are `runner.image.tag` in
+[`consuming.json`](consuming.json)** and
+[`docs/consuming.md`](docs/consuming.md)'s *What the runner's tag promises*.
+⛔ **An editor-only change moves no runner tag:** the editor's inputs are not
+the runner's, and a test measures it both ways.
 
 `python3 docker/minimal/build.py --record-maven` re-derives the Maven warm list
 into `.work/record/` for a person to review and copy into `pins.json`.
@@ -115,6 +120,14 @@ docker run -d --name studyforge-runner-<source> --init --network none \
 - `--user`: files the build writes are owned by the reader, not by root.
 - `--init`: the idle process is reaped, so a stop is prompt.
 - No `-p`: nothing listens.
+
+⛔ **That line is not the authority; it is a rendering of one.** The runner's
+run shape is declared as data in [`consuming.json`](consuming.json) under
+`runner`, beside the editor's block, and the line above is what
+`python3 consuming/consuming.py --run-line` prints from it. A test asserts the
+two are the same, so a consumer copying this prose and a generator reading that
+block get the same container. [`docs/consuming.md`](docs/consuming.md) is the
+prose half of both blocks.
 
 A command then runs inside it from outside:
 
@@ -283,7 +296,10 @@ python3 consuming/consuming.py --check    # the rulings, on the real contract
 python3 consuming/consuming.py --write docs/compose.reference.yaml
 ```
 
-The five rulings a consumer inherits, each with the failure that bought it, are
+[`consuming.json`](consuming.json) carries one block per image this component
+builds — `editor` and `runner` — and `not_yet_declared` is now empty: both run
+shapes and both tag promises are stated. The five rulings a consumer inherits,
+each with the failure that bought it, are
 loopback-only publishing, the sources and nothing else, the repository owner's
 uid:gid, a bind source that exists on the host before the container starts, and
 a writable root filesystem — the entrypoint repairs the passwd record at every
@@ -310,7 +326,12 @@ reads the packed identity against this README and the build's expected list.
 `tests/test_consuming.py` needs none either: it reads every value
 `consuming.json` states about the image back out of the build's own plan, the
 Dockerfile and the lockdown manifest, resolves every key `docs/consuming.md`
-names, and plants a violation of each ruling to see it refused.
+names, and plants a violation of each ruling to see it refused. It also plants a
+version bump in a temporary copy of the build inputs and measures that the tag
+moves, and that an EDITOR-only bump moves the editor's tag and not the runner's.
+`tests/test_consuming_runner.py` is the runner block's own: the rulings it
+carries, and the documented `docker run` and `docker exec` lines read back out
+of the block that renders them.
 
 `tests/test_consuming_image.py` copies `docs/compose.reference.yaml` VERBATIM
 into an empty directory, supplies only what that file asks for by name, and
