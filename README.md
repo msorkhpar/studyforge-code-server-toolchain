@@ -46,8 +46,9 @@ source confirmed it (`single_source`).
 repository, so the image carries the plugins and JUnit that the Maven smoke
 project needs, in `/opt/maven-repo`. Every file in it is listed in `pins.json`
 with its sha256, and the build refuses a repository that holds one file more or
-less, or one file that differs. ⛔ Warming a *corpus's* dependencies is not this
-image's job.
+less, or one file that differs. ⛔ It warms the SMOKE project and nothing else:
+a *corpus's* practice dependencies are `--prime`'s, below, and land in a tree
+of their own, so this one keeps saying exactly what `pins.json` says.
 
 Architectures: `linux/amd64` and `linux/arm64`. Any other is refused by name.
 
@@ -58,6 +59,7 @@ From this directory:
 ```sh
 python3 docker/minimal/build.py --runtimes java,maven
 python3 docker/minimal/build.py --runtimes java,maven --print-tag
+python3 docker/minimal/build.py --runtimes java,maven --prime path/to/prime
 ```
 
 The build refuses a name `pins.json` does not pin, and a build tool (`maven`,
@@ -65,12 +67,38 @@ The build refuses a name `pins.json` does not pin, and a build tool (`maven`,
 
     code-server-toolchain/runner:<the sorted set>-<arch>-<12 hex of the inputs' sha256>
 
-where the inputs are `pins.json` and everything under `docker/minimal/`.
-Anyone with the same two inputs recomputes the same tag, so a report can name
-the toolchain that produced a measurement.
+where the inputs are `pins.json` and everything under `docker/minimal/`, plus —
+for a build given a `--prime` — that prime and the warmers in `prime/`, which
+run only in such a build. Anyone with the same inputs recomputes the same tag,
+so a report can name the toolchain that produced a measurement.
 
 `python3 docker/minimal/build.py --record-maven` re-derives the Maven warm list
 into `.work/record/` for a person to review and copy into `pins.json`.
+
+### A corpus's practice dependencies — `--prime DIR`
+
+⛔ **A reader's graded run happens in this image, under `--network none`**, so
+whatever a corpus's practices depend on must already be inside it: a download
+would not be slow, it would simply fail. `--prime DIR` warms them from that
+corpus's own build files, exactly as the editor image warms a consumer's
+(`TC-03`) — the contract, the version guards and the two warmers are
+[`prime/`](prime/prime.py)'s, shared unchanged between the two images, and
+`DIR` is mounted read-only as the named build context `consumer-prime`.
+
+- ⭐ `DIR/gradle/` and `DIR/maven/`: the shape, the `verification-metadata.xml`
+  Gradle needs and the version guards are the prime contract's, written once.
+- ⭐ **The image is tagged only after the warm is PROVED**: a fresh copy of the
+  prime builds with NO network from a copy of each seed.
+- ⭐ **A graded run passes no cache flag of its own.** The seeds live at
+  `/opt/prime/gradle-home` and `/opt/prime/maven-repo`, and the image points
+  `GRADLE_USER_HOME` and `MAVEN_ARGS` at them, so `docker exec … gradle build
+  --offline` and `docker exec … mvn -o test` resolve offline. They are left
+  writable by any uid, because the run line below runs the container as the
+  reader's own and both tools write into their cache.
+- ⛔ **A corpus that declares none is unaffected**: no `--prime`, no warm, no
+  `/opt/prime`, and the image is what it always was.
+- ⛔ **The prime's digest is part of the tag**, so an image warmed for one
+  corpus never wears another's name.
 
 ## Running it for a corpus
 
@@ -242,6 +270,7 @@ TC_DOCKER=1 python3 -m unittest tests.test_image -v        # builds and runs the
 TC_DOCKER=1 python3 -m unittest tests.test_editor_image -v # builds and runs the editor
 TC_DOCKER=1 python3 -m unittest tests.test_editor_selection_image -v # the selected sets
 TC_DOCKER=1 python3 -m unittest tests.test_prime_image -v   # the prime, warm and offline
+TC_DOCKER=1 python3 -m unittest tests.test_runner_prime_image -v # a graded run, offline
 ```
 
 `tests/test_lockdown.py` needs no Docker: it packs the extension with the

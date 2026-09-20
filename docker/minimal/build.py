@@ -9,28 +9,42 @@ this script is the only way the Dockerfile builds.
 
     python3 docker/minimal/build.py --runtimes java,maven
     python3 docker/minimal/build.py --runtimes java,maven --print-tag
+    python3 docker/minimal/build.py --runtimes java,maven --prime path/to/prime
     python3 docker/minimal/build.py --record-maven     # re-derive the Maven warm pins
 
+`--prime DIR` warms a corpus's declared practice dependencies into the image
+from that corpus's own build files, so a graded run resolves them with no
+network (W390). The contract is `prime/prime.py`'s — TC-03's, shared with the
+editor — and the directory is mounted read-only as the named context
+`consumer-prime`; its digest moves the tag. Without it the context is an empty
+directory and nothing is warmed.
 `--root DIR` builds a different copy of the component (the tests use it to
 plant a bad pin in a temporary copy); `--platform` defaults to this machine's.
 
-**Depends on.** The standard library, `plan.py` beside it, and a Docker CLI
-with BuildKit. ⛔ It never mounts a socket and never runs a container.
+**Depends on.** The standard library, `plan.py` beside it, `prime/prime.py`
+for the prime contract, and a Docker CLI with BuildKit. ⛔ It never mounts a
+socket and never runs a container.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import platform as host
 import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import plan as planning  # noqa: E402
-
 COMPONENT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(COMPONENT / "prime"))
+import plan as planning  # noqa: E402
+import prime as prime_contract  # noqa: E402
+
 _MACHINES = {"x86_64": "linux/amd64", "amd64": "linux/amd64", "aarch64": "linux/arm64", "arm64": "linux/arm64"}
+#: The warmers' directory, relative to the component: a build input when, and
+#: only when, a prime is given.
+WARMERS = "prime"
 
 
 def host_platform() -> str:
@@ -38,9 +52,46 @@ def host_platform() -> str:
     return _MACHINES.get(machine, f"linux/{machine}")
 
 
-def docker_command(root: Path, built: planning.Plan, target: str = "runner", output: str | None = None) -> list[str]:
+def planned(root: Path, platform: str, names, prime: Path | None = None) -> planning.Plan:
+    """The build for the declared set, or `Refused` before Docker is touched.
+
+    ⭐ A prime is READ for its shape and GUARDED against `pins.json` here, so a
+    prime the declared set cannot build, or one naming another version, is
+    refused before `docker build` starts — as it is for the editor (TC-03).
+    """
+    pins = planning.load(root)
+    read = prime_contract.read(prime) if prime is not None else None
+    digest = planning.inputs_digest(root)
+    if read is not None:
+        # ⭐ The warmers RUN in this build, so they are an input to a PRIMED
+        # image and to no other one: folded here, they leave every unprimed tag
+        # exactly where it was, which is what the editor's Ruling 2 requires
+        # (`prime/` is an input of the editor's image too).
+        warmers = planning.inputs_digest(root, (WARMERS,))
+        digest = hashlib.sha256(f"{digest}\0warmers\0{warmers}".encode()).hexdigest()
+    built = planning.plan(pins, names, platform, digest, read)
+    if read is not None:
+        prime_contract.guard(read, pins, built.names)
+    return built
+
+
+def empty_context(root: Path) -> Path:
+    """An empty directory standing in for a consumer's prime.
+
+    ⛔ The Dockerfile's warm step binds the named context `consumer-prime` in
+    EVERY build, so the flag is never optional. With no prime it names this
+    directory, both switches are `no`, and nothing reads it.
+    """
+    path = Path(root) / ".work" / "no-prime"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def docker_command(root: Path, built: planning.Plan, target: str = "runner", output: str | None = None,
+                   prime: Path | None = None) -> list[str]:
     command = ["docker", "build", "--progress=plain", "--platform", built.platform,
-               "-f", str(root / planning.DOCKERFILE), "--target", target]
+               "-f", str(root / planning.DOCKERFILE), "--target", target,
+               "--build-context", f"consumer-prime={prime or empty_context(root)}"]
     command += ["--output", output] if output else ["-t", built.tag]
     for key in sorted(built.build_args):
         command += ["--build-arg", f"{key}={built.build_args[key]}"]
@@ -54,15 +105,17 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--root", default=str(COMPONENT))
     parser.add_argument("--print-tag", action="store_true")
     parser.add_argument("--record-maven", action="store_true")
+    parser.add_argument("--prime", default=None,
+                        help="a corpus's prime directory to warm its practice dependencies from")
     args = parser.parse_args(argv)
 
     root = Path(args.root).resolve()
     names = [name for name in args.runtimes.split(",") if name]
+    prime = Path(args.prime).resolve() if args.prime else None
     if args.record_maven:
-        names = ["java", "maven"]
+        names, prime = ["java", "maven"], None
     try:
-        pins = planning.load(root)
-        built = planning.plan(pins, names, args.platform or host_platform(), planning.inputs_digest(root))
+        built = planned(root, args.platform or host_platform(), names, prime)
     except planning.Refused as refusal:
         print(f"refused: {refusal}", file=sys.stderr)
         return 2
@@ -73,7 +126,7 @@ def main(argv: list[str]) -> int:
         out = root / ".work" / "record"
         command = docker_command(root, built, target="maven-record-out", output=f"type=local,dest={out}")
     else:
-        command = docker_command(root, built)
+        command = docker_command(root, built, prime=prime)
     completed = subprocess.run(command, stdin=subprocess.DEVNULL)
     if completed.returncode == 0:
         print(built.tag if not args.record_maven else "recorded: .work/record/maven-warm.json")

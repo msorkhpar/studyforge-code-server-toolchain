@@ -1,16 +1,19 @@
 """The prime contract (TC-03): read a consumer's prime directory, and guard it against the pins.
 
-**What it does.** The build-time warm cache is the per-consumer part of the
-editor image: it is built from THAT consumer's build files, so a reader's
+**What it does.** The build-time warm cache is the per-consumer part of an
+image: it is built from THAT consumer's build files, so a reader's
 first offline build needs no download. `read(directory)` checks a prime
 directory's shape and reads the versions its build files name, refusing
 (naming why) a shape the warmers cannot use. `guard(prime, pins, declared)`
 refuses a prime whose versions disagree with the image's pins, or whose
 build tool the declared set does not hold. `docker/editor/editor_plan.py`
-calls `guard` from its `plan()`, so a refusal comes before Docker starts.
+calls `guard` from its `plan()` and `docker/minimal/build.py` from its
+`planned()`, so a refusal comes before Docker starts.
 
-**How you use it.** Through `docker/editor/build.py --prime DIR`. The
-contract, in full:
+**How you use it.** Through `docker/editor/build.py --prime DIR` (a
+consumer's caches in the editor, TC-03) and `docker/minimal/build.py --prime
+DIR` (a corpus's practice dependencies in the runner, where a graded run
+happens with no network, W390). The contract, in full:
 
 - ``DIR/gradle/`` — a Gradle build (``settings.gradle`` or
   ``settings.gradle.kts``) with ``gradle/verification-metadata.xml`` recording
@@ -20,10 +23,12 @@ contract, in full:
   enforced, when ``maven`` is declared.
 - Nothing else at the top but plain files (a README). At least one of the two.
 
-The build mounts DIR read-only as the named context ``consumer-prime``, runs
-``prime/warm-gradle.sh`` and ``prime/warm-maven.sh`` with the network, then
-again with NO network from a copy of what they warmed. What the image then
-guarantees is in the README's editor section.
+Either build mounts DIR read-only as the named context ``consumer-prime``,
+runs ``prime/warm-gradle.sh`` and ``prime/warm-maven.sh`` with the network,
+then again with NO network from a copy of what they warmed. What each image
+then guarantees is in the README's section for it. ⛔ The warmers take a
+PROJECT and a DESTINATION and know nothing about either image, which is what
+lets the two share them unchanged.
 
 **Depends on.** The standard library, and `docker/minimal/plan.py` for the
 runner's `Refused`.

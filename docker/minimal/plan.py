@@ -18,6 +18,15 @@ somewhere later with a message about a missing argument. So every refusal a
 person should read happens before `docker build` starts, and names what IS
 permitted.
 
+## A corpus's practice caches (W390)
+⛔ A reader's graded run happens in THIS image, under `--network none`, so a
+corpus's practice dependencies must already be inside it. `build.py --prime
+DIR` hands `prime/prime.py`'s contract — TC-03's, shared with the editor and
+unchanged — a consumer's prime directory; `plan()` turns it into one
+`WITH_<TOOL>_PRIME` switch per warmer, folds its digest into the tag, and
+points each tool at the seed the warmer wrote. Without one, nothing is warmed
+and the image is what it was.
+
 ## What a refusal echoes (TC-02/2, W387)
 An unpinned name shaped like a runtime id (`NAME`) is NAMED, with the pinned
 ones listed: `--runtimes java,cobol` says `cobol`, as the editor's refusal does,
@@ -36,8 +45,20 @@ from pathlib import Path
 PINS = "pins.json"
 DOCKERFILE = "docker/minimal/Dockerfile"
 #: The build's inputs, hashed into the tag: change any of them and the tag moves.
+#: ⛔ `prime/` is NOT among them: its warmers run only in a PRIMED build, so
+#: `build.py` folds them into that build's digest instead (W390). Putting them
+#: here would move every unprimed runner tag when a warmer changed, and the
+#: editor's Ruling 2 — an editor-only change moves no runner tag — says it must
+#: not; `prime/` is an input of the editor's image as well.
 INPUT_ROOTS = (PINS, "docker/minimal")
 REPOSITORY = "code-server-toolchain/runner"
+#: Where a corpus's warmed practice caches live in the image, and the seed each
+#: of `prime/prime.py`'s warmers writes there (W390). ⛔ The keys are that
+#: module's `TOOLS`; a test asserts it, so the two cannot drift.
+PRIME_ROOT = "/opt/prime"
+PRIME_SEEDS = {"gradle": "gradle-home", "maven": "maven-repo"}
+#: The runner's HOME, chosen ONCE here and read by the Dockerfile's `ENV HOME`.
+RUNNER_HOME = "/tmp"
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -70,11 +91,15 @@ def load(root: Path) -> dict:
     return json.loads((Path(root) / PINS).read_text(encoding="utf-8"))
 
 
-def inputs_digest(root: Path) -> str:
-    """sha256 over every input file's relative path and bytes, in sorted order (R10)."""
+def inputs_digest(root: Path, roots=INPUT_ROOTS) -> str:
+    """sha256 over every input file's relative path and bytes, in sorted order (R10).
+
+    ⛔ `__pycache__` is skipped: a digest that moved because a module had been
+    imported would give one image two tags.
+    """
     root = Path(root)
     files: list[Path] = []
-    for entry in INPUT_ROOTS:
+    for entry in roots:
         path = root / entry
         files.extend([path] if path.is_file() else sorted(p for p in path.rglob("*") if p.is_file()))
     digest = hashlib.sha256()
@@ -96,8 +121,13 @@ def tag_for(names: tuple[str, ...], arch: str, digest: str) -> str:
     return f"{REPOSITORY}:{label}-{arch}-{digest[:12]}"
 
 
-def plan(pins: dict, names, platform: str, digest: str) -> Plan:
-    """Return the build for the declared set on `platform`, or raise `Refused`."""
+def plan(pins: dict, names, platform: str, digest: str, prime=None) -> Plan:
+    """Return the build for the declared set on `platform`, or raise `Refused`.
+
+    With a `prime` — a `prime.Prime`, read and guarded by `build.py` — the
+    warmers run in this build, its digest moves the tag, and the image holds
+    one seed per warmer under `PRIME_ROOT` (W390).
+    """
     runtimes = pins["runtimes"]
     platforms = pins["platforms"]
     if platform not in platforms:
@@ -139,7 +169,12 @@ def plan(pins: dict, names, platform: str, digest: str) -> Plan:
         for check in runtimes[name]["checks"]
     )
     args["DECLARED"] = " ".join(declared)
-    args["OPT_EXPECTED"] = " ".join(opt_dirs(declared))
+    args["RUNNER_HOME"] = RUNNER_HOME
+    args.update(primed(prime))
+    if prime is not None:
+        digest = hashlib.sha256(f"{digest}\0{prime.digest}".encode()).hexdigest()
+    args["OPT_EXPECTED"] = " ".join(sorted(opt_dirs(declared) + ([PRIME_ROOT.rpartition("/")[2]]
+                                                                 if prime is not None else [])))
     tag = tag_for(declared, arch, digest)
     # ⛔ The runner stage's first RUN reads this, so its layers are cached per
     # tag and never served to another selection or another set of pins (W379).
@@ -150,6 +185,28 @@ def plan(pins: dict, names, platform: str, digest: str) -> Plan:
 def opt_dirs(declared) -> list[str]:
     """The directories the declared set places under /opt, sorted as `ls` sorts them."""
     return sorted(d for name in declared for d in OPT_DIRS.get(name, ()))
+
+
+def primed(prime) -> dict[str, str]:
+    """One switch per warmer, and where each tool then looks for its cache (W390).
+
+    ⛔ Unprimed, every value is what the image already had: no seed under
+    `/opt`, Gradle's own default under `HOME`, and no Maven argument at all. So
+    a corpus that declares no practice dependency is untouched, and that is
+    asserted as well as the primed case.
+
+    ⭐ There is no cache key of its own here, unlike the editor's `PRIME_KEY`:
+    `CACHE_KEY` is this image's TAG, the tag folds the prime's digest, and the
+    runner stage's first RUN reads it (W379) — so every layer the warmers write
+    is already cached per prime.
+    """
+    tools = prime.tools if prime is not None else ()
+    args = {f"WITH_{tool.upper()}_PRIME": ("yes" if tool in tools else "no") for tool in sorted(PRIME_SEEDS)}
+    args["PRIME_GRADLE_HOME"] = (f"{PRIME_ROOT}/{PRIME_SEEDS['gradle']}" if "gradle" in tools
+                                 else f"{RUNNER_HOME}/.gradle")
+    args["PRIME_MAVEN_ARGS"] = (f"-Dmaven.repo.local={PRIME_ROOT}/{PRIME_SEEDS['maven']}"
+                                if "maven" in tools else "")
+    return args
 
 
 def _image(entry: dict) -> str:

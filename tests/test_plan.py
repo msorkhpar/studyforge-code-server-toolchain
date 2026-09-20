@@ -20,11 +20,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "docker" / "minimal"))
+sys.path.insert(0, str(ROOT / "prime"))
 
+import build  # noqa: E402
 import plan  # noqa: E402
+import prime as prime_contract  # noqa: E402
 import verify_repo  # noqa: E402
 
 PINS = plan.load(ROOT)
+FIXTURE = ROOT / "tests" / "fixtures" / "prime"
 AMD64 = "linux/amd64"
 DIGEST = "0" * 64
 DOCKERFILE = (ROOT / plan.DOCKERFILE).read_text(encoding="utf-8")
@@ -258,6 +262,106 @@ class TheDockerfile(unittest.TestCase):
     def test_no_editor_is_named(self):
         for word in ("code-server", "--install-extension", "EXPOSE"):
             self.assertNotIn(word, "\n".join(l for l in DOCKERFILE.splitlines() if not l.lstrip().startswith("#")))
+
+
+class TheCorpusPrime(unittest.TestCase):
+    """W390: a corpus's practice dependencies are warmed INTO the runner, or nothing is."""
+
+    @staticmethod
+    def projects(*keep: str) -> Path:
+        """A prime directory holding only the fixture projects named."""
+        target = Path(tempfile.mkdtemp()) / "prime"
+        for name in keep:
+            shutil.copytree(FIXTURE / name, target / name)
+        return target
+
+    def built(self, *keep: str, names=("gradle", "java", "maven")):
+        prime = self.projects(*keep) if keep else None
+        try:
+            return build.planned(ROOT, AMD64, list(names), prime)
+        finally:
+            if prime is not None:
+                shutil.rmtree(prime.parent, ignore_errors=True)
+
+    def test_a_corpus_with_no_declared_dependency_is_untouched(self):
+        """The other way, and the one every corpus gets today: no seed, no /opt entry, no argument."""
+        args = self.built().build_args
+        self.assertEqual([args["WITH_GRADLE_PRIME"], args["WITH_MAVEN_PRIME"]], ["no", "no"])
+        self.assertEqual(args["PRIME_MAVEN_ARGS"], "")
+        self.assertEqual(args["PRIME_GRADLE_HOME"], f"{plan.RUNNER_HOME}/.gradle")
+        self.assertNotIn("prime", args["OPT_EXPECTED"].split())
+
+    def test_each_declared_tool_is_warmed_and_pointed_at_its_own_seed(self):
+        for keep in (("gradle",), ("maven",), ("gradle", "maven")):
+            with self.subTest(prime=keep):
+                args = self.built(*keep).build_args
+                self.assertEqual([args[f"WITH_{tool.upper()}_PRIME"] for tool in ("gradle", "maven")],
+                                 ["yes" if tool in keep else "no" for tool in ("gradle", "maven")])
+                self.assertEqual(args["PRIME_GRADLE_HOME"],
+                                 f"{plan.PRIME_ROOT}/gradle-home" if "gradle" in keep
+                                 else f"{plan.RUNNER_HOME}/.gradle")
+                self.assertEqual(args["PRIME_MAVEN_ARGS"],
+                                 f"-Dmaven.repo.local={plan.PRIME_ROOT}/maven-repo" if "maven" in keep else "")
+                self.assertEqual(args["OPT_EXPECTED"].split()[-1], "prime")
+
+    def test_the_seeds_are_exactly_the_warmers_the_contract_defines(self):
+        self.assertEqual(sorted(plan.PRIME_SEEDS), sorted(prime_contract.TOOLS))
+        for tool, seed in plan.PRIME_SEEDS.items():
+            with self.subTest(tool=tool):
+                self.assertIn(f"warm-{tool}.sh warm /tmp/prime/{tool} {plan.PRIME_ROOT}/{seed}", DOCKERFILE)
+                self.assertIn(f"warm-{tool}.sh prove /tmp/prime/{tool} {plan.PRIME_ROOT}/{seed}", DOCKERFILE)
+
+    def test_the_tag_moves_with_the_prime_and_the_warmers_and_an_unprimed_tag_moves_with_neither(self):
+        bare, gradle_only, both = self.built(), self.built("gradle"), self.built("gradle", "maven")
+        self.assertEqual(len({bare.tag, gradle_only.tag, both.tag}), 3, "a tag names the prime it was warmed for")
+        prime = self.projects("maven")
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            shutil.copy(ROOT / plan.PINS, root / plan.PINS)
+            for directory in ("docker", build.WARMERS):
+                shutil.copytree(ROOT / directory, root / directory)
+            before = (build.planned(root, AMD64, ["java", "maven"]).tag,
+                      build.planned(root, AMD64, ["java", "maven"], prime).tag)
+            with (root / build.WARMERS / "warm-maven.sh").open("a", encoding="utf-8") as handle:
+                handle.write("\n")
+            self.assertEqual(build.planned(root, AMD64, ["java", "maven"]).tag, before[0])
+            self.assertNotEqual(build.planned(root, AMD64, ["java", "maven"], prime).tag, before[1])
+        shutil.rmtree(prime.parent, ignore_errors=True)
+
+    def test_a_prime_the_declared_set_cannot_build_is_refused_before_docker_starts(self):
+        prime = self.projects("maven")
+        command = [sys.executable, str(ROOT / "docker" / "minimal" / "build.py"), "--platform", AMD64,
+                   "--print-tag", "--prime", str(prime)]
+        env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+        refused = subprocess.run(command + ["--runtimes", "java"], env=env, capture_output=True, text=True,
+                                 stdin=subprocess.DEVNULL)
+        self.assertEqual(refused.returncode, 2, refused.stdout)
+        self.assertIn("the declared set does not hold", refused.stderr)
+        self.assertNotIn("Traceback", refused.stderr)
+        accepted = subprocess.run(command + ["--runtimes", "java,maven"], env=env, capture_output=True, text=True,
+                                  stdin=subprocess.DEVNULL)
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+        shutil.rmtree(prime.parent, ignore_errors=True)
+
+    def test_every_build_names_the_prime_context_and_the_empty_one_is_empty(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            self.assertIn(f"consumer-prime={build.empty_context(root)}", build.docker_command(root, self.built()))
+            self.assertEqual(list(build.empty_context(root).iterdir()), [])
+        prime = self.projects("maven")
+        self.assertIn(f"consumer-prime={prime}", build.docker_command(ROOT, self.built("maven"), prime=prime))
+        shutil.rmtree(prime.parent, ignore_errors=True)
+
+    def test_the_seed_is_proved_offline_and_the_tools_are_pointed_at_it_after_the_checks(self):
+        runner = DOCKERFILE[DOCKERFILE.index("FROM ${RUNNER_BASE} AS runner"):]
+        warm = runner.index("--mount=type=bind,from=consumer-prime")
+        prove = runner.index("RUN --network=none --mount=type=bind,from=consumer-prime")
+        checks = runner.index('held="$(ls -A /opt | xargs)"')
+        self.assertLess(warm, prove, "the seed is warmed before it is proved")
+        self.assertLess(prove, checks, "/opt is checked once the seed is there")
+        for line in ("ENV GRADLE_USER_HOME=${PRIME_GRADLE_HOME}", "ENV MAVEN_ARGS=${PRIME_MAVEN_ARGS}"):
+            with self.subTest(line=line):
+                self.assertLess(checks, runner.index(line), "a version check must not write into a reader's seed")
 
 
 class TheRunLine(unittest.TestCase):

@@ -216,11 +216,56 @@ RUN if [ "${WITH_SQLITE}" = yes ]; then \
    && rm -rf /var/lib/apt/lists/* /tmp/apt-parts /tmp/apt-snapshot.list; \
     fi
 
+# ------------------------------------ a corpus's practice caches (W390, TC-03)
+# ⛔ A reader's graded run happens IN THIS IMAGE, under `--network none`, so a
+# corpus's practice dependencies must already be inside it — a download would
+# not be slow, it would simply fail. `build.py --prime DIR` passes the corpus's
+# prime directory as the read-only named context `consumer-prime`, and the
+# warmers in `prime/` — TC-03's own, the same two scripts the editor runs,
+# shared unchanged — build it into a seed under /opt/prime. The version guards
+# ran before Docker started (`prime/prime.py`, from pins.json).
+# ⭐ No cache key of its own is needed, unlike the editor's PRIME_KEY: CACHE_KEY
+# is this image's TAG, the tag folds the prime's digest, and the runner stage's
+# first RUN reads it (W379) — so these layers are already cached per prime.
+# ⛔ Without a prime the context is an EMPTY directory, both switches are `no`,
+# nothing runs, and no /opt/prime exists.
+# ⭐ The seed is left writable by any uid because the documented run line runs
+# this container as the READER's uid and both tools write into their own cache;
+# the container has no network and belongs to one reader.
+ARG WITH_GRADLE_PRIME
+ARG WITH_MAVEN_PRIME
+RUN --mount=type=bind,from=consumer-prime,target=/tmp/prime \
+    --mount=type=bind,source=prime,target=/tmp/warmers \
+    set -eu; \
+    if [ "${WITH_GRADLE_PRIME}" = yes ]; then \
+      sh /tmp/warmers/warm-gradle.sh warm /tmp/prime/gradle /opt/prime/gradle-home; \
+    fi; \
+    if [ "${WITH_MAVEN_PRIME}" = yes ]; then \
+      sh /tmp/warmers/warm-maven.sh warm /tmp/prime/maven /opt/prime/maven-repo; \
+    fi; \
+    [ ! -d /opt/prime ] || chmod -R a+rwX /opt/prime; \
+    rm -rf /root/.m2 /root/.gradle /root/.local/share/kotlin /tmp/kotlin-daemon*
+
+# ⭐ What the image guarantees, checked before it is tagged: a FRESH copy of the
+# corpus's prime builds with NO network from a copy of the seed. An image whose
+# seed would miss offline is never tagged.
+RUN --network=none --mount=type=bind,from=consumer-prime,target=/tmp/prime \
+    --mount=type=bind,source=prime,target=/tmp/warmers \
+    set -eu; \
+    if [ "${WITH_GRADLE_PRIME}" = yes ]; then \
+      sh /tmp/warmers/warm-gradle.sh prove /tmp/prime/gradle /opt/prime/gradle-home; \
+    fi; \
+    if [ "${WITH_MAVEN_PRIME}" = yes ]; then \
+      sh /tmp/warmers/warm-maven.sh prove /tmp/prime/maven /opt/prime/maven-repo; \
+    fi; \
+    rm -rf /root/.m2 /root/.gradle /root/.local/share/kotlin /tmp/kotlin-daemon*
+
 # ⛔ Every declared runtime reports the version pins.json records, or the build
 # fails naming it. An image whose contents do not match its pins is not shipped.
 ARG CHECKS
 ARG OPT_EXPECTED
-ENV HOME=/tmp
+ARG RUNNER_HOME
+ENV HOME=${RUNNER_HOME}
 # ⛔ /opt holds exactly what the declared set places there, or the build fails
 # naming both (W374): an undeclared runtime is ABSENT, and this is where the
 # image says so before it is tagged.
@@ -235,6 +280,17 @@ RUN held="$(ls -A /opt | xargs)"; \
       echo "$name: $expect"; \
     done \
  && rm -rf /tmp/* /tmp/.[!.]*
+
+# ⭐ Where each tool looks for its cache, so a graded run needs no flag of its
+# own: an `ENV` reaches `docker exec`, which is how the runner starts one.
+# ⛔ Set AFTER the checks above, so `gradle --version` writes its own scratch
+# into HOME and never into a seed a reader is about to use. Unprimed these are
+# Gradle's own default under HOME and no Maven argument at all, which is
+# exactly what the image had before.
+ARG PRIME_GRADLE_HOME
+ARG PRIME_MAVEN_ARGS
+ENV GRADLE_USER_HOME=${PRIME_GRADLE_HOME}
+ENV MAVEN_ARGS=${PRIME_MAVEN_ARGS}
 
 ARG DECLARED
 LABEL org.studyforge.runner.runtimes="${DECLARED}"
