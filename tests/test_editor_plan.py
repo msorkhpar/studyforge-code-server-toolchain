@@ -20,8 +20,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 EDITOR = ROOT / "docker" / "editor"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(EDITOR))
 
+import build_inputs  # noqa: E402
 import editor_plan  # noqa: E402
 
 runner_plan = editor_plan.runner_plan
@@ -103,11 +105,7 @@ class TheExtensionSet(unittest.TestCase):
     def test_removing_the_pin_is_refused_by_the_build_before_docker_starts(self):
         """The CLI's refusal: exit 2 with no Docker on PATH, and the real pins print a tag the same way."""
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            shutil.copy(ROOT / "pins.json", root / "pins.json")
-            shutil.copytree(ROOT / "docker", root / "docker", ignore=shutil.ignore_patterns("__pycache__"))
-            shutil.copytree(ROOT / "prime", root / "prime", ignore=shutil.ignore_patterns("__pycache__"))
-            shutil.copytree(ROOT / "lockdown", root / "lockdown", ignore=shutil.ignore_patterns("__pycache__"))
+            root = build_inputs.copy_inputs(tmp)
             planted = copy.deepcopy(EPINS)
             del planted["extensions"]["fwcd.kotlin"]
             (root / "editor-pins.json").write_text(json.dumps(planted), encoding="utf-8")
@@ -183,13 +181,7 @@ class TheRuntimes(unittest.TestCase):
 
 class TheTag(unittest.TestCase):
     def _copy(self, tmp: str) -> Path:
-        root = Path(tmp)
-        for name in ("pins.json", "editor-pins.json"):
-            shutil.copy(ROOT / name, root / name)
-        shutil.copytree(ROOT / "docker", root / "docker", ignore=shutil.ignore_patterns("__pycache__"))
-        shutil.copytree(ROOT / "prime", root / "prime", ignore=shutil.ignore_patterns("__pycache__"))
-        shutil.copytree(ROOT / "lockdown", root / "lockdown", ignore=shutil.ignore_patterns("__pycache__"))
-        return root
+        return build_inputs.copy_inputs(tmp)
 
     def test_the_editors_tag_moves_with_every_input_and_the_runners_does_not_move_with_the_editors(self):
         """Ruling 2: an editor-only change moves no runner tag; a runner change moves both."""

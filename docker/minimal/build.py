@@ -29,7 +29,6 @@ socket and never runs a container.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import platform as host
 import subprocess
 import sys
@@ -45,6 +44,11 @@ _MACHINES = {"x86_64": "linux/amd64", "amd64": "linux/amd64", "aarch64": "linux/
 #: The warmers' directory, relative to the component: a build input when, and
 #: only when, a prime is given.
 WARMERS = "prime"
+#: What a PRIMED build's digest is taken over: the runner's own inputs, plus
+#: the warmers, which run in such a build and in no other. ⛔ Declared once,
+#: here, and never listed again — `tests/build_inputs.py` copies a planted
+#: context by READING this (`W391`), so a new input is one edit.
+PRIMED_INPUT_ROOTS = planning.INPUT_ROOTS + (WARMERS,)
 
 
 def host_platform() -> str:
@@ -61,15 +65,13 @@ def planned(root: Path, platform: str, names, prime: Path | None = None) -> plan
     """
     pins = planning.load(root)
     read = prime_contract.read(prime) if prime is not None else None
-    digest = planning.inputs_digest(root)
-    if read is not None:
-        # ⭐ The warmers RUN in this build, so they are an input to a PRIMED
-        # image and to no other one: folded here, they leave every unprimed tag
-        # exactly where it was, which is what the editor's Ruling 2 requires
-        # (`prime/` is an input of the editor's image too).
-        warmers = planning.inputs_digest(root, (WARMERS,))
-        digest = hashlib.sha256(f"{digest}\0warmers\0{warmers}".encode()).hexdigest()
-    built = planning.plan(pins, names, platform, digest, read)
+    # ⭐ The warmers RUN in a primed build, so they are an input to THAT image
+    # and to no other one: taking the digest over `PRIMED_INPUT_ROOTS` only
+    # when a prime is given leaves every unprimed tag exactly where it was,
+    # which is what the editor's Ruling 2 requires (`prime/` is an input of the
+    # editor's image too).
+    roots = planning.INPUT_ROOTS if read is None else PRIMED_INPUT_ROOTS
+    built = planning.plan(pins, names, platform, planning.inputs_digest(root, roots), read)
     if read is not None:
         prime_contract.guard(read, pins, built.names)
     return built

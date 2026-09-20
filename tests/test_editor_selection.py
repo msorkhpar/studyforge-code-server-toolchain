@@ -22,8 +22,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 EDITOR = ROOT / "docker" / "editor"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(EDITOR))
 
+import build_inputs  # noqa: E402
 import editor_plan  # noqa: E402
 
 runner_plan = editor_plan.runner_plan
@@ -120,13 +122,7 @@ class TheDefaultSet(unittest.TestCase):
 class TheRefusals(unittest.TestCase):
     @staticmethod
     def copy(tmp: str) -> Path:
-        root = Path(tmp)
-        for name in ("pins.json", "editor-pins.json"):
-            shutil.copy(ROOT / name, root / name)
-        shutil.copytree(ROOT / "docker", root / "docker", ignore=shutil.ignore_patterns("__pycache__"))
-        shutil.copytree(ROOT / "prime", root / "prime", ignore=shutil.ignore_patterns("__pycache__"))
-        shutil.copytree(ROOT / "lockdown", root / "lockdown", ignore=shutil.ignore_patterns("__pycache__"))
-        return root
+        return build_inputs.copy_inputs(tmp)
 
     def test_an_unpinned_toolchain_is_refused_naming_it_and_what_is_pinned(self):
         with self.assertRaises(editor_plan.Refused) as refused:

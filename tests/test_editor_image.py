@@ -25,8 +25,10 @@ import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(ROOT / "docker" / "editor"))
 
+import build_inputs  # noqa: E402
 import editor_plan  # noqa: E402
 
 runner_plan = editor_plan.runner_plan
@@ -59,14 +61,7 @@ def tag(root: Path = ROOT) -> str:
 
 def planted_copy(name: str, dockerfile=None, pins=None) -> Path:
     """A copy of the build's inputs with one defect planted, never touching the tree."""
-    target = WORK / name
-    shutil.rmtree(target, ignore_errors=True)
-    target.mkdir(parents=True)
-    for file in ("pins.json", "editor-pins.json", ".dockerignore"):
-        shutil.copy(ROOT / file, target / file)
-    shutil.copytree(ROOT / "docker", target / "docker", ignore=shutil.ignore_patterns("__pycache__"))
-    shutil.copytree(ROOT / "prime", target / "prime", ignore=shutil.ignore_patterns("__pycache__"))
-    shutil.copytree(ROOT / "lockdown", target / "lockdown", ignore=shutil.ignore_patterns("__pycache__"))
+    target = build_inputs.copy_inputs(WORK / name)
     if dockerfile:
         path = target / editor_plan.DOCKERFILE
         text = path.read_text(encoding="utf-8")

@@ -19,10 +19,12 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(ROOT / "docker" / "minimal"))
 sys.path.insert(0, str(ROOT / "prime"))
 
 import build  # noqa: E402
+import build_inputs  # noqa: E402
 import plan  # noqa: E402
 import prime as prime_contract  # noqa: E402
 import verify_repo  # noqa: E402
@@ -176,9 +178,7 @@ class TheTag(unittest.TestCase):
 
     def test_the_inputs_digest_moves_when_an_input_changes(self):
         with tempfile.TemporaryDirectory() as scratch:
-            copy_root = Path(scratch)
-            shutil.copy(ROOT / plan.PINS, copy_root / plan.PINS)
-            shutil.copytree(ROOT / "docker", copy_root / "docker")
+            copy_root = build_inputs.copy_inputs(scratch, inputs=plan.INPUT_ROOTS)
             before = plan.inputs_digest(copy_root)
             self.assertEqual(before, plan.inputs_digest(ROOT))
             (copy_root / "docker" / "minimal" / "Dockerfile").write_text(DOCKERFILE + "\n# planted\n")
@@ -316,10 +316,10 @@ class TheCorpusPrime(unittest.TestCase):
         self.assertEqual(len({bare.tag, gradle_only.tag, both.tag}), 3, "a tag names the prime it was warmed for")
         prime = self.projects("maven")
         with tempfile.TemporaryDirectory() as scratch:
-            root = Path(scratch)
-            shutil.copy(ROOT / plan.PINS, root / plan.PINS)
-            for directory in ("docker", build.WARMERS):
-                shutil.copytree(ROOT / directory, root / directory)
+            # ⭐ The context is copied by the ONE helper (`W391`), reading the
+            # declaration a primed build's digest is taken over — never a list
+            # of directories written out here.
+            root = build_inputs.copy_inputs(scratch, inputs=build.PRIMED_INPUT_ROOTS)
             before = (build.planned(root, AMD64, ["java", "maven"]).tag,
                       build.planned(root, AMD64, ["java", "maven"], prime).tag)
             with (root / build.WARMERS / "warm-maven.sh").open("a", encoding="utf-8") as handle:
