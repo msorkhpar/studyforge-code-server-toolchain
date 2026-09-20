@@ -21,7 +21,18 @@
 # directly: bypassing it loses the base's fixuid, DOCKER_USER handling and
 # dumb-init. ⛔ There is no mode that runs some other command instead of
 # code-server: the reader's code runs in the runner image (TC-01/6).
+#
+# ⛔ fixuid RUNS FIRST, and that ordering belongs to the compose contract
+# (TC-05). The base runs it too, in /usr/bin/entrypoint.sh — which is AFTER
+# everything below. A consumer runs this container as the uid:gid that owns its
+# sources, and any uid but the image's own has no passwd entry until fixuid
+# writes one: HOME is then `/`, the seed below tries `//.local` and fails, and
+# the container exits before code-server starts. So it runs here as well. It is
+# the same command, it is idempotent, and both halves are measured in
+# tests/test_consuming_image.py.
 set -eu
+
+eval "$(fixuid -q)"
 
 SEED_SETTINGS=/opt/code-server/seed/settings.json
 SEED_GRADLE=/opt/code-server/prime/gradle-home

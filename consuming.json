@@ -1,0 +1,171 @@
+{
+  "consuming_api": 1,
+  "provides": 1,
+  "component": "code-server-toolchain",
+  "not_yet_declared": [
+    "the runner image (docker/minimal/): how a corpus runs it is documented in README.md under 'Running it for a corpus' and nothing renders it from this file yet",
+    "the tagging scheme a consumer pins (TC-06): this file names the repository and how to ask the build for a tag, and says nothing about what a tag promises"
+  ],
+  "editor": {
+    "what_it_is": "code-server with the runtimes a corpus declares, served to a browser on loopback",
+    "image": {
+      "repository": "code-server-toolchain/editor",
+      "registry": null,
+      "why_no_registry": "this component has no remote and is never pushed; a consumer builds the image from this checkout and pins the tag the build prints",
+      "built_by": ["python3", "docker/editor/build.py", "--runtimes", "<the declared set>"],
+      "tag_from": ["python3", "docker/editor/build.py", "--runtimes", "<the declared set>", "--print-tag"],
+      "env_var": "EDITOR_IMAGE",
+      "compose_value": "${EDITOR_IMAGE:?build it with docker/editor/build.py and pin the tag it prints}",
+      "labels": {
+        "runtimes": "org.studyforge.editor.runtimes",
+        "runner": "org.studyforge.editor.runner"
+      }
+    },
+    "runtimes": {
+      "declared_by": "--runtimes",
+      "default_set": ["gradle", "java", "kotlin", "node", "python"],
+      "selectable": ["gradle", "java", "kotlin", "maven", "node", "python", "shell"],
+      "not_carried": {
+        "sqlite": "the runner installs it from Debian's packages into /usr/bin, and the editor copies only /opt and /usr/local out of the runner"
+      },
+      "read_back_from": "the image label org.studyforge.editor.runtimes"
+    },
+    "runs_as": {
+      "uid": 1000,
+      "gid": 1000,
+      "user": "coder",
+      "per_project": true,
+      "compose_key": "user",
+      "compose_value": "${HOST_UID:-1000}:${HOST_GID:-1000}",
+      "set_to": "the uid:gid that owns the mounted sources on the host",
+      "why": "a container that runs as root writes root-owned files into the mounted sources, and the reader can then never edit their own repository",
+      "how": "the base image's fixuid repairs the passwd record and the ownership of the home directory for whatever uid the consumer ran it as; the editor's entrypoint runs it before it seeds anything, so a uid other than 1000 starts"
+    },
+    "workspace": {
+      "container_path": "/home/coder/repo",
+      "kind": "tmpfs",
+      "opened_by": "the last argument of command",
+      "why": "the workspace ROOT is not in the image, so docker would create it root-owned and no build could write .gradle/, .kotlin/ or build/ into it; a named volume there is root-owned for the same reason. A tmpfs is world-writable, holds only those scratch directories, and is discarded with the container. The source binds sit inside it"
+    },
+    "mounts": [
+      {
+        "container_path": "/home/coder/repo/sources",
+        "kind": "bind",
+        "host_path": "./sources",
+        "per_project": true,
+        "read_only": false,
+        "required": true,
+        "must_exist_before_start": true,
+        "purpose": "the corpus's sources, and nothing else: not the repository, not $HOME"
+      },
+      {
+        "container_path": "/home/coder/.config",
+        "kind": "volume",
+        "volume": "editor-config",
+        "per_project": false,
+        "read_only": false,
+        "required": true,
+        "must_exist_before_start": false,
+        "purpose": "code-server's own configuration"
+      },
+      {
+        "container_path": "/home/coder/.local",
+        "kind": "volume",
+        "volume": "editor-data",
+        "per_project": false,
+        "read_only": false,
+        "required": true,
+        "must_exist_before_start": false,
+        "purpose": "code-server's user data: the settings the entrypoint seeds once, and the reader's own edits"
+      },
+      {
+        "container_path": "/home/coder/.gradle",
+        "kind": "volume",
+        "volume": "gradle-home",
+        "per_project": false,
+        "read_only": false,
+        "required": false,
+        "must_exist_before_start": false,
+        "purpose": "the Gradle user home the entrypoint seeds from the prime when it is empty; omit it when gradle is not declared"
+      },
+      {
+        "container_path": "/home/coder/.m2",
+        "kind": "volume",
+        "volume": "maven-repo",
+        "per_project": false,
+        "read_only": false,
+        "required": false,
+        "must_exist_before_start": false,
+        "purpose": "the Maven local repository the entrypoint seeds from the prime when it is empty; omit it when maven is not declared"
+      }
+    ],
+    "ports": [
+      {
+        "container": 8080,
+        "host": 8443,
+        "host_bind": "127.0.0.1",
+        "protocol": "tcp",
+        "per_project": true,
+        "purpose": "the code-server HTTP UI",
+        "publish_on_all_interfaces": false,
+        "why": "an unencrypted IDE with a shell. 0.0.0.0 offers it to every machine that can reach this host"
+      }
+    ],
+    "environment": [
+      {
+        "name": "PASSWORD",
+        "default": null,
+        "required": true,
+        "compose_value": "${CODE_SERVER_PASSWORD:?set CODE_SERVER_PASSWORD before starting the editor}",
+        "note": "there is deliberately no default: the IDE must never start unauthenticated"
+      },
+      {
+        "name": "GRADLE_USER_HOME",
+        "default": "/home/coder/.gradle",
+        "required": false,
+        "note": "explicit rather than derived from $HOME, so the seeded cache and the tool agree"
+      }
+    ],
+    "command": [
+      "--auth=password",
+      "--bind-addr=0.0.0.0:8080",
+      "--extensions-dir=/opt/code-server/extensions",
+      "--disable-workspace-trust",
+      "--disable-telemetry",
+      "--disable-update-check",
+      "/home/coder/repo"
+    ],
+    "command_notes": {
+      "bind_addr": "0.0.0.0 INSIDE the container only, which is the container's own interface; the loopback restriction is the ports entry's host_bind",
+      "replaces_cmd": "a compose command: replaces the image's CMD outright, and the image re-declares ENTRYPOINT and CMD so nothing the base bakes is appended to it",
+      "extensions_dir": "the extensions are installed into the image, not onto a volume, so an image upgrade carries them"
+    },
+    "healthcheck": {
+      "command": [
+        "CMD",
+        "/usr/lib/code-server/lib/node",
+        "-e",
+        "fetch('http://127.0.0.1:8080/healthz').then(r => process.exit(r.status === 200 ? 0 : 1), () => process.exit(1))"
+      ],
+      "path": "/healthz",
+      "port": 8080,
+      "expect_status": 200,
+      "start_period_seconds": 30,
+      "start_interval_seconds": 1,
+      "interval_seconds": 60,
+      "timeout_seconds": 5,
+      "retries": 3,
+      "why_this_interpreter": "code-server's own node, which every declared set carries; a set without python has no python3 and a set without node has no node on PATH",
+      "ordering": "a consumer whose own service creates one of the bind sources gates this one on it with depends_on: <service>: condition: service_healthy, so the editor starts after the directory exists"
+    },
+    "docker_socket": false,
+    "why_no_docker_socket": "spec 8.3: the Docker socket is never mounted into a serving process, not behind a flag and not only locally. This is an IDE with a shell published on a port",
+    "extensions": {
+      "installed_at": "/opt/code-server/extensions",
+      "always_installed": ["studyforge.practice-focus"],
+      "settings_a_study_server_writes": ["studyforge.practice.main", "studyforge.practice.test"]
+    },
+    "restart": "no",
+    "why_restart_no": "an IDE with a shell comes up when the reader asks for it, not on every boot"
+  }
+}
