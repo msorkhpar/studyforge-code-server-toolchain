@@ -36,6 +36,55 @@
  */
 
 const vscode = require('vscode');
+const fs = require('fs');
+const path = require('path');
+
+/** This extension's own manifest, for its identifier and nothing else.
+ *
+ *  ⛔ The id is written in ONE place (`package.json` beside this file) and
+ *  derived everywhere else, here included: the banner below carries it, and
+ *  the image's activation gate greps for it. */
+const manifest = require('./package.json');
+
+/** The ONE line that says this extension RAN.
+ *
+ *  ⚠️ An installed extension and a running one are different facts, and
+ *  `W432` is the proof: this extension was installed, listed by
+ *  `code-server --list-extensions` and present in `extensions.json` for five
+ *  rounds while the extension host activated it in NO session -- the
+ *  workbench's Restricted Mode had disabled it, silently and with no error.
+ *  ⛔ A check that reads the installed list cannot see that. So the extension
+ *  announces itself on the extension host's own console, which lands in
+ *  `remoteexthost.log`, and the image's build greps a REAL session's log for
+ *  this banner before the image is tagged. ⭐ It is printed only after the
+ *  first pass has actually run its commands, so an extension that activates
+ *  and then throws writes nothing.
+ *
+ *  ⛔ It is written to the extension's OWN log directory (`context.logUri`,
+ *  which the workbench gives every extension and which VS Code already fills
+ *  with `vscode.git/Git.log` and the Java server's log), and NOT with
+ *  `console.log`: measured on code-server 4.137.0, an extension's console goes
+ *  to the BROWSER's devtools and reaches no file on the server, so a gate
+ *  could never read it. */
+const BANNER = `${manifest.publisher}.${manifest.name}: confined`;
+
+/** The file the banner is written to, inside the directory the workbench gave us. */
+const RECORD = `${manifest.name}.log`;
+
+/** Record that this extension ran, and what it managed to close.
+ *
+ *  Best-effort and never thrown from: a window whose log directory cannot be
+ *  written is still a window this extension should confine. */
+function record(context, ran) {
+    try {
+        const directory = (context.logUri && context.logUri.fsPath) || context.logPath;
+        if (!directory) { return; }
+        fs.mkdirSync(directory, { recursive: true });
+        fs.appendFileSync(path.join(directory, RECORD), `${BANNER} ${ran.join(' ')}\n`);
+    } catch (error) {
+        /* not writable in this window; the confining above already happened */
+    }
+}
 
 /** The configuration section whose rewrite means "the practice changed".
  *
@@ -76,13 +125,16 @@ const RETRIES = [250, 750, 2000, 6000, 12000];
  *  Each command is best-effort: a workbench without one of these still has
  *  the others. */
 async function confine() {
+    const ran = [];
     for (const command of CONFINE) {
         try {
             await vscode.commands.executeCommand(command);
+            ran.push(command);
         } catch (error) {
             /* not in this build; the rest still apply */
         }
     }
+    return ran;
 }
 
 function apply(context) {
@@ -94,7 +146,14 @@ function apply(context) {
 }
 
 function activate(context) {
-    apply(context);
+    /* ⭐ The first pass announces itself, and only this one does: the retries
+       and the practice-changed passes are the same work again, and a banner
+       per pass would say nothing more while filling the log. */
+    confine().then(function (ran) { record(context, ran); });
+    for (const delay of RETRIES) {
+        const timer = setTimeout(confine, delay);
+        context.subscriptions.push({ dispose: () => clearTimeout(timer) });
+    }
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration(function (event) {
             /* The reader moved to another practice and the study server
@@ -112,4 +171,4 @@ function activate(context) {
 
 function deactivate() {}
 
-module.exports = { activate, deactivate, SECTION, CONFINE, RETRIES };
+module.exports = { activate, deactivate, SECTION, CONFINE, RETRIES, BANNER, RECORD };

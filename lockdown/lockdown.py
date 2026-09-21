@@ -24,6 +24,14 @@ work on the host and fail inside the build. `docker/editor/editor_plan.py`
 translates this module's `Refused` into the component's own, so a build still
 refuses with one class.
 
+## ⛔ Why INSTALLED is not RUNNING
+⚠️ An extension can be packed, installed, listed and present in
+`extensions.json` and still never activate: `W432`. The two clauses
+`_workbench_findings` adds are what the workbench reads BEFORE it will run
+anything, and `Lockdown.banner` is the line the extension prints once it HAS
+run, which the image's build greps out of a real session's extension-host log
+before it tags the image.
+
 ## Why it is PACKAGED and INSTALLED, never copied
 ⚠️ The workbench reads `extensions.json` in its extensions directory and never
 scans it, so an extension folder COPIED in is present, correct, and silently
@@ -94,6 +102,21 @@ class Lockdown:
         """The `id@version` the image's installed-extension check looks for."""
         return f"{self.id}@{self.version}"
 
+    @property
+    def record(self) -> str:
+        """The file the extension appends its banner to, inside the log directory the workbench gives it."""
+        return f"{self.id.split('.', 1)[1]}.log"
+
+    @property
+    def banner(self) -> str:
+        """The line the extension prints once it has RUN, which the image's gate greps for.
+
+        ⛔ `expected` above is the INSTALLED fact and this one is the RUNNING
+        fact; `W432` is why both exist. ⭐ `extension.js` builds the same
+        string from the same manifest, so neither side spells the id.
+        """
+        return f"{self.id}: confined"
+
 
 def read(root: Path = HERE) -> dict:
     return json.loads((Path(root) / MANIFEST).read_text(encoding="utf-8"))
@@ -143,6 +166,44 @@ def manifest_findings(manifest: dict) -> list[str]:
         found.append(f"the contributed keys span sections {sections}; the extension watches exactly one")
     if manifest.get("activationEvents") and manifest["activationEvents"] != ["onStartupFinished"]:
         found.append("the extension activates on 'onStartupFinished' and nothing else")
+    found += _workbench_findings(manifest)
+    return found
+
+
+#: The declared extension kind. ⛔ A manifest that declares NONE is not
+#: neutral: in a remote or web workbench VS Code INFERS one, and an extension
+#: inferred as `ui` has nowhere to run under code-server. The kind is stated so
+#: nothing is inferred.
+EXTENSION_KIND = ["workspace"]
+
+
+def _workbench_findings(manifest: dict) -> list[str]:
+    """What the WORKBENCH would refuse to run, which a manifest can be perfectly valid and still get wrong.
+
+    ⛔ Both clauses are `W432`'s, and both were measured on code-server 4.137.0
+    (VS Code 1.137.0) against a bind-mounted corpus, which is an UNTRUSTED
+    folder and is the normal shape of this product:
+
+    * **Restricted Mode.** A workbench whose folder is untrusted disables every
+      extension that does not declare support, and it does so with NO error and
+      NO log line. Measured: this extension was installed, listed and never
+      activated, while the built-in `onStartupFinished` extensions activated in
+      the same sessions. The image also passes
+      `--disable-workspace-trust`, and this declaration is the half that
+      survives a consumer who replaces the image's command.
+    * **The extension kind**, above.
+
+    ⚠️ Neither is a taste: a manifest that fails either installs cleanly,
+    lists cleanly, and never runs.
+    """
+    found: list[str] = []
+    supported = manifest.get("capabilities", {}).get("untrustedWorkspaces", {}).get("supported")
+    if supported is not True:
+        found.append("capabilities.untrustedWorkspaces.supported is not true, so a workbench in Restricted "
+                     "Mode disables the extension silently (W432)")
+    if manifest.get("extensionKind") != EXTENSION_KIND:
+        found.append(f"extensionKind is {manifest.get('extensionKind')!r}; under code-server it is "
+                     f"{EXTENSION_KIND!r}, and an inferred 'ui' kind has nowhere to run (W432)")
     return found
 
 

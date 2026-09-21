@@ -123,9 +123,12 @@ RUN --network=none --mount=type=bind,from=fetch,source=/fetch,target=/tmp/fetch 
 # language support that still builds and starts.
 # ⭐ The lockdown's .vsix is installed here too, for EVERY declared set: it
 # serves no runtime, so it is no consumer's selection, and its id is in
-# EXPECTED_EXTENSIONS unconditionally. The check below reads the INSTALLED
-# list, never the extensions directory, so the build fails naming the lockdown
-# if it was packed but never loaded.
+# EXPECTED_EXTENSIONS unconditionally.
+# ⛔ THE CHECK BELOW PROVES INSTALLATION AND NOTHING MORE, AND SAYING SO IS
+# W432: it read the INSTALLED list, passed, and the image it passed had a
+# lockdown the extension host never activated. ⭐ The RUNNING fact is proved
+# outside this file, after the build, by `docker/editor/activation.py`, and
+# the image is tagged only once that passes.
 ARG EXPECTED_EXTENSIONS
 COPY docker/editor/verify_extensions.js /tmp/verify_extensions.js
 RUN --network=none --mount=type=bind,from=fetch,source=/fetch,target=/tmp/fetch \
@@ -260,5 +263,20 @@ USER 1000
 # `command:` would be APPENDED after those arguments. Both are re-declared: the
 # entrypoint takes no arguments of its own, and CMD is the whole code-server
 # command line, which a compose file replaces outright (its run shape is TC-05's).
+#
+# ⛔ `--disable-workspace-trust` IS LOAD-BEARING AND IS NOT A PREFERENCE (W432).
+# ⚠️ A corpus's sources arrive as a bind mount, which is an UNTRUSTED folder,
+# and a workbench in Restricted Mode DISABLES every extension that does not
+# declare support -- with no error and no log line. Measured on code-server
+# 4.137.0: the lockdown was installed, listed by `--list-extensions` and
+# present in `extensions.json`, and the extension host activated it in NO
+# session; `vscjava.vscode-java-debug`, `vscjava.vscode-java-test` and
+# `vscode.git` were disabled in the same sessions. ⛔ The contract carried the
+# flag in `consuming.json`'s `editor.command` and THIS LINE DID NOT, so every
+# consumer that ran the image with `docker run` -- which is how the reader's
+# own editor was started -- got a workbench with no lockdown at all.
+# ⭐ The manifest's `capabilities.untrustedWorkspaces` is the other half: this
+# flag covers a consumer who does not replace the command, that declaration
+# covers a consumer who does.
 ENTRYPOINT ["/opt/code-server/entrypoint.sh"]
-CMD ["--bind-addr", "0.0.0.0:8080", "--extensions-dir=/opt/code-server/extensions", "."]
+CMD ["--bind-addr", "0.0.0.0:8080", "--extensions-dir=/opt/code-server/extensions", "--disable-workspace-trust", "."]

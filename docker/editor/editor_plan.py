@@ -45,6 +45,8 @@ consumer's choice: every declared set installs it. So it is NOT an
 identity from the one manifest that carries it, `plan()` puts the file name in
 `LOCKDOWN_VSIX` and the id in `EXPECTED_EXTENSIONS`, and the image's own
 installed-list check fails the build naming the id when it is missing.
+⚠️ That check proves INSTALLATION and nothing more (`W432`); `build.py` proves
+the extension RUNS, in a real session, before it tags the image.
 """
 
 from __future__ import annotations

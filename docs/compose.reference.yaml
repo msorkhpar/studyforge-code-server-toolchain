@@ -69,6 +69,15 @@ services:
       - "maven-repo:/home/coder/.m2"
     # 0.0.0.0 INSIDE the container only, which is the container's own interface;
     # the loopback restriction is the ports entry's host_bind
+    # --disable-workspace-trust is LOAD-BEARING and is not a preference (W432).
+    # A corpus's sources arrive as a bind mount, which the workbench has never
+    # been told to trust, and a workbench in Restricted Mode disables every
+    # extension that does not declare support for one -- silently, with no error
+    # and no log line. Measured on code-server 4.137.0: studyforge.practice-
+    # focus was installed, listed and never activated, and the Java debug and
+    # test extensions were disabled in the same sessions. The image's own CMD
+    # carries it too, so a consumer who does not set command: gets it; a
+    # consumer who does set command: must keep this argument.
     command:
       - "--auth=password"
       - "--bind-addr=0.0.0.0:8080"

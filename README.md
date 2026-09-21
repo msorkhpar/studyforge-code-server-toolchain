@@ -151,6 +151,11 @@ python3 docker/editor/build.py --runtimes java,maven --print-tag
 python3 docker/editor/build.py            # gradle,java,kotlin,node,python
 ```
 
+⛔ **An editor build needs a Chromium-family browser on the host as well as
+Docker**, because the image is tagged only after its lockdown has been seen to
+RUN in a real workbench session (the lockdown section, below). `--print-tag`
+computes and needs neither.
+
 - ⭐ **The set is declared, and selected from `pins.json`.** `--runtimes` takes
   any of the runner's pinned runtimes (the runner's rules hold: `maven`,
   `gradle` and `kotlin` need `java`). With no `--runtimes`, the build makes the
@@ -212,8 +217,31 @@ the workbench provides — no build step, no dependencies, and nothing fetched.
   `extensions.json` in its extensions directory and never scans it, so a copied
   folder is present, correct and silently never loaded. The build packs the
   `.vsix` with the standard library (`lockdown/lockdown.py`, never a
-  marketplace tool), installs it with the pinned extensions, and then reads the
-  INSTALLED list: an image whose lockdown did not load is not tagged.
+  marketplace tool) and installs it with the pinned extensions.
+- ⛔ **INSTALLED IS NOT RUNNING, and the image is tagged on the RUNNING fact**
+  ([`docker/editor/activation.py`](docker/editor/activation.py)). ⚠️ **`W432`:
+  the extension was installed, listed by `code-server --list-extensions`,
+  present in `extensions.json`, parsed under the image's own node and inside
+  its engine range — and the extension host activated it in NO session, with
+  no error**, because the workbench's Restricted Mode had disabled it. ⛔ **A
+  check that reads INSTALLATION cannot see ACTIVATION**, and the installed-list
+  check that used to carry this guarantee passed in every one of those rounds.
+  ⭐ **So the build now writes an image ID rather than a tag, opens a REAL
+  workbench session in that image with a headless browser against an
+  UNTRUSTED bind-mounted folder — the shape every consumer serves — and applies
+  the tag only once the extension host's log shows the extension activating
+  AND the extension's own banner shows it ran.** ⛔ **A host with no browser
+  refuses the build; it does not skip the proof.** The browsers it looks for,
+  and the `STUDYFORGE_BROWSER` override, are that module's.
+- ⛔ **`--disable-workspace-trust` is part of the image's own `CMD`, and it is
+  load-bearing.** ⚠️ The contract carried it in `consuming.json`'s
+  `editor.command` while the image's `CMD` did not, so every consumer that
+  started the image on its own command line rather than through the compose
+  template got a workbench in Restricted Mode with no lockdown at all — which
+  is exactly how `W432` reached a reader, twice. ⭐ The manifest's
+  `capabilities.untrustedWorkspaces` is the other half: the flag covers a
+  consumer who keeps the image's command, the declaration covers one who
+  replaces it.
 - ⭐ **It reads no setting and knows no corpus.** Which file a window shows is
   decided by that window's own URL. It contributes
   `studyforge.practice.main` and `studyforge.practice.test` only so the
@@ -323,6 +351,12 @@ TC_DOCKER=1 python3 -m unittest tests.test_consuming_image -v # the compose cont
 `tests/test_lockdown.py` needs no Docker: it packs the extension with the
 standard library, runs it against a stub `vscode` module with `node`, and
 reads the packed identity against this README and the build's expected list.
+⭐ `TC_DOCKER=1 python3 -m unittest tests.test_lockdown_activation -v` is the
+RUNNING half: it opens a real workbench session in the image with a headless
+browser and requires both log lines, and it plants against itself — the same
+image with `--disable-workspace-trust` taken out of its command is refused,
+naming what was missing. ⛔ It needs Docker and a browser, and it skips only
+when `TC_DOCKER` is unset, never because a browser is absent.
 `tests/test_consuming.py` needs none either: it reads every value
 `consuming.json` states about the image back out of the build's own plan, the
 Dockerfile and the lockdown manifest, resolves every key `docs/consuming.md`

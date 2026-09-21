@@ -8,6 +8,15 @@
   "engines": {
     "vscode": "^1.70.0"
   },
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true,
+      "description": "It closes workbench surfaces and reads no file, no setting and no workspace content."
+    }
+  },
   "categories": [
     "Other"
   ],

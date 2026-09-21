@@ -328,7 +328,8 @@ def _service(editor: dict) -> list[str]:
         source = mount["host_path"] if mount["kind"] == "bind" else mount["volume"]
         suffix = ":ro" if mount["read_only"] else ""
         lines.append(f'{at}  - "{source}:{mount["container_path"]}{suffix}"')
-    lines += [*_comment(editor["command_notes"]["bind_addr"], at), f"{at}command:"]
+    lines += [*_comment(editor["command_notes"]["bind_addr"], at),
+              *_comment(editor["command_notes"]["workspace_trust"], at), f"{at}command:"]
     lines += [f'{at}  - "{_escaped(argument)}"' for argument in editor["command"]]
     lines += [*_comment(editor["healthcheck"]["ordering"], at), f"{at}healthcheck:"]
     lines += _healthcheck(editor["healthcheck"], f"{at}  ")

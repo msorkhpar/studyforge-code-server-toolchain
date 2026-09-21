@@ -216,7 +216,8 @@
     "command_notes": {
       "bind_addr": "0.0.0.0 INSIDE the container only, which is the container's own interface; the loopback restriction is the ports entry's host_bind",
       "replaces_cmd": "a compose command: replaces the image's CMD outright, and the image re-declares ENTRYPOINT and CMD so nothing the base bakes is appended to it",
-      "extensions_dir": "the extensions are installed into the image, not onto a volume, so an image upgrade carries them"
+      "extensions_dir": "the extensions are installed into the image, not onto a volume, so an image upgrade carries them",
+        "workspace_trust": "--disable-workspace-trust is LOAD-BEARING and is not a preference (W432). A corpus's sources arrive as a bind mount, which the workbench has never been told to trust, and a workbench in Restricted Mode disables every extension that does not declare support for one -- silently, with no error and no log line. Measured on code-server 4.137.0: studyforge.practice-focus was installed, listed and never activated, and the Java debug and test extensions were disabled in the same sessions. The image's own CMD carries it too, so a consumer who does not set command: gets it; a consumer who does set command: must keep this argument."
     },
     "healthcheck": {
       "command": [
@@ -241,6 +242,7 @@
     "extensions": {
       "installed_at": "/opt/code-server/extensions",
       "always_installed": ["studyforge.practice-focus"],
+      "must_run_not_merely_be_installed": "installed is not running: the image is tagged only after a real workbench session in it showed the extension host activating studyforge.practice-focus and the extension announcing that it ran (docker/editor/activation.py). A consumer that replaces command: and drops --disable-workspace-trust takes that guarantee away again, and nothing in the image can put it back.",
       "settings_a_study_server_writes": ["studyforge.practice.main", "studyforge.practice.test"]
     },
     "restart": "no",

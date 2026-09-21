@@ -21,9 +21,19 @@ it, the context is an empty directory and nothing is warmed.
 `--root DIR` builds a different copy of the component (the tests plant a
 defect in a temporary copy); `--platform` defaults to this machine's.
 
-**Depends on.** The standard library, `editor_plan.py` beside it, the runner's
-`build.py` and `plan.py`, and a Docker CLI with BuildKit. ⛔ It never mounts a
-socket and never runs a container.
+⛔ **The image is TAGGED only after its lockdown has been PROVED TO RUN**
+(`activation.py`, `W432`): the build writes an image ID, a real workbench
+session is opened in it with a headless browser, and the tag is applied only
+once the extension host's log shows the extension activating AND the extension
+announcing that it ran. ⚠️ A build on a host with no browser is REFUSED, not
+waved through -- the check this replaces read the INSTALLED list, passed, and
+shipped an image whose lockdown never loaded.
+
+**Depends on.** The standard library, `editor_plan.py` and `activation.py`
+beside it, the runner's `build.py` and `plan.py`, a Docker CLI with BuildKit,
+and a Chromium-family browser for the activation proof. ⛔ It never mounts a
+socket; the proof runs a container from OUTSIDE, with the Docker CLI, like
+every other container this component starts.
 """
 
 from __future__ import annotations
@@ -36,6 +46,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "minimal"))
+import activation  # noqa: E402
 import build as runner_build  # noqa: E402
 import editor_plan  # noqa: E402
 
@@ -65,10 +76,18 @@ def runner_command(root: Path, platform: str, names=editor_plan.DEFAULT_SET) -> 
     return runner_build.docker_command(root, built)
 
 
-def docker_command(root: Path, built: editor_plan.EditorPlan, prime: Path) -> list[str]:
-    """`docker build` for the editor, with `prime` as the read-only named context `consumer-prime`."""
+def docker_command(root: Path, built: editor_plan.EditorPlan, prime: Path, iidfile: Path | None = None) -> list[str]:
+    """`docker build` for the editor, with `prime` as the read-only named context `consumer-prime`.
+
+    ⛔ With an `iidfile` it takes NO `-t`: the build writes an image ID and the
+    tag is applied afterwards, by `main`, and only once `activation.py` has
+    seen the lockdown run in that image. ⭐ That is what makes *"an image whose
+    lockdown did not load is not tagged"* a property of the tag rather than a
+    sentence in a README (`W432`).
+    """
     command = ["docker", "build", "--progress=plain", "--platform", built.platform,
-               "-f", str(root / editor_plan.DOCKERFILE), "--target", "editor", "-t", built.tag,
+               "-f", str(root / editor_plan.DOCKERFILE), "--target", "editor",
+               *(["--iidfile", str(iidfile)] if iidfile else ["-t", built.tag]),
                "--build-context", f"consumer-prime={prime}"]
     for key in sorted(built.build_args):
         command += ["--build-arg", f"{key}={built.build_args[key]}"]
@@ -106,11 +125,29 @@ def main(argv: list[str]) -> int:
         runner = subprocess.run(runner_command(root, platform, names), stdin=subprocess.DEVNULL)
         if runner.returncode != 0:
             return runner.returncode
-    with tempfile.TemporaryDirectory(prefix="no-prime-") as empty:
-        completed = subprocess.run(docker_command(root, built, prime or Path(empty)), stdin=subprocess.DEVNULL)
-    if completed.returncode == 0:
-        print(built.tag)
-    return completed.returncode
+    with tempfile.TemporaryDirectory(prefix="editor-build-") as work:
+        built_id, empty = Path(work) / "image-id", Path(work) / "no-prime"
+        empty.mkdir()
+        completed = subprocess.run(docker_command(root, built, prime or empty, built_id), stdin=subprocess.DEVNULL)
+        if completed.returncode != 0:
+            return completed.returncode
+        image = built_id.read_text(encoding="utf-8").strip()
+        try:
+            proof = activation.prove(image, editor_plan.lockdown_identity(root))
+        except activation.Refused as refusal:
+            print(f"refused: {refusal}", file=sys.stderr)
+            return 2
+    if not proof.ok:
+        print(f"refused: {proof.complaint()}", file=sys.stderr)
+        print("the image was built and is NOT tagged; it is reachable only by its id "
+              f"{image}, and `docker image rm` takes it away", file=sys.stderr)
+        return 1
+    print(proof.activated.strip())
+    tagged = subprocess.run(["docker", "tag", image, built.tag], stdin=subprocess.DEVNULL)
+    if tagged.returncode != 0:
+        return tagged.returncode
+    print(built.tag)
+    return 0
 
 
 if __name__ == "__main__":

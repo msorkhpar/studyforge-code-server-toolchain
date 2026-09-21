@@ -81,9 +81,16 @@ const extension = require('./extension.js');
 const drain = () => new Promise((resolve) => setImmediate(resolve));
 
 (async () => {
+  const fs = require('fs');
+  const path = require('path');
   const subscriptions = [];
-  extension.activate({ subscriptions });
+  const logs = path.join(process.cwd(), 'logs');
+  const context = process.env.HARNESS_NO_LOG_DIR ? { subscriptions } : { subscriptions, logUri: { fsPath: logs } };
+  extension.activate(context);
   await drain();
+  const recorded = (() => {
+    try { return fs.readFileSync(path.join(logs, extension.RECORD), 'utf8'); } catch (error) { return ''; }
+  })();
   const startup = vscode.__calls.splice(0);
   const delays = scheduled.map((timer) => timer.ms);
   scheduled[0].fn();
@@ -99,8 +106,9 @@ const drain = () => new Promise((resolve) => setImmediate(resolve));
   for (const subscription of subscriptions) { subscription.dispose(); }
   const pending = scheduled.filter((timer) => !timer.cleared).length;
   console.log(JSON.stringify({
-    startup, delays, retry, asked, unrelated, related, pending,
+    startup, delays, retry, asked, unrelated, related, pending, recorded,
     exports: Object.keys(extension).sort(), section: extension.SECTION,
+    banner: extension.BANNER, record: extension.RECORD,
     disposed: vscode.__disposed === true,
   }));
 })();
@@ -127,6 +135,38 @@ class TheManifest(unittest.TestCase):
         self.assertEqual(LOCK.expected, f"{LOCK.id}@{MANIFEST['version']}")
         self.assertEqual(LOCK.filename, f"{LOCK.expected.replace('@', '-')}.vsix")
         self.assertEqual(LOCK.section, f"{lockdown.PUBLISHER}.practice")
+
+    def test_the_manifest_declares_what_the_workbench_reads_before_it_runs_anything(self):
+        # ⛔ W432. Both of these are the difference between an extension that is
+        # installed and one that RUNS, and neither is visible in an installed
+        # list: a manifest missing them packs, installs, lists and never
+        # activates.
+        self.assertIs(MANIFEST["capabilities"]["untrustedWorkspaces"]["supported"], True)
+        self.assertEqual(MANIFEST["extensionKind"], lockdown.EXTENSION_KIND)
+
+    def test_a_manifest_a_workbench_in_restricted_mode_would_disable_is_refused(self):
+        without = copy.deepcopy(MANIFEST)
+        del without["capabilities"]
+        self.assertIn("Restricted Mode", " ".join(lockdown.manifest_findings(without)))
+        stated = copy.deepcopy(MANIFEST)
+        stated["capabilities"]["untrustedWorkspaces"]["supported"] = False
+        self.assertIn("Restricted Mode", " ".join(lockdown.manifest_findings(stated)))
+
+    def test_a_manifest_that_lets_the_workbench_infer_the_extension_kind_is_refused(self):
+        # ⚠️ An extension inferred as `ui` has nowhere to run under code-server,
+        # so the kind is STATED rather than left to a default that moves.
+        without = copy.deepcopy(MANIFEST)
+        del without["extensionKind"]
+        self.assertIn("extensionKind", " ".join(lockdown.manifest_findings(without)))
+        self.assertIn("extensionKind", " ".join(lockdown.manifest_findings(planted_manifest(extensionKind=["ui"]))))
+
+    def test_the_running_fact_and_the_installed_fact_are_two_different_strings(self):
+        # ⭐ `expected` is what the installed list is read against; `banner` is
+        # what a real session's log is read against. W432 is the round where
+        # the first was true for rounds while the second was never true.
+        self.assertEqual(LOCK.banner, f"{LOCK.id}: confined")
+        self.assertEqual(LOCK.record, f"{MANIFEST['name']}.log")
+        self.assertNotEqual(LOCK.banner, LOCK.expected)
 
     def test_a_publisher_that_is_not_this_frameworks_is_found_naming_it(self):
         found = lockdown.manifest_findings(planted_manifest(publisher="example"))
@@ -343,7 +383,33 @@ class TheExtensionBehaviour(unittest.TestCase):
         self.assertEqual(read["startup"], CONFINE)
         self.assertEqual(read["delays"], RETRIES)
         self.assertEqual(read["retry"], CONFINE)
-        self.assertEqual(read["exports"], ["CONFINE", "RETRIES", "SECTION", "activate", "deactivate"])
+        self.assertEqual(read["exports"],
+                         ["BANNER", "CONFINE", "RECORD", "RETRIES", "SECTION", "activate", "deactivate"])
+
+    def test_it_records_that_it_ran_where_the_image_gate_reads(self):
+        # ⛔ W432's durable half, from the extension's side. The banner goes to
+        # the log directory the workbench hands the extension, NOT to the
+        # console: an extension's console reaches the browser's devtools and no
+        # file on the server, so a gate could never read it. Measured.
+        read = self.ran()
+        self.assertEqual(read["banner"], LOCK.banner)
+        self.assertEqual(read["record"], LOCK.record)
+        self.assertTrue(read["recorded"].startswith(LOCK.banner), read["recorded"])
+        for command in CONFINE:
+            self.assertIn(command, read["recorded"])
+
+    def test_the_banner_names_only_the_commands_that_actually_ran(self):
+        # ⚠️ A banner printed regardless would make the gate a second
+        # installed-list check: it would be there whether or not the extension
+        # did anything.
+        read = self.ran(FAIL_ON=CONFINE[1])
+        self.assertNotIn(CONFINE[1], read["recorded"])
+        self.assertIn(CONFINE[0], read["recorded"])
+
+    def test_a_window_with_no_writable_log_directory_is_still_confined(self):
+        # ⭐ Best-effort: the record is evidence, never a precondition.
+        read = self.ran(HARNESS_NO_LOG_DIR="1")
+        self.assertEqual(read["startup"], CONFINE)
 
     def test_it_watches_its_own_section_and_reapplies_only_when_that_section_changed(self):
         read = self.ran()

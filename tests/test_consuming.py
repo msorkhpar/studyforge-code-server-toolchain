@@ -445,6 +445,17 @@ class TheContractAgreesWithTheImage(unittest.TestCase):
         self.assertTrue(any(argument.startswith("--auth=") for argument in command),
                         "the IDE must never start unauthenticated")
 
+    def test_the_workspace_trust_flag_is_in_the_images_cmd_as_well_as_the_contract(self):
+        # ⛔ W432: the contract carried --disable-workspace-trust and the
+        # image's CMD did not, so a consumer that did not copy the compose
+        # template got a workbench in Restricted Mode and a lockdown that never
+        # ran. ⚠️ Both halves are asserted, because the defect was the gap
+        # between them.
+        cmd = json.loads(re.search(r"^CMD (\[.*\])$", DOCKERFILE, flags=re.MULTILINE)[1])
+        self.assertIn("--disable-workspace-trust", cmd)
+        self.assertIn("--disable-workspace-trust", EDITOR["command"])
+        self.assertIn("--disable-workspace-trust", EDITOR["command_notes"]["workspace_trust"])
+
     def test_the_extension_ids_are_the_lockdown_manifests_own(self):
         self.assertEqual(EDITOR["extensions"]["always_installed"], [LOCKDOWN.id])
         contributed = sorted(json.loads((ROOT / "lockdown" / "package.json").read_text(encoding="utf-8"))
