@@ -186,17 +186,10 @@
         "per_project": true,
         "purpose": "the code-server HTTP UI",
         "publish_on_all_interfaces": false,
-        "why": "an unencrypted IDE with a shell. 0.0.0.0 offers it to every machine that can reach this host"
+        "why": "an unencrypted IDE with a shell AND NO PASSWORD (see command_notes.auth). 0.0.0.0 offers it to every machine that can reach this host; loopback is the WHOLE of this service's access control, so widening this field is not a deployment preference but a decision to put an unauthenticated shell on the network"
       }
     ],
     "environment": [
-      {
-        "name": "PASSWORD",
-        "default": null,
-        "required": true,
-        "compose_value": "${CODE_SERVER_PASSWORD:?set CODE_SERVER_PASSWORD before starting the editor}",
-        "note": "there is deliberately no default: the IDE must never start unauthenticated"
-      },
       {
         "name": "GRADLE_USER_HOME",
         "default": "/home/coder/.gradle",
@@ -205,7 +198,7 @@
       }
     ],
     "command": [
-      "--auth=password",
+      "--auth=none",
       "--bind-addr=0.0.0.0:8080",
       "--extensions-dir=/opt/code-server/extensions",
       "--disable-workspace-trust",
@@ -214,6 +207,7 @@
       "/home/coder/repo"
     ],
     "command_notes": {
+      "auth": "--auth=none is EXPLICIT AND LOAD-BEARING, and the explicitness IS the decision: code-server's default when --auth is absent is password, so an omitted flag is a different setting, not this one. User ruling 2026-09-22, replacing the earlier 'never unauthenticated' ruling. THE BOUNDARY IS THE PORT, NOT THE PASSWORD: ports[0].host_bind is 127.0.0.1, so the only clients that can reach this IDE are processes on this host -- the same trust boundary the study site already publishes on unauthenticated, and any process inside it could read PASSWORD out of the container's own environment anyway. The password stopped no reader it was meant to stop and cost a login form inside every practice iframe. THE CONDITION IS THEREFORE THE BIND: if host_bind is ever widened past loopback, or publish_on_all_interfaces is ever set true, this flag goes back to --auth=password IN THE SAME EDIT. tests/test_consuming.py asserts the two together for exactly that reason.",
       "bind_addr": "0.0.0.0 INSIDE the container only, which is the container's own interface; the loopback restriction is the ports entry's host_bind",
       "replaces_cmd": "a compose command: replaces the image's CMD outright, and the image re-declares ENTRYPOINT and CMD so nothing the base bakes is appended to it",
       "extensions_dir": "the extensions are installed into the image, not onto a volume, so an image upgrade carries them",

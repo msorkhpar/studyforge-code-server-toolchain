@@ -39,7 +39,7 @@ python3 consuming/consuming.py --write docs/compose.reference.yaml
 | you supply | the contract's key | the reference's value |
 |---|---|---|
 | the image tag you pinned | `editor.image.env_var` | `EDITOR_IMAGE`, built and printed by `editor.image.tag_from` |
-| the password | `editor.environment[0].name` | `CODE_SERVER_PASSWORD`, with no default |
+| the auth mode | `editor.command[0]` | `--auth=none`, and only because the port is loopback-bound |
 | the host port | `editor.ports[0].host` | `8443`, bound to `editor.ports[0].host_bind` |
 | the owner's uid:gid | `editor.runs_as.compose_value` | `${HOST_UID:-1000}:${HOST_GID:-1000}` |
 | your source paths | `editor.mounts[0].host_path` | `./sources`, at `editor.mounts[0].container_path` |
@@ -47,6 +47,12 @@ python3 consuming/consuming.py --write docs/compose.reference.yaml
 
 Everything else — the toolchains, the extensions, the workbench lockdown, the
 seed settings, the entrypoint — comes from the image.
+
+⭐ **You supply no environment at all.** `editor.environment` carries one entry,
+`GRADLE_USER_HOME`, and it has a default; the reference compose writes it
+explicitly so the seeded cache and the tool agree on one path. ⚠️ **It used to
+carry a second, `PASSWORD`, which you did have to supply** — that is gone with
+the auth mode (user ruling 2026-09-22).
 
 **The runtimes** are chosen when the image is BUILT, not when it is run:
 `editor.runtimes.declared_by` is `--runtimes`, `editor.runtimes.default_set` is
@@ -283,13 +289,14 @@ From the directory holding your copy of the template:
 ```sh
 mkdir -p sources                              # ruling 4: before the container starts
 export EDITOR_IMAGE="$(python3 docker/editor/build.py --runtimes java,maven --print-tag)"
-export CODE_SERVER_PASSWORD=...               # ruling: never unauthenticated
 export HOST_UID="$(id -u)" HOST_GID="$(id -g)"
 docker compose up -d --wait
 ```
 
 The editor is then at `http://127.0.0.1:8443/` — that literal host, and no
-other. `docker compose down -v` removes the containers and the volumes with
+other. ⛔ **It asks for no password** (`editor.command_notes.auth`, user ruling
+2026-09-22): loopback is the whole of its access control, so publishing this
+port anywhere but `127.0.0.1` puts an unauthenticated shell on the network. `docker compose down -v` removes the containers and the volumes with
 them.
 
 ## The runner image

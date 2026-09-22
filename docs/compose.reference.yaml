@@ -34,15 +34,15 @@ services:
     # or breaks every graded run in it
     read_only: false
     environment:
-      # there is deliberately no default: the IDE must never start
-      # unauthenticated
-      PASSWORD: "${CODE_SERVER_PASSWORD:?set CODE_SERVER_PASSWORD before starting the editor}"
       # explicit rather than derived from $HOME, so the seeded cache and the
       # tool agree
       GRADLE_USER_HOME: "/home/coder/.gradle"
     ports:
-      # an unencrypted IDE with a shell. 0.0.0.0 offers it to every machine that
-      # can reach this host
+      # an unencrypted IDE with a shell AND NO PASSWORD (see
+      # command_notes.auth). 0.0.0.0 offers it to every machine that can reach
+      # this host; loopback is the WHOLE of this service's access control, so
+      # widening this field is not a deployment preference but a decision to put
+      # an unauthenticated shell on the network
       - "127.0.0.1:8443:8080"
     # the workspace ROOT is not in the image, so docker would create it root-
     # owned and no build could write .gradle/, .kotlin/ or build/ into it; a
@@ -67,6 +67,20 @@ services:
       # the Maven local repository the entrypoint seeds from the prime when it
       # is empty; omit it when maven is not declared
       - "maven-repo:/home/coder/.m2"
+    # --auth=none is EXPLICIT AND LOAD-BEARING, and the explicitness IS the
+    # decision: code-server's default when --auth is absent is password, so an
+    # omitted flag is a different setting, not this one. User ruling 2026-09-22,
+    # replacing the earlier 'never unauthenticated' ruling. THE BOUNDARY IS THE
+    # PORT, NOT THE PASSWORD: ports[0].host_bind is 127.0.0.1, so the only
+    # clients that can reach this IDE are processes on this host -- the same
+    # trust boundary the study site already publishes on unauthenticated, and
+    # any process inside it could read PASSWORD out of the container's own
+    # environment anyway. The password stopped no reader it was meant to stop
+    # and cost a login form inside every practice iframe. THE CONDITION IS
+    # THEREFORE THE BIND: if host_bind is ever widened past loopback, or
+    # publish_on_all_interfaces is ever set true, this flag goes back to
+    # --auth=password IN THE SAME EDIT. tests/test_consuming.py asserts the two
+    # together for exactly that reason.
     # 0.0.0.0 INSIDE the container only, which is the container's own interface;
     # the loopback restriction is the ports entry's host_bind
     # --disable-workspace-trust is LOAD-BEARING and is not a preference (W432).
@@ -79,7 +93,7 @@ services:
     # carries it too, so a consumer who does not set command: gets it; a
     # consumer who does set command: must keep this argument.
     command:
-      - "--auth=password"
+      - "--auth=none"
       - "--bind-addr=0.0.0.0:8080"
       - "--extensions-dir=/opt/code-server/extensions"
       - "--disable-workspace-trust"

@@ -96,7 +96,13 @@ class TheContract(unittest.TestCase):
             "a bind that may be created by docker": (planted(**{"mounts.0.must_exist_before_start": False}),
                                                      "docker creates a missing one root-owned"),
             "no health check": (planted(healthcheck={}), "ordering is enforced by a health check"),
-            "required and defaulted": (planted(**{"environment.0.default": "letmein"}),
+            # ⚠️ BOTH keys are planted deliberately. The plant used to set `default`
+            # alone and relied on environment.0 being a required entry; when the
+            # PASSWORD entry was removed (user ruling 2026-09-22) environment.0
+            # became a NOT-required one and the plant would have gone on passing
+            # while planting nothing at all.
+            "required and defaulted": (planted(**{"environment.0.required": True,
+                                                  "environment.0.default": "letmein"}),
                                        "is required and defaulted"),
             "a read-only root": (planted(**{"filesystem.read_only_root": True}),
                                  "does not declare the root writable"),
@@ -399,8 +405,7 @@ class TheRenderedFragment(unittest.TestCase):
     def test_compose_itself_accepts_it(self):
         parsed = subprocess.run(["docker", "compose", "-f", str(ROOT / consuming.REFERENCE), "config"],
                                 stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                                env={"PATH": "/usr/bin:/bin:/usr/local/bin", "EDITOR_IMAGE": "an-image",
-                                     "CODE_SERVER_PASSWORD": "a-password"})
+                                env={"PATH": "/usr/bin:/bin:/usr/local/bin", "EDITOR_IMAGE": "an-image"})
         self.assertEqual(parsed.returncode, 0, parsed.stderr)
         self.assertIn("host_ip: 127.0.0.1", parsed.stdout)
 
@@ -442,8 +447,17 @@ class TheContractAgreesWithTheImage(unittest.TestCase):
         self.assertEqual(command[-1], EDITOR["workspace"]["container_path"])
         self.assertIn(f"--bind-addr=0.0.0.0:{EDITOR['ports'][0]['container']}", command)
         self.assertIn(f"--extensions-dir={EDITOR['extensions']['installed_at']}", command)
-        self.assertTrue(any(argument.startswith("--auth=") for argument in command),
-                        "the IDE must never start unauthenticated")
+        # ⛔ THE FLAG AND THE BIND ARE ASSERTED TOGETHER, and that pairing is the
+        # point. --auth=none is safe ONLY because the port is published on
+        # loopback, so loosening either one alone must fail this test. An
+        # ABSENT --auth is also refused: code-server defaults to password, so
+        # omitting the flag is a different setting rather than this one.
+        self.assertIn("--auth=none", command, "the auth mode is explicit, never left to the default")
+        port = EDITOR["ports"][0]
+        self.assertEqual(port["host_bind"], "127.0.0.1",
+                         "an unauthenticated IDE may be published on loopback and nowhere else")
+        self.assertFalse(port["publish_on_all_interfaces"],
+                         "an unauthenticated IDE may be published on loopback and nowhere else")
 
     def test_the_workspace_trust_flag_is_in_the_images_cmd_as_well_as_the_contract(self):
         # ⛔ W432: the contract carried --disable-workspace-trust and the

@@ -59,7 +59,6 @@ RUNTIMES = "java,maven"
 #: a subset of the first, so its runner stages and its extensions are already
 #: built and only the layers the set changes are paid for.
 OTHER_RUNTIMES = "java"
-PASSWORD = "a-password-for-this-test"
 SOURCES = Path(EDITOR["mounts"][0]["host_path"])
 PORT = EDITOR["ports"][0]["host"]
 
@@ -139,7 +138,7 @@ class TheComposeContract(unittest.TestCase):
     def compose(cls, project: str, directory: Path, *arguments: str,
                 image: str | None = None) -> subprocess.CompletedProcess:
         """`docker compose` with only what the fragment asks for by name, in its own project."""
-        environment = dict(os.environ, EDITOR_IMAGE=image or cls.image, CODE_SERVER_PASSWORD=PASSWORD,
+        environment = dict(os.environ, EDITOR_IMAGE=image or cls.image,
                            HOST_UID=str(os.getuid()), HOST_GID=str(os.getgid()))
         return run(["docker", "compose", "--project-name", project, "-f", str(directory / "compose.yaml"),
                     *arguments], cwd=directory, env=environment)
