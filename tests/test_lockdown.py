@@ -52,8 +52,21 @@ CONFINE = [
 ]
 RETRIES = [250, 750, 2000, 6000, 12000]
 
+#: The `vscode` module the extension is run against, with everything it
+#: touches and nothing it does not. ⛔ Every surface the extension reads is
+#: configurable from the environment, so one stub serves the confinement tests
+#: in `test_lockdown_confinement.py` too rather than being copied there.
 VSCODE_STUB = """'use strict';
 const calls = [];
+const read = (name, fallback) => {
+  const value = process.env[name];
+  return value === undefined ? fallback : JSON.parse(value);
+};
+const uri = (text) => (text === null ? null : { toString: () => text, fsPath: text });
+const tabs = read('HARNESS_TABS', []).map((tab) => ({
+  label: tab.label, input: tab.uri === null ? undefined : { uri: uri(tab.uri) },
+}));
+const active = read('HARNESS_ACTIVE', null);
 const api = {
   commands: {
     executeCommand: async (command) => {
@@ -61,14 +74,34 @@ const api = {
       if (process.env.FAIL_ON === command) { throw new Error('not in this build'); }
     },
   },
+  window: {
+    activeTextEditor: active === null ? undefined : { document: { uri: uri(active) } },
+    tabGroups: {
+      all: [{ tabs }],
+      close: async (tab) => {
+        if (process.env.HARNESS_UNCLOSABLE === tab.label) { throw new Error('this build will not'); }
+        api.__closed.push(tab.label);
+        api.__group.tabs = api.__group.tabs.filter((held) => held !== tab);
+      },
+      onDidChangeTabs: (fn) => { api.__tabsListener = fn; return { dispose: () => { api.__tabsDisposed = true; } }; },
+    },
+  },
   workspace: {
     onDidChangeConfiguration: (fn) => {
       api.__listener = fn;
       return { dispose: () => { api.__disposed = true; } };
     },
+    openTextDocument: async (parsed) => {
+      if (process.env.HARNESS_NO_DEFAULTS) { throw new Error('this workbench has no such document'); }
+      api.__opened = String(parsed);
+      return { getText: () => process.env.HARNESS_DEFAULTS || '// Default Keybindings\\n[]' };
+    },
   },
+  Uri: { parse: (text) => ({ toString: () => text }) },
   __calls: calls,
+  __closed: [],
 };
+api.__group = api.window.tabGroups.all[0];
 module.exports = api;
 """
 
@@ -78,14 +111,18 @@ global.setTimeout = (fn, ms) => { const timer = { fn, ms, cleared: false }; sche
 global.clearTimeout = (timer) => { if (timer && typeof timer === 'object') { timer.cleared = true; } };
 const vscode = require('vscode');
 const extension = require('./extension.js');
-const drain = () => new Promise((resolve) => setImmediate(resolve));
+const drain = () => new Promise((resolve) => setImmediate(() => setImmediate(() =>
+    setImmediate(() => setImmediate(() => setImmediate(resolve)))))); 
 
 (async () => {
   const fs = require('fs');
   const path = require('path');
   const subscriptions = [];
   const logs = path.join(process.cwd(), 'logs');
-  const context = process.env.HARNESS_NO_LOG_DIR ? { subscriptions } : { subscriptions, logUri: { fsPath: logs } };
+  const storage = path.join(process.cwd(), 'user', 'globalStorage', 'studyforge.practice-focus');
+  const context = process.env.HARNESS_NO_LOG_DIR
+    ? { subscriptions, globalStorageUri: { fsPath: storage } }
+    : { subscriptions, logUri: { fsPath: logs }, globalStorageUri: { fsPath: storage } };
   extension.activate(context);
   await drain();
   const recorded = (() => {
@@ -105,11 +142,17 @@ const drain = () => new Promise((resolve) => setImmediate(resolve));
   const related = vscode.__calls.splice(0);
   for (const subscription of subscriptions) { subscription.dispose(); }
   const pending = scheduled.filter((timer) => !timer.cleared).length;
+  const derived = (() => {
+    try { return JSON.parse(fs.readFileSync(path.join(logs, 'keybindings.json'), 'utf8')); }
+    catch (error) { return null; }
+  })();
   console.log(JSON.stringify({
     startup, delays, retry, asked, unrelated, related, pending, recorded,
     exports: Object.keys(extension).sort(), section: extension.SECTION,
     banner: extension.BANNER, record: extension.RECORD,
-    disposed: vscode.__disposed === true,
+    disposed: vscode.__disposed === true, tabsDisposed: vscode.__tabsDisposed === true,
+    closed: vscode.__closed, left: vscode.__group.tabs.map((tab) => tab.label),
+    opened: vscode.__opened || null, derived,
   }));
 })();
 """
@@ -227,9 +270,12 @@ class ThePackedVsix(unittest.TestCase):
 
     def test_it_holds_the_gallery_manifest_the_content_types_and_the_extension(self):
         _, archive = self.packed()
+        # ⭐ Derived, never a second list: every script beside the manifest is
+        # packed, so a helper the extension requires cannot be left out (W433
+        # added two of them and this assertion did not have to be edited).
         self.assertEqual(sorted(archive.namelist()),
-                         ["[Content_Types].xml", "extension.vsixmanifest",
-                          "extension/extension.js", "extension/package.json"])
+                         sorted(["[Content_Types].xml", "extension.vsixmanifest"]
+                                + [f"extension/{path.name}" for path in lockdown.sources(SOURCE)]))
         manifest = archive.read("extension.vsixmanifest").decode("utf-8")
         publisher, name = LOCK.id.split(".", 1)
         self.assertIn(f'Id="{name}" Version="{LOCK.version}" Publisher="{publisher}"', manifest)
@@ -384,7 +430,8 @@ class TheExtensionBehaviour(unittest.TestCase):
         self.assertEqual(read["delays"], RETRIES)
         self.assertEqual(read["retry"], CONFINE)
         self.assertEqual(read["exports"],
-                         ["BANNER", "CONFINE", "RECORD", "RETRIES", "SECTION", "activate", "deactivate"])
+                         ["BANNER", "CONFINE", "RECORD", "RETRIES", "SECTION",
+                          "activate", "closeStrangers", "deactivate"])
 
     def test_it_records_that_it_ran_where_the_image_gate_reads(self):
         # ⛔ W432's durable half, from the extension's side. The banner goes to

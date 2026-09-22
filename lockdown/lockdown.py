@@ -72,6 +72,14 @@ PUBLISHER = "studyforge"
 #: A fixed timestamp for every entry: the same inputs must give the same bytes,
 #: or the image layer that installs it changes for no reason.
 EPOCH = (1980, 1, 1, 0, 0, 0)
+#: What `keybindings.js` writes its derived keybinding removals to, inside the
+#: log directory the workbench hands the extension (`W433`). ⛔ The name is
+#: spelled in two languages because the two halves are in two: the extension
+#: writes it and `docker/editor/confinement.py` reads it. ⭐ This is the Python
+#: side, and `tests/test_lockdown.py` asserts the JavaScript side says the
+#: same word — so a rename in either is a failing test, not a gate that
+#: quietly reads nothing.
+DERIVED_KEYBINDINGS = "keybindings.json"
 CONTENT_TYPES = (
     '<?xml version="1.0" encoding="utf-8"?>'
     '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'

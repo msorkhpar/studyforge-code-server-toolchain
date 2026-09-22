@@ -16,7 +16,20 @@
  *     the container, the loopback bind and the one exact `--embed-origin`.
  *   - it does not make files read-only. That is `files.readonlyInclude` /
  *     `files.readonlyExclude` in the workspace settings the study server
- *     writes, which the editor enforces itself.
+ *     writes, which the editor enforces itself. ⛔ But it DOES keep that
+ *     lock standing, and `W433` is why: `files.readonlyExclude` is an object
+ *     setting, VS Code MERGES object settings across scopes, and a USER-scope
+ *     entry naming the test file is merged INTO the workspace lock and
+ *     re-opens it. Measured, in a real session:
+ *     `{"Main.java": true}` became `{"MainTest.java": true, "Main.java": true}`
+ *     after one `ConfigurationTarget.Global` write. ⚠️ So a reader who can
+ *     reach the settings editor can make the test that judges them writable,
+ *     and confining the command surface is what stops that -- not tidiness.
+ *
+ * Which is the second job this file grew: the workbench's command surface is
+ * confined to what a practice NEEDS, by keybinding and by tab, from the
+ * allow-list in `allowed.js`. ⛔ Hiding a surface does not disable a command:
+ * a closed Explorer is one `Ctrl+P` from being irrelevant.
  *   - it does not open any file. A page shows a practice in TWO iframes of
  *     this one code-server -- the file to edit in one, the test that judges
  *     it in the other -- and which file a window shows is decided by that
@@ -38,6 +51,8 @@
 const vscode = require('vscode');
 const fs = require('fs');
 const path = require('path');
+
+const keybindings = require('./keybindings');
 
 /** This extension's own manifest, for its identifier and nothing else.
  *
@@ -75,12 +90,12 @@ const RECORD = `${manifest.name}.log`;
  *
  *  Best-effort and never thrown from: a window whose log directory cannot be
  *  written is still a window this extension should confine. */
-function record(context, ran) {
+function record(context, lines) {
     try {
         const directory = (context.logUri && context.logUri.fsPath) || context.logPath;
         if (!directory) { return; }
         fs.mkdirSync(directory, { recursive: true });
-        fs.appendFileSync(path.join(directory, RECORD), `${BANNER} ${ran.join(' ')}\n`);
+        fs.appendFileSync(path.join(directory, RECORD), `${lines.join('\n')}\n`);
     } catch (error) {
         /* not writable in this window; the confining above already happened */
     }
@@ -137,8 +152,60 @@ async function confine() {
     return ran;
 }
 
+/** The one editor this window was addressed with, learned rather than told.
+ *
+ *  ⭐ `closeOtherEditors` has already run by the time this is read, so the
+ *  active editor IS the file this window's URL opened -- the same trick the
+ *  note above `CONFINE` describes, one step further. ⛔ It is learned ONCE:
+ *  if a stray tab ever did become active before this ran, re-learning would
+ *  adopt the stray as the thing to keep and close the practice. */
+let mine = null;
+
+/** Close every tab that is not the one file this window opened.
+ *
+ *  ⛔ THIS IS THE COMMAND HALF OF THE CONFINEMENT, and it is an allow-list of
+ *  exactly one thing. Removing a keybinding does not unregister a command:
+ *  the editor's own context menu still offers Go to Definition, an extension
+ *  can still `executeCommand`, and either lands the reader in a file the
+ *  lesson did not send them to. ⭐ Rather than enumerate what may open a tab
+ *  -- which is the deny-list that is wrong the next time the workbench gains
+ *  a command -- this closes everything that is not the practice, whatever
+ *  opened it and whenever. The settings editor is closed by the same rule as
+ *  a stray source file, and neither is named here.
+ *
+ *  ⚠️ A tab whose `input` is not a text document (the settings editor, a
+ *  webview, a diff) has no `uri` to compare, so it is not the practice and it
+ *  goes. Measured: the settings editor arrives as a tab labelled `Settings`
+ *  with an input this extension host cannot type.
+ *
+ *  ⛔ Does nothing at all while `mine` is unknown. A guard that does not know
+ *  what to keep must not start closing. */
+async function closeStrangers() {
+    if (!mine) { return []; }
+    const closed = [];
+    for (const group of vscode.window.tabGroups.all) {
+        for (const tab of group.tabs) {
+            const input = tab.input;
+            if (input && input.uri && input.uri.toString() === mine) { continue; }
+            try {
+                await vscode.window.tabGroups.close(tab, true);
+                closed.push(tab.label);
+            } catch (error) {
+                /* already gone, or this build will not close it */
+            }
+        }
+    }
+    return closed;
+}
+
+function learn() {
+    const active = vscode.window.activeTextEditor;
+    if (!mine && active && active.document) { mine = active.document.uri.toString(); }
+    return mine;
+}
+
 function apply(context) {
-    confine();
+    confine().then(function () { learn(); return closeStrangers(); });
     for (const delay of RETRIES) {
         const timer = setTimeout(confine, delay);
         context.subscriptions.push({ dispose: () => clearTimeout(timer) });
@@ -149,12 +216,25 @@ function activate(context) {
     /* ⭐ The first pass announces itself, and only this one does: the retries
        and the practice-changed passes are the same work again, and a banner
        per pass would say nothing more while filling the log. */
-    confine().then(function (ran) { record(context, ran); });
+    confine().then(async function (ran) {
+        learn();
+        const closed = await closeStrangers();
+        record(context, [
+            `${BANNER} ${ran.join(' ')}`,
+            `${BANNER} kept=${mine ? 1 : 0} closed=${closed.length}`,
+            await keybindings.report(context, BANNER),
+        ]);
+    });
     for (const delay of RETRIES) {
         const timer = setTimeout(confine, delay);
         context.subscriptions.push({ dispose: () => clearTimeout(timer) });
     }
     context.subscriptions.push(
+        /* ⛔ Not on a schedule and not only at startup: a tab can open at any
+           moment, so the guard runs whenever the workbench says the tabs
+           changed. Closing one fires this again, finds nothing left to close
+           and stops. */
+        vscode.window.tabGroups.onDidChangeTabs(function () { closeStrangers(); }),
         vscode.workspace.onDidChangeConfiguration(function (event) {
             /* The reader moved to another practice and the study server
                rewrote the workspace settings. This extension no longer reads
@@ -171,4 +251,4 @@ function activate(context) {
 
 function deactivate() {}
 
-module.exports = { activate, deactivate, SECTION, CONFINE, RETRIES, BANNER, RECORD };
+module.exports = { activate, deactivate, SECTION, CONFINE, RETRIES, BANNER, RECORD, closeStrangers };

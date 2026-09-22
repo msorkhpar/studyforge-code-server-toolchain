@@ -21,19 +21,27 @@ it, the context is an empty directory and nothing is warmed.
 `--root DIR` builds a different copy of the component (the tests plant a
 defect in a temporary copy); `--platform` defaults to this machine's.
 
-⛔ **The image is TAGGED only after its lockdown has been PROVED TO RUN**
-(`activation.py`, `W432`): the build writes an image ID, a real workbench
-session is opened in it with a headless browser, and the tag is applied only
-once the extension host's log shows the extension activating AND the extension
-announcing that it ran. ⚠️ A build on a host with no browser is REFUSED, not
-waved through -- the check this replaces read the INSTALLED list, passed, and
-shipped an image whose lockdown never loaded.
+⛔ **The image is TAGGED only after TWO real sessions have been opened in it**,
+and the build writes an image ID rather than a tag until both pass:
 
-**Depends on.** The standard library, `editor_plan.py` and `activation.py`
-beside it, the runner's `build.py` and `plan.py`, a Docker CLI with BuildKit,
-and a Chromium-family browser for the activation proof. ⛔ It never mounts a
-socket; the proof runs a container from OUTSIDE, with the Docker CLI, like
-every other container this component starts.
+1. **its lockdown RUNS** (`activation.py`, `W432`) -- the extension host's log
+   shows the extension activating AND the extension announcing that it ran;
+2. **the practice frame is CONFINED** (`confinement.py`, `W433`) -- a headless
+   browser presses `Ctrl+Shift+P`, `Ctrl+P`, `Ctrl+,`, `F5` and the rest at
+   that session and nothing opens, while the editor's own find widget still
+   opens and what is typed still reaches the file on disk.
+
+⚠️ A build on a host with no browser is REFUSED, not waved through -- the
+check the first of these replaced read the INSTALLED list, passed, and shipped
+an image whose lockdown never loaded. ⭐ The second exists one level up for
+the same reason: a check that reads the keybindings FILE cannot see what the
+workbench allows.
+
+**Depends on.** The standard library, `editor_plan.py`, `activation.py`,
+`confinement.py` and `cdp.py` beside it, the runner's `build.py` and
+`plan.py`, a Docker CLI with BuildKit, and a Chromium-family browser for both
+proofs. ⛔ It never mounts a socket; the proofs run containers from OUTSIDE,
+with the Docker CLI, like every other container this component starts.
 """
 
 from __future__ import annotations
@@ -48,6 +56,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "minimal"))
 import activation  # noqa: E402
 import build as runner_build  # noqa: E402
+import confinement  # noqa: E402
 import editor_plan  # noqa: E402
 
 COMPONENT = Path(__file__).resolve().parents[2]
@@ -132,17 +141,21 @@ def main(argv: list[str]) -> int:
         if completed.returncode != 0:
             return completed.returncode
         image = built_id.read_text(encoding="utf-8").strip()
+        lock = editor_plan.lockdown_identity(root)
         try:
-            proof = activation.prove(image, editor_plan.lockdown_identity(root))
-        except activation.Refused as refusal:
+            proof = activation.prove(image, lock)
+            confined = confinement.prove(image, lock) if proof.ok else None
+        except (activation.Refused, confinement.cdp.CdpError) as refusal:
             print(f"refused: {refusal}", file=sys.stderr)
             return 2
-    if not proof.ok:
-        print(f"refused: {proof.complaint()}", file=sys.stderr)
-        print("the image was built and is NOT tagged; it is reachable only by its id "
-              f"{image}, and `docker image rm` takes it away", file=sys.stderr)
-        return 1
+    for failed in (proof, confined):
+        if failed is not None and not failed.ok:
+            print(f"refused: {failed.complaint()}", file=sys.stderr)
+            print("the image was built and is NOT tagged; it is reachable only by its id "
+                  f"{image}, and `docker image rm` takes it away", file=sys.stderr)
+            return 1
     print(proof.activated.strip())
+    print(confined.report)
     tagged = subprocess.run(["docker", "tag", image, built.tag], stdin=subprocess.DEVNULL)
     if tagged.returncode != 0:
         return tagged.returncode

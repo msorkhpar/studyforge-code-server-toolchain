@@ -163,13 +163,22 @@ ARG JAVA_RUNTIME
 ARG SEED_DROP
 COPY docker/editor/entrypoint.sh /opt/code-server/entrypoint.sh
 COPY docker/editor/seed/settings.json /opt/code-server/seed/settings.json
+# The keybindings seed (W433). ⛔ GENERATED, never hand-edited: it is every
+# default keybinding whose command `lockdown/allowed.js` does not allow, and
+# `python3 docker/editor/confinement.py --write <image>` rewrites it from a
+# real workbench. No `@runtime` block and no placeholder -- a keybinding names
+# no toolchain -- so nothing is substituted into it below.
+# ⚠️ It is SEEDED rather than applied at run time because the workbench reads
+# the user keybindings file when a SESSION STARTS and ignores a write made
+# while one is open: measured, and `lockdown/keybindings.js` carries it.
+COPY docker/editor/seed/keybindings.json /opt/code-server/seed/keybindings.json
 RUN for name in ${SEED_DROP}; do \
       sed -i "/\/\/ @runtime $name\$/,/\/\/ @end $name\$/d" /opt/code-server/seed/settings.json; \
     done \
  && sed -i "s/@JAVA_RUNTIME@/${JAVA_RUNTIME}/" /opt/code-server/seed/settings.json \
  && ! grep -q '@JAVA_RUNTIME@' /opt/code-server/seed/settings.json \
  && chmod 755 /opt/code-server/entrypoint.sh \
- && chmod 644 /opt/code-server/seed/settings.json
+ && chmod 644 /opt/code-server/seed/settings.json /opt/code-server/seed/keybindings.json
 
 # Named volumes are initialised from the image. Docker creates a mount point
 # that does not exist in the image owned by root, and code-server then cannot

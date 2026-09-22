@@ -145,7 +145,7 @@ def command_of(image: str) -> list[str]:
     password would have to be generated, held and then kept out of a log, and
     the probe has no business owning a secret.
     """
-    inspected = _docker("image", "inspect", "--format", "{{json .Config.Cmd}}", image)
+    inspected = docker_cli("image", "inspect", "--format", "{{json .Config.Cmd}}", image)
     cmd = json.loads(inspected.stdout.strip() or "null")
     if not cmd:
         raise Refused(f"{image} declares no CMD, so there is no shipped command line to prove")
@@ -163,9 +163,9 @@ def prove(image: str, lock=None, keep: bool = False) -> Proof:
         (sources / PROBE_FILE).write_text(PROBE_TEXT, encoding="utf-8")
         os.chmod(scratch, 0o755)
         try:
-            _start(image, name, sources)
-            port = _port(name)
-            _wait_for_health(port)
+            start(image, name, sources)
+            port = published_port(name)
+            wait_for_health(port)
             proof = _drive(found, image, name, port, lock, Path(scratch) / "profile")
         finally:
             if not keep:
@@ -173,8 +173,8 @@ def prove(image: str, lock=None, keep: bool = False) -> Proof:
     return proof
 
 
-def _start(image: str, name: str, sources: Path) -> None:
-    _docker("run", "-d", "--name", name, "--init",
+def start(image: str, name: str, sources: Path) -> None:
+    docker_cli("run", "-d", "--name", name, "--init",
             "--user", f"{os.getuid()}:{os.getgid()}",
             "-p", "127.0.0.1::8080",
             "--tmpfs", "/home/coder/repo",
@@ -182,14 +182,14 @@ def _start(image: str, name: str, sources: Path) -> None:
             image, *command_of(image))
 
 
-def _port(name: str) -> int:
-    published = _docker("port", name, "8080/tcp").stdout.strip().splitlines()
+def published_port(name: str) -> int:
+    published = docker_cli("port", name, "8080/tcp").stdout.strip().splitlines()
     if not published:
         raise Refused(f"{name} published no port for 8080/tcp")
     return int(published[0].rsplit(":", 1)[1])
 
 
-def _wait_for_health(port: int) -> None:
+def wait_for_health(port: int) -> None:
     deadline = time.monotonic() + HEALTH_TIMEOUT
     while time.monotonic() < deadline:
         try:
@@ -211,7 +211,7 @@ def _drive(found: str, image: str, name: str, port: int, lock, profile: Path) ->
     try:
         deadline, log = time.monotonic() + ACTIVATION_TIMEOUT, ""
         while time.monotonic() < deadline:
-            log = _exthost_log(name, lock)
+            log = exthost_log(name, lock)
             proof = _read(image, log, activation, lock.banner)
             if proof.ok:
                 return proof
@@ -233,7 +233,7 @@ def _read(image: str, log: str, activation: str, banner: str) -> Proof:
                  log=log)
 
 
-def _exthost_log(name: str, lock) -> str:
+def exthost_log(name: str, lock) -> str:
     """What a session wrote: the extension host's own log, and the extension's.
 
     ⭐ Two files and two different facts. `remoteexthost.log` is the WORKBENCH
@@ -249,7 +249,7 @@ def _exthost_log(name: str, lock) -> str:
     return read.stdout
 
 
-def _docker(*args: str) -> subprocess.CompletedProcess:
+def docker_cli(*args: str) -> subprocess.CompletedProcess:
     done = subprocess.run(["docker", *args], stdin=subprocess.DEVNULL, capture_output=True, text=True)
     if done.returncode != 0:
         raise Refused(f"docker {' '.join(args[:2])} failed: {done.stderr.strip() or done.stdout.strip()}")

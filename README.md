@@ -242,6 +242,49 @@ the workbench provides — no build step, no dependencies, and nothing fetched.
   `capabilities.untrustedWorkspaces` is the other half: the flag covers a
   consumer who keeps the image's command, the declaration covers one who
   replaces it.
+- ⛔ **The COMMAND SURFACE is confined, and hiding a surface is not the same
+  thing** ([`lockdown/allowed.js`](lockdown/allowed.js), `W433`). ⚠️ Closing
+  the Explorer leaves the reader one `Ctrl+P` from being somewhere else, and a
+  reader's own screenshot showed the palette open inside a practice frame
+  offering Go to File, Show and Run Commands, Search for Text, Open Quick
+  Chat, Go to Symbol, Start Debugging and Run Task. ⭐ **What is written down
+  is an ALLOW-LIST of what a practice NEEDS** — the caret, the editor's own
+  actions, completion, find, and `Ctrl+S` — **and every other default
+  keybinding's removal is DERIVED from it against the workbench's own default
+  keybinding document.** ⛔ **A deny-list is the wrong shape**: it is wrong the
+  next time the workbench gains a command, and nothing would say so. ⭐ The
+  tab guard is the other half, because removing a keybinding does not
+  unregister a command: any editor tab that is not the file that window's URL
+  opened is closed, whatever opened it, and no surface is named in the source.
+- ⛔ **This is an INTEGRITY clause, not a tidiness one.** ⚠️ `files.readonlyExclude`
+  is what makes a Submit mean anything — the test that judges the reader is not
+  theirs to edit — and it is an **object setting, which VS Code MERGES across
+  scopes**. Measured in a real session: a workspace value of
+  `{"Main.java": true}` became `{"MainTest.java": true, "Main.java": true}`
+  after one `ConfigurationTarget.Global` write, and the user settings file on
+  disk carried it. ⛔ **So a reader who reaches the settings editor can make
+  their own test writable**, and both ways in — the editor and the JSON — are
+  confined.
+- ⛔ **The removals are SEEDED by the entrypoint, before any session exists.**
+  ⚠️ Measured: the workbench reads `<user data dir>/User/keybindings.json` when
+  a **session starts** and ignores a write made while one is open — the file
+  sits on disk, correct, and every key still fires. ⭐ So
+  [`docker/editor/seed/keybindings.json`](docker/editor/seed/keybindings.json)
+  is generated, baked into the image and written on **every** start, unlike
+  `settings.json`, which is the reader's and is written only when absent.
+  Regenerate it with
+  `python3 docker/editor/confinement.py --write <image>`; ⛔ never by hand.
+- ⛔ **And the image is tagged on what the workbench ALLOWS, not on what the
+  file says** ([`docker/editor/confinement.py`](docker/editor/confinement.py)).
+  ⭐ The same session `activation.py` opens is driven by a headless browser
+  that **presses** `Ctrl+Shift+P`, `Ctrl+P`, `Ctrl+,`, `F5` and the rest and
+  looks at the page for what appeared — and then presses the keys a practice
+  needs, types into the one file and saves it, because ⚠️ **a confinement that
+  broke the practice would pass every negative clause.** The extension's own
+  report is the exhaustive half beside it: it derives the removals the
+  allow-list implies from **this** workbench's keybindings and says how many
+  the session did not load, so a code-server bump that adds a command refuses
+  the build instead of shipping quietly.
 - ⭐ **It reads no setting and knows no corpus.** Which file a window shows is
   decided by that window's own URL. It contributes
   `studyforge.practice.main` and `studyforge.practice.test` only so the

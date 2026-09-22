@@ -17,6 +17,16 @@
 # ONLY when no settings file exists, and never overwrites: an overwrite would
 # lose the reader's edits on every start.
 #
+# ⛔ THE KEYBINDINGS SEED IS THE OPPOSITE, AND THE DIFFERENCE IS DELIBERATE
+# (W433). settings.json is the READER's file — the paragraph above is about
+# their edits. keybindings.json is not theirs and never was: it is the
+# workbench lockdown, it is generated from lockdown/allowed.js, and a reader
+# confined by it has no command with which to write one. A volume carrying an
+# older image's copy — or none, which is every volume that predates this — is
+# a keybinding the allow-list no longer permits still firing, so it is written
+# on EVERY start. ⚠️ A consumer who wants a different set changes the
+# allow-list and rebuilds; an edit to this file in a volume does not survive.
+#
 # ⛔ The final `exec` chains to /usr/bin/entrypoint.sh, never to code-server
 # directly: bypassing it loses the base's fixuid, DOCKER_USER handling and
 # dumb-init. ⛔ There is no mode that runs some other command instead of
@@ -35,6 +45,7 @@ set -eu
 eval "$(fixuid -q)"
 
 SEED_SETTINGS=/opt/code-server/seed/settings.json
+SEED_KEYBINDINGS=/opt/code-server/seed/keybindings.json
 SEED_GRADLE=/opt/code-server/prime/gradle-home
 SEED_MAVEN=/opt/code-server/prime/maven-repo
 
@@ -81,6 +92,18 @@ else
     log "writing default settings to $target"
     mkdir -p "$user_data_dir/User"
     cp "$SEED_SETTINGS" "$target"
+fi
+
+# The workbench lockdown's keybindings, written every start — see the note at
+# the top of this file for why this one is not the reader's to keep.
+keys="$user_data_dir/User/keybindings.json"
+if [ -e "$SEED_KEYBINDINGS" ]; then
+    log "writing the lockdown keybindings to $keys"
+    mkdir -p "$user_data_dir/User"
+    cp "$SEED_KEYBINDINGS" "$keys.seed-partial"
+    mv "$keys.seed-partial" "$keys"
+else
+    log "no keybindings seed in this image; the workbench keeps its defaults"
 fi
 
 exec /usr/bin/entrypoint.sh "$@"
