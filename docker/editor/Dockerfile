@@ -146,6 +146,28 @@ RUN --network=none --mount=type=bind,from=fetch,source=/fetch,target=/tmp/fetch 
     chown -R 1000:1000 /opt/code-server/extensions; \
     chmod -R a+rX /opt/code-server/extensions
 
+# ⛔ THE BUNDLED CHAT IS DELETED FROM THE PRODUCT, not hidden behind a setting.
+# ⚠️ It is a BUILT-IN of the code-server build -- it appears in no
+# `--list-extensions` output and in no EXPECTED_EXTENSIONS, which is why three
+# rounds of hiding panels never removed it: the reader could still reach Open
+# Chat, Open Inline Chat and Open Quick Chat from the title bar, and the
+# secondary side bar opened itself on it despite
+# `workbench.secondarySideBar.defaultVisibility: hidden`.
+# ⭐ A SETTING WOULD BE THE WRONG INSTRUMENT HERE (the W433 lesson): a hidden
+# entry point is still a capability, and a practice frame that can reach a
+# model is grading theatre (R5). Deleting the directory removes the capability
+# rather than the button.
+# ⭐ The `[ -d ]` guard is deliberate: a future code-server that no longer
+# bundles it must not fail this build, and the ASSERTION that it is gone lives
+# in `tests/test_editor_image.py` against the built image, where a silent
+# rename would be caught.
+RUN set -eu; \
+    built_in=/usr/lib/code-server/lib/vscode/extensions; \
+    for gone in copilot; do \
+      [ -d "$built_in/$gone" ] && rm -rf "$built_in/$gone" || true; \
+    done; \
+    ! ls -d "$built_in"/*copilot* >/dev/null 2>&1
+
 # ⭐ A LOGIN shell rebuilds PATH from /etc/profile, which assigns it outright
 # (measured on this base) and silently drops /opt: a tool works under
 # `docker exec` and is "command not found" in the integrated terminal. So the

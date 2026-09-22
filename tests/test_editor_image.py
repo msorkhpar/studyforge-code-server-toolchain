@@ -205,6 +205,29 @@ class TheEditorImage(unittest.TestCase):
         self.assertEqual(installed, sorted([f"{e}@{EPINS['extensions'][e]['version']}" for e in EPINS["extensions"]]
                                            + [LOCKDOWN.expected]))
 
+    def test_the_bundled_chat_is_absent_from_the_product_not_merely_hidden(self):
+        """⛔ The chat is a BUILT-IN, so `--list-extensions` never named it (user report, 2026-09-22).
+
+        ⚠️ The test that came closest, `test_the_installed_extensions_are_exactly_the_pins`,
+        passed against every image that shipped it: it reads the installed
+        list, and a built-in is not on it. ⭐ This one reads the product's own
+        extensions directory instead, which is where it actually lived.
+        """
+        built_in = "/usr/lib/code-server/lib/vscode/extensions"
+        listing = self.exec(self.editor, "ls", built_in)
+        shipped = [name.strip() for name in listing.stdout.split() if name.strip()]
+        # ⭐ The POSITIVE CONTROL: a directory that reads empty, or a path that
+        # moved in a later code-server, would make the assertion below pass
+        # while proving nothing at all.
+        self.assertGreater(len(shipped), 1, f"{built_in} lists nothing -- the path moved, so this test is blind")
+        self.assertNotIn("copilot", shipped)
+        self.assertEqual([name for name in shipped if "copilot" in name or "chat" in name], [])
+
+    def test_a_build_that_leaves_the_bundled_chat_in_place_is_refused(self):
+        root = planted_copy("keeps-the-chat", dockerfile=(
+            'for gone in copilot; do', 'for gone in nothing-by-this-name; do'))
+        self.planted_build_fails(root)
+
     def test_an_extension_that_is_not_installed_fails_the_build_naming_it(self):
         root = planted_copy("skip-kotlin", dockerfile=(
             "for vsix in /tmp/fetch/*.vsix /tmp/lockdown/*.vsix; do",
