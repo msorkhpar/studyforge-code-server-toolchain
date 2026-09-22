@@ -449,13 +449,20 @@ class TheGateOnARealSession(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.image = subprocess.run(
-            [sys.executable, str(EDITOR / "build.py"), "--runtimes", "java,maven", "--print-tag"],
-            capture_output=True, text=True, stdin=subprocess.DEVNULL).stdout.strip()
-        present = subprocess.run(["docker", "image", "inspect", cls.image],
-                                 stdin=subprocess.DEVNULL, capture_output=True)
-        if present.returncode != 0:
-            raise unittest.SkipTest(f"{cls.image} is not on this host; build it first")
+        # ⛔ It BUILDS rather than skipping when the tag is absent, and that is
+        # this module's own lesson learned the hard way: the tag digests
+        # `docker/editor/` and `lockdown/`, so editing a docstring in either
+        # moves it, and a class that skipped on an absent tag read GREEN with
+        # its three real assertions never taken. ⚠️ A gate that can be absent
+        # is not a gate — `activation.py` says so about browsers and it is the
+        # same sentence here.
+        build = [sys.executable, str(EDITOR / "build.py"), "--runtimes", "java,maven"]
+        cls.image = subprocess.run(build + ["--print-tag"], capture_output=True, text=True,
+                                   stdin=subprocess.DEVNULL).stdout.strip()
+        built = subprocess.run(build, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+        if built.returncode != 0:
+            raise AssertionError(f"the editor build did not pass its own gates:\n{built.stdout[-4000:]}"
+                                 f"\n{built.stderr[-4000:]}")
 
     def planted(self) -> str:
         """The same image with one command's keybinding put back into the seed."""
