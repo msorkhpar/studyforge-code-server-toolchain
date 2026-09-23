@@ -168,6 +168,33 @@ RUN set -eu; \
     done; \
     ! ls -d "$built_in"/*copilot* >/dev/null 2>&1
 
+# ⛔ THE PRIMARY SIDE BAR STARTS CLOSED, before the workbench's first paint (W448).
+# ⚠️ Measured on code-server 4.137.0 in a real browser: every practice frame
+# painted the Explorer from the workbench's first frame for up to seven seconds,
+# until the lockdown's `closeSidebar` passes won -- and each close then moved
+# focus to the editor, which scrolled the reader's page to the frame (W449).
+# ⭐ WHY THE BUNDLE AND NOT A SETTING: no setting names the primary side bar's
+# visibility. It is workbench layout STATE, kept per workspace in the BROWSER's
+# own storage, so neither the server nor this image can seed it; with nothing
+# stored the workbench falls back to `SIDEBAR_HIDDEN.defaultValue`, which is
+# "hidden only for an empty window". This makes it hidden for every window,
+# which is what the lockdown enforces anyway -- now from the first frame
+# instead of after it.
+# ⛔ Exactly ONE default per bundle before, and the hidden one after, or the
+# build fails: a code-server that renamed the key must not ship a workbench that
+# silently shows the Explorer again. `tests/test_editor_layout.py` reads the
+# EFFECT in a real browser, and plants the upstream default back.
+RUN set -eu; \
+    for bundle in /usr/lib/code-server/lib/vscode/out/vs/code/browser/workbench/workbench.js \
+                  /usr/lib/code-server/lib/vscode/out/vs/workbench/workbench.web.main.internal.js; do \
+      found="$(grep -o 'SIDEBAR_HIDDEN\.defaultValue=[^,]*,' "$bundle" | wc -l)"; \
+      [ "$found" = 1 ] \
+        || { echo "$bundle holds $found side bar defaults; W448 patches exactly one" >&2; exit 1; }; \
+      sed -i 's/SIDEBAR_HIDDEN\.defaultValue=[^,]*,/SIDEBAR_HIDDEN.defaultValue=!0,/' "$bundle"; \
+      grep -q 'SIDEBAR_HIDDEN\.defaultValue=!0,' "$bundle" \
+        || { echo "$bundle: the side bar default was not replaced" >&2; exit 1; }; \
+    done
+
 # ⭐ A LOGIN shell rebuilds PATH from /etc/profile, which assigns it outright
 # (measured on this base) and silently drops /opt: a tool works under
 # `docker exec` and is "command not found" in the integrated terminal. So the
