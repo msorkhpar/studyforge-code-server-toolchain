@@ -386,6 +386,7 @@ python3 -m unittest discover -s tests -v                   # the plans, pins and
 TC_DOCKER=1 python3 -m unittest tests.test_image -v        # builds and runs the runner
 TC_DOCKER=1 python3 -m unittest tests.test_editor_image -v # builds and runs the editor
 TC_DOCKER=1 python3 -m unittest tests.test_editor_layout -v # the side bar is never painted (W448)
+TC_DOCKER=1 python3 -m unittest tests.test_editor_agent_host -v # no agent host, no Copilot CLI (W454)
 TC_DOCKER=1 python3 -m unittest tests.test_editor_selection_image -v # the selected sets
 TC_DOCKER=1 python3 -m unittest tests.test_prime_image -v   # the prime, warm and offline
 TC_DOCKER=1 python3 -m unittest tests.test_runner_prime_image -v # a graded run, offline

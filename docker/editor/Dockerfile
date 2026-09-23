@@ -168,6 +168,53 @@ RUN set -eu; \
     done; \
     ! ls -d "$built_in"/*copilot* >/dev/null 2>&1
 
+# ⛔ THE BUNDLED COPILOT CLI IS DELETED, AND THE AGENT HOST THAT RAN IT IS OFF (W454).
+# ⚠️ The chat deletion above left the SERVER half: the first workbench to
+# connect made the server fork `bootstrap-fork --type=agentHost`, which ran
+# `node_modules/@github/copilot-linux-x64/index.js --headless` (136 MB, with
+# api.github.com and api.githubcopilot.com in it) on a container with egress.
+# ⭐ THREE EDITS, each measured on 4.137.0 as needed on its own:
+#  1. The modules go: the CLI, its SDK, and `@vscode/copilot-api`, the Copilot
+#     API client that only the agent host imports. ALONE this is not enough:
+#     the fork still starts, throws ERR_MODULE_NOT_FOUND for
+#     `@github/copilot-sdk`, and stays resident.
+#  2. The server forks on demand in its default branch, and no setting reaches
+#     that branch; a flag would not either, because a consumer's compose
+#     `command:` replaces this CMD. So the branch before it is taken instead:
+#     upstream's own "no upstream agent host" path, a channel that refuses
+#     every connect. Nothing is forked, whatever a client asks for.
+#  3. The workbench's enablement (`remoteAuthority && !chat.disableAIFeatures`)
+#     is made false in both bundles. Without it the workbench retries the
+#     refused connect with a backoff, and warns in the console each time.
+# ⛔ Each patch must find EXACTLY ONE anchor and leave one marker, or the build
+# fails. `tests/test_editor_agent_host.py` reads the EFFECT with `ps` in a real
+# session, and plants the two patches back out.
+RUN set -eu; \
+    vscode=/usr/lib/code-server/lib/vscode; \
+    for gone in @github/copilot @github/copilot-linux-x64 @github/copilot-linux-arm64 @github/copilot-sdk \
+                @vscode/copilot-api; do \
+      [ -d "$vscode/node_modules/$gone" ] && rm -rf "$vscode/node_modules/$gone" || true; \
+    done; \
+    rmdir "$vscode/node_modules/@github" 2>/dev/null || true; \
+    left="$(find "$vscode/node_modules" -maxdepth 2 -iname '*copilot*')"; \
+    [ -z "$left" ] || { echo "the Copilot CLI is still in the product: $left" >&2; exit 1; }; \
+    server="$vscode/out/server-main.js"; \
+    found="$(grep -o 'else if([a-zA-Z_$]*\["agent-host-bridge-port"\]||' "$server" | wc -l)"; \
+    [ "$found" = 1 ] \
+      || { echo "$server holds $found agent host bridge branches; W454 patches exactly one" >&2; exit 1; }; \
+    sed -i 's/else if(\([a-zA-Z_$]*\["agent-host-bridge-port"\]||\)/else if(!0||\1/' "$server"; \
+    [ "$(grep -o 'else if(!0||[a-zA-Z_$]*\["agent-host-bridge-port"\]||' "$server" | wc -l)" = 1 ] \
+      || { echo "$server: the agent host was not switched off" >&2; exit 1; }; \
+    for bundle in "$vscode/out/vs/code/browser/workbench/workbench.js" \
+                  "$vscode/out/vs/workbench/workbench.web.main.internal.js"; do \
+      found="$(grep -o 'super(!![a-zA-Z_$]*\.remoteAuthority,' "$bundle" | wc -l)"; \
+      [ "$found" = 1 ] \
+        || { echo "$bundle holds $found agent host enablements; W454 patches exactly one" >&2; exit 1; }; \
+      sed -i 's/super(!!\([a-zA-Z_$]*\)\.remoteAuthority,/super(!1\&\&!!\1.remoteAuthority,/' "$bundle"; \
+      [ "$(grep -o 'super(!1&&!![a-zA-Z_$]*\.remoteAuthority,' "$bundle" | wc -l)" = 1 ] \
+        || { echo "$bundle: the agent host enablement was not switched off" >&2; exit 1; }; \
+    done
+
 # ⛔ THE PRIMARY SIDE BAR STARTS CLOSED, before the workbench's first paint (W448).
 # ⚠️ Measured on code-server 4.137.0 in a real browser: every practice frame
 # painted the Explorer from the workbench's first frame for up to seven seconds,
