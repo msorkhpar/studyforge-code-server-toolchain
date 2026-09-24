@@ -284,6 +284,19 @@ RUN --network=none --mount=type=bind,from=face,source=/faces,target=/tmp/faces \
 # CMD. `tests/test_editor_idle.py` reads both halves in a real session.
 ENV CODE_SERVER_RECONNECTION_GRACE_TIME=180
 
+# ⛔ NO EXTENSION GALLERY. With none configured, code-server points the
+# workbench at open-vsx.org, and the reader's browser queried it from every
+# practice frame (measured). Every extension this image carries is installed
+# from a pinned file at build time, so the gallery serves nothing here; an
+# empty gallery switches the marketplace, its update checks and its
+# recommendations off. The flags the server needs are the entrypoint's.
+ENV EXTENSIONS_GALLERY={}
+# The XDG default, stated, so Buildship keeps its Gradle version list where the
+# entrypoint seeds it (see the entrypoint) rather than in each workspace. It is
+# the container's own layer, not a volume, and owned by the runtime uid.
+ENV XDG_CACHE_HOME=/home/coder/.cache
+RUN mkdir -p /home/coder/.cache && chown 1000:1000 /home/coder/.cache
+
 # ⭐ A LOGIN shell rebuilds PATH from /etc/profile, which assigns it outright
 # (measured on this base) and silently drops /opt: a tool works under
 # `docker exec` and is "command not found" in the integrated terminal. So the

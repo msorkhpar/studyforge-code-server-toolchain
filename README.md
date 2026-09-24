@@ -219,10 +219,32 @@ computes and needs neither.
   the sha256 `editor-pins.json` records under `face`, serves them beside the
   workbench's stylesheet and declares them there, and the lockdown's manifest
   makes the family the editor's default (`configurationDefaults`), so a
-  reader's own `editor.fontFamily` still wins. The licence ships beside them.
+  reader's own `editor.fontFamily` still wins. ⭐ Ligatures are on by default
+  too (`editor.fontLigatures`): the page leaves `font-variant-ligatures` at
+  `normal`, so its `!=` and `->` are drawn joined, measured on a built page. The licence ships beside them.
   ⚠️ The workbench draws in the reader's browser, so a face held on disk would
   never reach it, and its content policy allows fonts from its own origin
   only.
+- ⛔ **The editor makes no outbound connection of its own.** Measured on an
+  idle practice session before this: the server called code-server's update
+  check (api.github.com) and its telemetry (v1.telemetry.coder.com), the Java
+  language server fetched Gradle's version list (services.gradle.org), and the
+  reader's browser queried the open-vsx.org gallery from inside the frame. Each
+  is off where a compose `command:` cannot drop it: the entrypoint appends
+  `--disable-update-check --disable-telemetry` to whatever command arrives,
+  `EXTENSIONS_GALLERY={}` empties the gallery (every extension here is
+  installed from a pinned file at build time), and the lockdown manifest's
+  defaults turn the extensions' own off -- Red Hat telemetry, JSON schema
+  downloads, npm package lookups and type acquisition, and Maven and Gradle
+  imports offline. ⚠️ Buildship, inside the Java language server, fetches the
+  published Gradle version list whenever its cache is missing or a day old,
+  whatever the Gradle or proxy settings say; the image sets `XDG_CACHE_HOME`
+  to its XDG default (`~/.cache`) so that cache has one place, and the
+  entrypoint writes an empty list there on every start with a modification
+  time that never ages. The list feeds version pickers this editor does not
+  show.
+  `tests/test_editor_egress.py` samples the container's socket table and the
+  page's requests over a session and fails on any that leave the host.
 - ⭐ **A closed practice session is released in minutes, not hours.** The image
   sets `CODE_SERVER_RECONNECTION_GRACE_TIME` to 180 seconds (upstream's is
   three hours). A window that closes cleanly is disposed at once; one that
@@ -336,8 +358,9 @@ the workbench provides — no build step, no dependencies, and nothing fetched.
   `studyforge.practice.main` and `studyforge.practice.test` only so the
   workbench accepts the keys a study server writes, and treats a change to that
   section as the one signal that the practice moved. ⭐ Its manifest also
-  carries the editor's default font family (`configurationDefaults`, the
-  page's code face, above): a default, so a setting of the reader's wins.
+  carries the editor's defaults (`configurationDefaults`): the page's code
+  face and its ligatures, and the extensions' call-homes switched off (both
+  above). They are defaults, so a setting of the reader's wins.
 - ⚠️ **It is not a security boundary.** code-server is an IDE with a shell;
   this removes the ways *in*, not the possibility. The boundary is the
   container and how it is run.
@@ -437,6 +460,7 @@ TC_DOCKER=1 python3 -m unittest tests.test_editor_layout -v # the side bar is ne
 TC_DOCKER=1 python3 -m unittest tests.test_editor_agent_host -v # no agent host, no Copilot CLI
 TC_DOCKER=1 python3 -m unittest tests.test_editor_face -v # the page's face, as drawn
 TC_DOCKER=1 python3 -m unittest tests.test_editor_idle -v # a closed session is released
+TC_DOCKER=1 python3 -m unittest tests.test_editor_egress -v # no outbound connection
 TC_DOCKER=1 python3 -m unittest tests.test_editor_selection_image -v # the selected sets
 TC_DOCKER=1 python3 -m unittest tests.test_prime_image -v   # the prime, warm and offline
 TC_DOCKER=1 python3 -m unittest tests.test_runner_prime_image -v # a graded run, offline

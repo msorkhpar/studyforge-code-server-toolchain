@@ -35,7 +35,7 @@ SOURCE = """package practice;
 
 public class Practice {
     public static int twice(int value) {
-        return value * 2;
+        return value != 0 ? value * 2 : 0;
     }
 }
 """

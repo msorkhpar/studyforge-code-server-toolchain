@@ -43,7 +43,14 @@
       }
     },
     "configurationDefaults": {
-      "editor.fontFamily": "'JetBrains Mono', 'DejaVu Sans Mono', monospace"
+      "editor.fontFamily": "'JetBrains Mono', 'DejaVu Sans Mono', monospace",
+      "editor.fontLigatures": true,
+      "java.import.maven.offline.enabled": true,
+      "java.import.gradle.offline.enabled": true,
+      "redhat.telemetry.enabled": false,
+      "json.schemaDownload.enable": false,
+      "npm.fetchOnlinePackageInfo": false,
+      "typescript.disableAutomaticTypeAcquisition": true
     }
   }
 }

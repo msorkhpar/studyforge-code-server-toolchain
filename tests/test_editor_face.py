@@ -53,6 +53,21 @@ MANIFEST = json.loads((ROOT / "lockdown" / "package.json").read_text(encoding="u
 WORKBENCH = "/usr/lib/code-server/lib/vscode/out/vs/code/browser/workbench"
 #: The PostScript names of the page's two faces, as the renderer reports them.
 REGULAR, BOLD = "JetBrainsMono-Regular", "JetBrainsMono-Bold"
+#: The key `_drawn` records the ligature reading under: whether `!=` drew
+#: differently once its ligatures were turned off.
+LIGATURES = "(ligatures)"
+
+#: The first `!=` the editor drew, marked so the DOM domain can find it, and its box.
+OPERATOR = """(() => { const el = [...document.querySelectorAll('.monaco-editor .view-line span span')]
+  .find((span) => span.textContent.trim() === '!=');
+  if (!el) { return null; }
+  el.setAttribute('data-face-ligature', '1');
+  const r = el.getBoundingClientRect();
+  return {x: r.x, y: r.y, width: r.width, height: r.height, scale: 1}; })()"""
+#: The same span with every ligature turned off, which is what the page would
+#: draw if it drew none.
+UNJOINED = """(() => { const el = document.querySelector('[data-face-ligature]');
+  el.style.fontVariantLigatures = 'none'; el.style.fontFeatureSettings = '"liga" 0, "calt" 0'; })()"""
 
 #: Every token span in the editor, with its text, its computed weight and a
 #: selector path the DOM domain can resolve.
@@ -113,6 +128,11 @@ class TheFaceIsPinnedAndDeclared(unittest.TestCase):
         family = MANIFEST["contributes"]["configurationDefaults"]["editor.fontFamily"]
         self.assertTrue(family.startswith(f"'{face.FAMILY}'"), family)
 
+    def test_the_editor_draws_ligatures_by_default_as_the_page_does(self):
+        """The page leaves `font-variant-ligatures` at `normal`, so JetBrains Mono's
+        contextual ligatures (`!=`, `->`) are drawn there; measured on a built page."""
+        self.assertIs(MANIFEST["contributes"]["configurationDefaults"]["editor.fontLigatures"], True)
+
 
 @unittest.skipUnless(os.environ.get("TC_DOCKER") == "1", "set TC_DOCKER=1 to build images and run containers")
 class TheEditorDrawsThePageFace(unittest.TestCase):
@@ -158,6 +178,13 @@ class TheEditorDrawsThePageFace(unittest.TestCase):
                                                     "selector": f'[data-face-probe="{token["i"]}"]'})["nodeId"]
                 fonts = s.call("CSS.getPlatformFontsForNode", {"nodeId": node})["fonts"]
                 drawn[token["text"]] = (sorted(f["postScriptName"] for f in fonts), token["weight"])
+            box = cdp.evaluate(s, OPERATOR)
+            self.assertIsNotNone(box, "the editor drew no `!=`, so the ligature reading reads nothing")
+            joined = s.call("Page.captureScreenshot", {"format": "png", "clip": box})["data"]
+            cdp.evaluate(s, UNJOINED)
+            time.sleep(0.5)
+            apart = s.call("Page.captureScreenshot", {"format": "png", "clip": box})["data"]
+            drawn[LIGATURES] = joined != apart
             return drawn
 
     def test_the_tagged_image_draws_plain_code_regular_and_keywords_bold_in_the_page_face(self):
@@ -166,10 +193,18 @@ class TheEditorDrawsThePageFace(unittest.TestCase):
         self.assertEqual(drawn["twice"], ([REGULAR], "400"), drawn)
         for keyword in ("public", "class", "return"):
             self.assertEqual(drawn[keyword], ([BOLD], "700"), drawn)
+        self.assertTrue(drawn[LIGATURES], "`!=` drew the same with its ligatures off: none was drawn")
 
     def test_the_declaration_planted_out_draws_another_face(self):
         drawn = self._drawn(self._plant(f"RUN sed -i '/studyforge: the page.s code face/,$d' {WORKBENCH}/workbench.css"))
         self.assertNotIn(REGULAR, drawn["value"][0], f"the plant still drew the page face, so this is blind: {drawn}")
+
+    def test_the_ligature_default_planted_out_draws_none(self):
+        drawn = self._drawn(self._plant(
+            "RUN sed -i 's/\"editor.fontLigatures\"/\"notEditor.fontLigatures\"/' "
+            "/opt/code-server/extensions/studyforge.practice-focus-*/package.json"))
+        self.assertEqual(drawn["value"], ([REGULAR], "400"), f"the plant changed the face as well: {drawn}")
+        self.assertFalse(drawn[LIGATURES], f"the plant still drew a ligature, so this is blind: {drawn}")
 
     def test_the_default_planted_out_draws_another_face(self):
         drawn = self._drawn(self._plant(

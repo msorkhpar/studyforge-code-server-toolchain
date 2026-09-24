@@ -263,7 +263,10 @@ class TheDockerfile(unittest.TestCase):
 class TheEntrypointAndSeed(unittest.TestCase):
     def test_the_entrypoint_hands_over_to_the_bases_entrypoint_and_has_no_exec_mode(self):
         code = without_comments(ENTRYPOINT)
-        self.assertEqual(code.strip().splitlines()[-1], 'exec /usr/bin/entrypoint.sh "$@"')
+        # ⭐ The arguments pass through whole, and the two call-home switches
+        # follow them, so a consumer's command can add to them and never drop them.
+        self.assertEqual(code.strip().splitlines()[-1],
+                         'exec /usr/bin/entrypoint.sh "$@" --disable-update-check --disable-telemetry')
         self.assertNotIn('"exec"', code)
         # `find -exec` in the prime's seeding is not a command of its own.
         self.assertEqual(len(re.findall(r"(?m)^\s*exec ", code)), 1)
