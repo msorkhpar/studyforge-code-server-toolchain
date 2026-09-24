@@ -103,6 +103,12 @@ the runner's, and a test measures it both ways.
 `python3 docker/minimal/build.py --record-maven` re-derives the Maven warm list
 into `.work/record/` for a person to review and copy into `pins.json`.
 
+`--pull never` builds from what this host already holds: every image the build
+starts FROM must be present, and one that is not is refused by name before
+Docker builds anything. `--pull missing`, the default, fetches an absent base by
+its pinned digest. ⚠️ `--pull` is about images: an archive the Dockerfile names
+is still fetched by `ADD --checksum` when BuildKit has not cached it.
+
 ### A corpus's practice dependencies — `--prime DIR`
 
 ⛔ **A reader's graded run happens in this image, under `--network none`**, so
@@ -171,8 +177,12 @@ directory, declaring the runtimes a corpus uses:
 ```sh
 python3 docker/editor/build.py --runtimes java,maven
 python3 docker/editor/build.py --runtimes java,maven --print-tag
+python3 docker/editor/build.py --runtimes java,maven --pull never
 python3 docker/editor/build.py            # gradle,java,kotlin,node,python
 ```
+
+`--pull never` holds for the runner's build too, when the editor's build has to
+make it first: the bases of both are checked before either starts.
 
 ⛔ **An editor build needs a Chromium-family browser on the host as well as
 Docker**, because the image is tagged only after its lockdown has been seen to

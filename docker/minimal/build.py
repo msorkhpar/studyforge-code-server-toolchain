@@ -11,6 +11,7 @@ this script is the only way the Dockerfile builds.
     python3 docker/minimal/build.py --runtimes java,maven --print-tag
     python3 docker/minimal/build.py --runtimes java,maven --prime path/to/prime
     python3 docker/minimal/build.py --record-maven     # re-derive the Maven warm pins
+    python3 docker/minimal/build.py --runtimes java,maven --pull never
 
 `--prime DIR` warms a corpus's declared practice dependencies into the image
 from that corpus's own build files, so a graded run resolves them with no
@@ -20,6 +21,13 @@ editor — and the directory is mounted read-only as the named context
 directory and nothing is warmed.
 `--root DIR` builds a different copy of the component (the tests use it to
 plant a bad pin in a temporary copy); `--platform` defaults to this machine's.
+
+`--pull never` fetches no image: every image the build starts FROM (`base_images`)
+must already be on this host, and one that is not is REFUSED by name before
+Docker builds anything. `--pull missing`, the default, is Docker's own: an
+absent base is fetched by its pinned digest. ⚠️ Either way an archive the
+Dockerfile names is fetched by `ADD --checksum` when BuildKit has not cached
+it; `--pull` is about images.
 
 **Depends on.** The standard library, `plan.py` beside it, `prime/prime.py`
 for the prime contract, and a Docker CLI with BuildKit. ⛔ It never mounts a
@@ -49,6 +57,10 @@ WARMERS = "prime"
 #: here, and never listed again — `tests/build_inputs.py` copies a planted
 #: context by READING this, so a new input is one edit.
 PRIMED_INPUT_ROOTS = planning.INPUT_ROOTS + (WARMERS,)
+
+
+#: How a build may reach a registry for the images it starts FROM.
+PULL = ("missing", "never")
 
 
 def host_platform() -> str:
@@ -89,10 +101,43 @@ def empty_context(root: Path) -> Path:
     return path
 
 
+def base_images(built) -> list[str]:
+    """Every image a build starts FROM: each build arg the Dockerfile's `FROM ${ARG}` reads.
+
+    ⭐ Read off the plan's own build args by the one naming rule the two
+    Dockerfiles keep (`*_IMAGE`, `*_BASE`), and a test holds that rule to
+    every `FROM ${...}` line in both.
+    """
+    return sorted({value for key, value in built.build_args.items() if key.endswith(("_IMAGE", "_BASE"))})
+
+
+def image_present(image: str) -> bool:
+    """Whether this host's Docker holds `image`, asked without fetching it."""
+    asked = subprocess.run(["docker", "image", "inspect", image], stdin=subprocess.DEVNULL, capture_output=True)
+    return asked.returncode == 0
+
+
+def pull_refusal(images, pull: str, present=None) -> str | None:
+    """Why a build under `pull` cannot start, or `None`. ⛔ `never` refuses any absent image."""
+    if pull not in PULL:
+        return f"--pull is one of {list(PULL)}"
+    present = present or image_present
+    absent = [image for image in images if pull == "never" and not present(image)]
+    if absent:
+        return ("--pull never and this host lacks " + ", ".join(absent)
+                + "; fetch each by its pinned digest first, or build with --pull missing")
+    return None
+
+
+def pull_flags(pull: str) -> list[str]:
+    """`docker build`'s own spelling of the policy: `never` says `--pull=false` on the command."""
+    return ["--pull=false"] if pull == "never" else []
+
+
 def docker_command(root: Path, built: planning.Plan, target: str = "runner", output: str | None = None,
-                   prime: Path | None = None) -> list[str]:
+                   prime: Path | None = None, pull: str = "missing") -> list[str]:
     command = ["docker", "build", "--progress=plain", "--platform", built.platform,
-               "-f", str(root / planning.DOCKERFILE), "--target", target,
+               *pull_flags(pull), "-f", str(root / planning.DOCKERFILE), "--target", target,
                "--build-context", f"consumer-prime={prime or empty_context(root)}"]
     command += ["--output", output] if output else ["-t", built.tag]
     for key in sorted(built.build_args):
@@ -109,6 +154,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--record-maven", action="store_true")
     parser.add_argument("--prime", default=None,
                         help="a corpus's prime directory to warm its practice dependencies from")
+    parser.add_argument("--pull", choices=PULL, default="missing",
+                        help="never: fetch no image, and refuse when a base is absent (default: %(default)s)")
     args = parser.parse_args(argv)
 
     root = Path(args.root).resolve()
@@ -124,11 +171,16 @@ def main(argv: list[str]) -> int:
     if args.print_tag:
         print(built.tag)
         return 0
+    refusal = pull_refusal(base_images(built), args.pull)
+    if refusal:
+        print(f"refused: {refusal}", file=sys.stderr)
+        return 2
     if args.record_maven:
         out = root / ".work" / "record"
-        command = docker_command(root, built, target="maven-record-out", output=f"type=local,dest={out}")
+        command = docker_command(root, built, target="maven-record-out", output=f"type=local,dest={out}",
+                                 pull=args.pull)
     else:
-        command = docker_command(root, built, prime=prime)
+        command = docker_command(root, built, prime=prime, pull=args.pull)
     completed = subprocess.run(command, stdin=subprocess.DEVNULL)
     if completed.returncode == 0:
         print(built.tag if not args.record_maven else "recorded: .work/record/maven-warm.json")
