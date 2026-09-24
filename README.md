@@ -296,7 +296,10 @@ the workbench provides — no build step, no dependencies, and nothing fetched.
   is generated, baked into the image and written on **every** start, unlike
   `settings.json`, which is the reader's and is written only when absent.
   Regenerate it with
-  `python3 docker/editor/confinement.py --write <image>`; ⛔ never by hand.
+  `python3 docker/editor/confinement.py --write <image>...`, naming one editor
+  image per runtime set in `confinement.SEED_SETS` — ⛔ never by hand, and
+  never from one set alone: one seed serves every set, and each set's
+  extensions bind keys of their own.
 - ⛔ **And the image is tagged on what the workbench ALLOWS, not on what the
   file says** ([`docker/editor/confinement.py`](docker/editor/confinement.py)).
   ⭐ The same session `activation.py` opens is driven by a headless browser

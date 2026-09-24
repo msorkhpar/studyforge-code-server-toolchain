@@ -23,6 +23,8 @@ containers and drives a headless browser.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -31,6 +33,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 EDITOR = ROOT / "docker" / "editor"
@@ -178,6 +181,23 @@ class TheSeed(unittest.TestCase):
         marks = [(entry["key"], entry["command"]) for entry in self.entries]
         self.assertEqual(marks, sorted(marks))
         self.assertEqual(len(marks), len(set(marks)))
+
+    def test_it_is_derived_from_every_runtime_set_this_component_builds(self):
+        # ⛔ One seed serves every set, and each set's extensions bind keys of
+        # their own: a seed derived from fewer sets is refused by the next one.
+        self.assertEqual(set(confinement.SEED_SETS),
+                         {("java", "maven"), ("python",), tuple(editor_plan.DEFAULT_SET)})
+
+    def test_the_generator_writes_the_union_of_every_image_it_is_given(self):
+        derived = {"one": [{"key": "b", "command": "-y"}, {"key": "a", "command": "-x"}],
+                   "two": [{"key": "a", "command": "-x"}, {"key": "c", "command": "-z"}]}
+        with tempfile.TemporaryDirectory() as root, mock.patch.object(confinement, "derived", derived.get), \
+                contextlib.redirect_stdout(io.StringIO()):
+            (Path(root) / SEED.relative_to(ROOT)).parent.mkdir(parents=True)
+            self.assertEqual(confinement.main(["--write", "--root", root, "one", "two"]), 0)
+            written = json.loads((Path(root) / SEED.relative_to(ROOT)).read_text(encoding="utf-8"))
+        self.assertEqual([(entry["key"], entry["command"]) for entry in written],
+                         [("a", "-x"), ("b", "-y"), ("c", "-z")])
 
     def test_nothing_it_removes_is_a_key_the_practice_still_needs(self):
         kept = {entry["key"] for entry in self.entries if entry["command"] == "-workbench.action.files.save"}
@@ -435,88 +455,97 @@ class TheBrowserProtocol(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get("TC_DOCKER") == "1", "needs Docker and a browser; set TC_DOCKER=1")
 class TheGateOnARealSession(unittest.TestCase):
-    """⛔ The proof, and the plant: re-enable ONE command and the gate must refuse.
+    """⛔ The proof, and the plants, on EVERY runtime set the seed is derived from.
 
-    ⚠️ It does NOT rebuild the editor image. The plant is a one-layer image on
-    top of the tagged one whose only change is the seed the entrypoint writes
-    — which is exactly "one command re-enabled" and costs seconds rather than
-    the twenty minutes a rebuild costs. ⭐ The thing under test is the GATE,
-    and the gate reads a running workbench either way.
+    ⚠️ It does NOT rebuild the editor image for a plant. A plant is a one-layer
+    image on top of the tagged one whose only change is the seed the entrypoint
+    writes, which costs seconds rather than a rebuild. ⭐ The thing under test is
+    the GATE, and the gate reads a running workbench either way. ⛔ Every clause
+    is read per set: one seed serves them all, and it once covered `java,maven`
+    alone while the other sets' builds were refused.
     """
 
-    #: The command put back. ⭐ The one in the reader's own screenshot.
+    #: The command put back whole. ⭐ The one in the reader's own screenshot.
     PLANTED = "workbench.action.showCommands"
+    #: ONE removal dropped, and nothing else: the smallest defect a seed can have.
+    DROPPED = {"key": "ctrl+p", "command": "-workbench.action.quickOpen"}
 
     @classmethod
     def setUpClass(cls):
-        # ⛔ It BUILDS rather than skipping when the tag is absent, and that is
-        # this module's own lesson learned the hard way: the tag digests
-        # `docker/editor/` and `lockdown/`, so editing a docstring in either
-        # moves it, and a class that skipped on an absent tag read GREEN with
-        # its three real assertions never taken. ⚠️ A gate that can be absent
-        # is not a gate — `activation.py` says so about browsers and it is the
-        # same sentence here.
-        build = [sys.executable, str(EDITOR / "build.py"), "--runtimes", "java,maven"]
-        cls.image = subprocess.run(build + ["--print-tag"], capture_output=True, text=True,
-                                   stdin=subprocess.DEVNULL).stdout.strip()
-        built = subprocess.run(build, capture_output=True, text=True, stdin=subprocess.DEVNULL)
-        if built.returncode != 0:
-            raise AssertionError(f"the editor build did not pass its own gates:\n{built.stdout[-4000:]}"
-                                 f"\n{built.stderr[-4000:]}")
+        # ⛔ It BUILDS rather than skipping when a tag is absent: the tag digests
+        # `docker/editor/` and `lockdown/`, so editing a docstring moves it, and a
+        # class that skipped on an absent tag once read GREEN with its real
+        # assertions never taken. ⚠️ A gate that can be absent is not a gate.
+        cls.images = {}
+        for names in confinement.SEED_SETS:
+            build = [sys.executable, str(EDITOR / "build.py"), "--runtimes", ",".join(names)]
+            built = subprocess.run(build, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+            if built.returncode != 0:
+                raise AssertionError(f"the {names} editor did not pass its own gates:\n{built.stdout[-4000:]}"
+                                     f"\n{built.stderr[-4000:]}")
+            cls.images[names] = subprocess.run(build + ["--print-tag"], capture_output=True, text=True,
+                                               stdin=subprocess.DEVNULL).stdout.strip()
 
-    def planted(self) -> str:
-        """The same image with one command's keybinding put back into the seed."""
-        entries = [entry for entry in json.loads(SEED.read_text(encoding="utf-8"))
-                   if entry["command"] != f"-{self.PLANTED}"]
-        tag = "code-server-toolchain/editor:w433-planted"
-        with tempfile.TemporaryDirectory(prefix="w433-plant-") as work:
+    def planted(self, names, keep) -> str:
+        """The set's image with the seed filtered by `keep`, as a one-layer image."""
+        entries = [entry for entry in json.loads(SEED.read_text(encoding="utf-8")) if keep(entry)]
+        tag = f"code-server-toolchain/editor:confinement-planted-{'-'.join(names)}"
+        with tempfile.TemporaryDirectory(prefix="confinement-plant-") as work:
             (Path(work) / "keybindings.json").write_text(json.dumps(entries, indent=1) + "\n", encoding="utf-8")
             (Path(work) / "Dockerfile").write_text(
-                f"FROM {self.image}\nUSER root\n"
+                f"FROM {self.images[names]}\nUSER root\n"
                 "COPY keybindings.json /opt/code-server/seed/keybindings.json\n"
                 "RUN chmod 644 /opt/code-server/seed/keybindings.json\nUSER 1000\n", encoding="utf-8")
-            done = subprocess.run(["docker", "build", "-t", tag, work],
+            done = subprocess.run(["docker", "build", "--pull=false", "-t", tag, work],
                                   stdin=subprocess.DEVNULL, capture_output=True, text=True)
             self.assertEqual(done.returncode, 0, done.stderr[-2000:])
         self.addCleanup(subprocess.run, ["docker", "image", "rm", "-f", tag],
                         stdin=subprocess.DEVNULL, capture_output=True)
         return tag
 
-    def test_the_tagged_image_confines_the_frame_and_still_lets_the_practice_be_done(self):
-        proof = confinement.prove(self.image)
-        self.assertEqual(proof.reached, [], proof.complaint())
-        self.assertTrue(proof.find, "the editor's own find widget no longer opens")
-        self.assertTrue(proof.edited, "what was typed never reached the file on disk")
-        self.assertEqual(proof.missing, 0, proof.report)
-        self.assertTrue(proof.ok, proof.complaint())
+    def test_every_sets_tagged_image_confines_the_frame_and_still_lets_the_practice_be_done(self):
+        for names, image in self.images.items():
+            with self.subTest(names=names):
+                proof = confinement.prove(image)
+                self.assertEqual(proof.reached, [], proof.complaint())
+                self.assertTrue(proof.find, "the editor's own find widget no longer opens")
+                self.assertTrue(proof.edited, "what was typed never reached the file on disk")
+                self.assertEqual(proof.missing, 0, proof.report)
+                self.assertTrue(proof.ok, proof.complaint())
+
+    def test_one_removal_dropped_is_refused_on_every_set(self):
+        self.assertIn(self.DROPPED, json.loads(SEED.read_text(encoding="utf-8")))
+        for names in self.images:
+            with self.subTest(names=names):
+                proof = confinement.prove(self.planted(names, lambda entry: entry != self.DROPPED))
+                self.assertFalse(proof.ok)
+                self.assertIn("ctrl+p", proof.reached)
+                self.assertEqual(proof.missing, 1, proof.report)
+                self.assertIn("the seed no longer covers this workbench", proof.complaint())
 
     def test_one_command_put_back_is_refused_and_the_refusal_names_the_chord(self):
-        proof = confinement.prove(self.planted())
+        names = ("java", "maven")
+        proof = confinement.prove(self.planted(names, lambda entry: entry["command"] != f"-{self.PLANTED}"))
         self.assertFalse(proof.ok)
         self.assertIn("ctrl+shift+p", proof.reached)
         self.assertIn("the command palette", proof.complaint())
-        # ⭐ And the exhaustive half saw it too, independently: the seed no
-        # longer carries the removals the allow-list derives for that command.
-        # ⚠️ Counted rather than assumed to be one — `Show and Run Commands` is
-        # bound to TWO chords, `Ctrl+Shift+P` and `F1`, and putting the command
-        # back puts both of them back.
+        # ⭐ And the exhaustive half saw it too, independently. ⚠️ Counted rather
+        # than assumed to be one: the command is bound to `Ctrl+Shift+P` AND `F1`.
         both = sum(1 for entry in json.loads(SEED.read_text(encoding="utf-8"))
                    if entry["command"] == f"-{self.PLANTED}")
         self.assertEqual(proof.missing, both, proof.report)
 
-    def test_a_regeneration_keeps_every_removal_the_seed_already_carries(self):
+    def test_a_regeneration_from_every_set_keeps_every_removal_the_seed_already_carries(self):
         # ⛔ The regeneration path is the documented one, so it is the one run
-        # here: a seed nobody can reproduce is a hand-edited file with a
-        # comment claiming otherwise. ⚠️ Asserted as a SUPERSET and not as
-        # equality, and that is the measurement rather than a loosening: the
-        # workbench's default keybinding document is not the same in two
-        # sessions of one image, so equality would be flaky while monotonicity
-        # is the property the union exists to have.
-        regenerated = {(entry["key"], entry["command"]) for entry in confinement.derived(self.image)}
+        # here: a seed nobody can reproduce is a hand-edited file with a comment
+        # claiming otherwise. ⚠️ A SUPERSET and not equality, and that is the
+        # measurement: the default keybinding document is not the same in two
+        # sessions of one image, so monotonicity is the property the union has.
+        regenerated = {(entry["key"], entry["command"])
+                       for image in self.images.values() for entry in confinement.derived(image)}
         for entry in json.loads(SEED.read_text(encoding="utf-8")):
             with self.subTest(key=entry["key"], command=entry["command"]):
                 self.assertIn((entry["key"], entry["command"]), regenerated)
-
 
 if __name__ == "__main__":
     unittest.main()

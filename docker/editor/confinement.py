@@ -24,23 +24,23 @@ workbench's own keybinding document and says how many the session did not
 load; this refuses on `missing=`. ⭐ Together: *does the seed still cover this
 workbench*, and *does this workbench actually refuse*.
 
-**How you use it.** `docker/editor/build.py` runs it after `activation.py` and
-tags only if both pass. It also runs standalone:
+**How you use it.** `build.py` runs it after `activation.py`, tagging only if both pass; standalone:
 
-    python3 docker/editor/confinement.py [--write] <image reference>
+    python3 docker/editor/confinement.py [--write] <image reference>...
 
-⭐ `--write` is the GENERATOR: it opens the same session and copies what the
-extension derived into `docker/editor/seed/keybindings.json`. ⛔ The seed is
-never hand-edited -- `lockdown/allowed.js` is the allow-list and everything
-else is computed. ⚠️ It UNIONS rather than replaces, for the measurement
+⭐ `--write` is the GENERATOR: it opens the same session in EACH image named and
+writes the union of what the extension derived into the seed. ⛔ **Name one
+image per set in `SEED_SETS`**: one seed serves every set, each set's
+extensions bind keys of their own, and a seed derived from one set's workbench
+leaves another's unremoved, which this gate refuses. ⛔ The seed is never
+hand-edited -- `lockdown/allowed.js` is the allow-list; the rest is computed. ⚠️ It UNIONS rather than replaces, for the measurement
 `lockdown/keybindings.js` carries: the workbench's default keybinding document
 is not the same in two sessions of one image, so a regeneration that replaced
 would oscillate and drop what another session found.
 
-**Depends on.** The standard library, `activation.py` beside it for the
-container and the browser, `cdp.py` for the protocol, a Docker CLI and a
-Chromium-family browser. ⛔ A missing browser REFUSES rather than skips, for
-`activation.py`'s reason. ⛔ No Docker socket is mounted (spec §8.3).
+**Depends on.** The standard library, `activation.py` (container, browser),
+`cdp.py`, a Docker CLI and a Chromium-family browser. ⛔ A missing browser
+REFUSES rather than skips; no Docker socket is mounted (spec §8.3).
 """
 
 from __future__ import annotations
@@ -70,6 +70,8 @@ Refused = activation.Refused
 
 #: The generated seed the image bakes in, relative to the component root.
 SEED = Path("docker/editor/seed/keybindings.json")
+#: The runtime sets the seed is derived from, one image each (`--write`).
+SEED_SETS = (("java", "maven"), ("python",), ("gradle", "java", "kotlin", "node", "python"))
 
 #: The chords this presses, and what each of them is. ⛔ The first of them are
 #: the ones the reader's own screenshot named; the rest are the surfaces around
@@ -371,29 +373,27 @@ def _wait_for_derived(name: str, lock, timeout: float = activation.ACTIVATION_TI
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("image", help="the editor image reference or id to open a session in")
-    parser.add_argument("--write", action="store_true",
-                        help=f"regenerate {SEED} from that image's workbench instead of checking it")
+    parser.add_argument("images", nargs="+", metavar="image", help="editor images or ids, one per runtime set")
+    parser.add_argument("--write", action="store_true", help=f"regenerate {SEED} from them instead of checking")
     parser.add_argument("--root", default=str(COMPONENT))
     args = parser.parse_args(argv)
     try:
         if args.write:
-            entries = derived(args.image)
             target = Path(args.root) / SEED
+            seen = {(entry["key"], entry["command"]) for image in args.images for entry in derived(image)}
+            entries = [{"key": key, "command": command} for key, command in sorted(seen)]
             target.write_text(json.dumps(entries, indent=1) + "\n", encoding="utf-8")
-            print(f"{target}: {len(entries)} removals, derived from {args.image}")
+            print(f"{target}: {len(entries)} removals, derived from {' '.join(args.images)}")
             return 0
-        proof = prove(args.image)
+        proofs = [prove(image) for image in args.images]
     except (Refused, cdp.CdpError) as refusal:
         print(f"refused: {refusal}", file=sys.stderr)
         return 2
-    if not proof.ok:
-        print(f"refused: {proof.complaint()}", file=sys.stderr)
-        return 1
-    print(f"{proof.image}: {len(CONFINED)} confined chords opened nothing; "
-          f"{ALLOWED_CHORD[2]} still opens and the file still saves")
-    print(proof.report)
-    return 0
+    for proof in proofs:
+        print(f"{proof.image}: {len(CONFINED)} confined chords opened nothing; {ALLOWED_CHORD[2]} still "
+              f"opens and the file still saves\n{proof.report}" if proof.ok else f"refused: {proof.complaint()}",
+              file=sys.stdout if proof.ok else sys.stderr)
+    return 0 if all(proof.ok for proof in proofs) else 1
 
 
 if __name__ == "__main__":

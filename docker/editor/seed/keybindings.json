@@ -2361,6 +2361,14 @@
  },
  {
   "key": "enter",
+  "command": "-python.execInInteractiveWindowEnter"
+ },
+ {
+  "key": "enter",
+  "command": "-python.execInREPLEnter"
+ },
+ {
+  "key": "enter",
   "command": "-quickInput.accept"
  },
  {
@@ -3130,6 +3138,14 @@
  {
   "key": "shift+enter",
   "command": "-notebook.cell.executeAndSelectBelow"
+ },
+ {
+  "key": "shift+enter",
+  "command": "-python.execInREPL"
+ },
+ {
+  "key": "shift+enter",
+  "command": "-python.execSelectionInTerminal"
  },
  {
   "key": "shift+enter",

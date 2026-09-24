@@ -260,9 +260,10 @@ COPY docker/editor/entrypoint.sh /opt/code-server/entrypoint.sh
 COPY docker/editor/seed/settings.json /opt/code-server/seed/settings.json
 # The keybindings seed. ⛔ GENERATED, never hand-edited: it is every
 # default keybinding whose command `lockdown/allowed.js` does not allow, and
-# `python3 docker/editor/confinement.py --write <image>` rewrites it from a
-# real workbench. No `@runtime` block and no placeholder -- a keybinding names
-# no toolchain -- so nothing is substituted into it below.
+# `python3 docker/editor/confinement.py --write <image>...` rewrites it from a
+# real workbench, one image per runtime set it serves (`SEED_SETS`). No
+# `@runtime` block and no placeholder -- a keybinding names no toolchain -- so
+# nothing is substituted into it below.
 # ⚠️ It is SEEDED rather than applied at run time because the workbench reads
 # the user keybindings file when a SESSION STARTS and ignores a write made
 # while one is open: measured, and `lockdown/keybindings.js` carries it.
