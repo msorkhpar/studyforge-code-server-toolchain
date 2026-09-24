@@ -65,8 +65,8 @@ class Refused(Exception):
 HERE = Path(__file__).resolve().parent
 MANIFEST = "package.json"
 #: ⛔ This framework's publisher, and the namespace of every setting the
-#: extension contributes. The extension belongs to NO consumer and names none
-#: (R1), so the two are the same word and a manifest that disagrees is a
+#: extension contributes. The extension belongs to NO consumer and names none,
+#: so the two are the same word and a manifest that disagrees is a
 #: finding rather than a matter of taste.
 PUBLISHER = "studyforge"
 #: A fixed timestamp for every entry: the same inputs must give the same bytes,

@@ -251,7 +251,7 @@ class TheDockerfile(unittest.TestCase):
         self.assertIn("/etc/profile.d/", DOCKERFILE)
 
     def test_nothing_names_the_extraction_source_or_a_path_outside_the_component(self):
-        """R1 and the one-way extraction (R20): carried properties, never a cited path."""
+        """No source is named and the extraction is one-way: carried properties, never a cited path."""
         for path in sorted(EDITOR.rglob("*")):
             if path.is_file() and "__pycache__" not in path.parts:
                 with self.subTest(file=path.name):

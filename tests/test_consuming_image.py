@@ -12,8 +12,7 @@ So this module copies the CHECKED-IN reference fragment verbatim into an empty
 directory, supplies only what the fragment itself asks for by name, and brings
 it up. Nothing in the fragment is edited.
 
-⭐ **It runs BESIDE a reader's editor rather than skipping** (`W465`,
-`REL-13/3`). The reference publishes `editor.ports[0].host`, which a host serving
+⭐ **It runs BESIDE a reader's editor rather than skipping.** The reference publishes `editor.ports[0].host`, which a host serving
 a corpus already holds, so when that port is taken the first consumer takes a
 free one — rendered from the contract with that one value changed, as the
 two-tags clause's consumer always was — ⛔ **and the rendered bytes are asserted
@@ -193,7 +192,7 @@ class TheComposeContract(unittest.TestCase):
     def test_it_starts_unauthenticated_and_that_rests_on_the_loopback_bind(self):
         """⛔ User ruling 2026-09-22: `--auth=none`, safe ONLY because the port is loopback.
 
-        ⚠️ This clause said the opposite until `W465` and was never read RED,
+        ⚠️ This clause once said the opposite and was never read RED,
         because the class skipped on every host whose reader's editor held the
         port. The redirect is the reading `c535074` took: `/` no longer goes to
         `/login`. ⭐ The bind half is asserted here too, so neither is read alone.
@@ -338,7 +337,7 @@ class TheComposeContract(unittest.TestCase):
                 self.assertEqual(found["Config"]["Labels"][label].split(), declared.split(","))
         self.assertNotEqual(self.inspect(self.container)["Image"], self.inspect(second)["Image"])
 
-    # ---------------------------------------------- §8.3: never a Docker socket
+    # ---------------------------------------------- never a Docker socket
     def test_no_docker_socket_and_no_docker_cli_is_inside_the_container(self):
         self.assertEqual([mount for mount in self.inspect(self.container)["Mounts"]
                           if "docker.sock" in mount.get("Source", "")], [])

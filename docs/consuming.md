@@ -27,7 +27,7 @@ for every consumer at once.
 It is **generated** from `consuming.json` by `consuming/consuming.py`, with no
 other input, and a test asserts the checked-in file is what the contract renders
 today. So an edit to this component's contract moves the template; an edit to
-the template moves nothing and is a finding (R19).
+the template moves nothing and is a finding: the next render writes over it.
 
 ```sh
 python3 consuming/consuming.py --check                        # the rulings, on the real contract
@@ -269,7 +269,7 @@ a set without `python` has no `python3`, and a set without `node` has none on
 ## ⛔ No Docker socket. Anywhere.
 
 `editor.docker_socket` is `false` and `editor.why_no_docker_socket` is the
-ruling: spec §8.3, not behind a flag and not "only locally". A socket inside a
+ruling: never, not behind a flag and not "only locally". A socket inside a
 process that listens on a port is root-equivalent access to the host, and this
 process is an IDE with a shell. `findings()` refuses a contract that says
 otherwise and refuses a mount that names the socket.

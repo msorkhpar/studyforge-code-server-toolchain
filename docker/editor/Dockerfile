@@ -173,7 +173,7 @@ RUN --network=none --mount=type=bind,from=fetch,source=/fetch,target=/tmp/fetch 
 # `workbench.secondarySideBar.defaultVisibility: hidden`.
 # ⭐ A SETTING WOULD BE THE WRONG INSTRUMENT HERE (the command-surface lesson): a hidden
 # entry point is still a capability, and a practice frame that can reach a
-# model is grading theatre (R5). Deleting the directory removes the capability
+# model is grading theatre: a pass it could buy says nothing. Deleting the directory removes the capability
 # rather than the button.
 # ⭐ The `[ -d ]` guard is deliberate: a future code-server that no longer
 # bundles it must not fail this build, and the ASSERTION that it is gone lives

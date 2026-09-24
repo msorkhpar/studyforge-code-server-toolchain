@@ -457,8 +457,8 @@ uid:gid, a bind source that exists on the host before the container starts, and
 a writable root filesystem — the entrypoint repairs the passwd record at every
 start and the primed caches are written under `/opt`, so a read-only root breaks
 the editor at start and every graded run in it.
-⛔ **No Docker socket is mounted into the editor, or anywhere else** (spec
-§8.3): it is an IDE with a shell on a port.
+⛔ **No Docker socket is mounted into the editor, or anywhere else**: it is an
+IDE with a shell on a port, and a socket there is root on the host.
 
 ## Tests
 
@@ -495,6 +495,11 @@ moves, and that an EDITOR-only bump moves the editor's tag and not the runner's.
 `tests/test_consuming_runner.py` is the runner block's own: the rulings it
 carries, and the documented `docker run` and `docker exec` lines read back out
 of the block that renders them.
+`tests/test_pull.py` holds `--pull never` to every image both Dockerfiles start
+FROM, with Docker stood in for. `tests/test_no_citations.py` reads every
+tracked file, and a test module's docstrings and comments, and refuses a rule
+id, a spec section or a work item's id: this repository is read on its own, so
+each file states its reason instead, the rendered compose reference included.
 
 `tests/test_consuming_image.py` copies `docs/compose.reference.yaml` VERBATIM
 into an empty directory, supplies only what that file asks for by name, and

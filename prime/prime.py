@@ -176,7 +176,7 @@ def _gradle(root: Path) -> dict:
 
 
 def _verification(project: Path) -> None:
-    """Every file Gradle fetches must be pinned by a recorded sha256 (R15)."""
+    """Every file Gradle fetches must be pinned by a recorded sha256, or the build is not repeatable."""
     path = project / GRADLE_VERIFICATION
     why = "so the files its warm fetches would be pinned by nothing"
     if not path.is_file():

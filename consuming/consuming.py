@@ -40,7 +40,7 @@ be complete, and a consumer still adapts every part that must differ.
 
 ## ⛔ What the rendered file may never say
 
-§8.3 is the non-negotiable: no Docker socket reaches a serving process. The five
+The non-negotiable: no Docker socket reaches a serving process. The five
 rulings `docs/consuming.md` gives a consumer are the rest — loopback-only publishing, the sources
 and nothing else, the repository owner's uid:gid, a bind source that exists
 before the container starts, and a writable root filesystem. `findings` asserts
@@ -122,13 +122,13 @@ def findings(contract: dict) -> list[str]:
 
 
 def _socket_findings(editor: dict) -> list[str]:
-    """§8.3: never, not behind a flag and not only locally."""
+    """No Docker socket: never, not behind a flag and not only locally."""
     found = []
     if editor.get("docker_socket") is not False:
-        found.append("docker_socket is not declared false: the Docker socket is never mounted (spec §8.3)")
+        found.append("docker_socket is not declared false: the Docker socket is never mounted")
     for mount in editor.get("mounts", []):
         if "docker.sock" in f"{mount.get('host_path', '')}{mount.get('container_path', '')}":
-            found.append(f"a mount names the Docker socket: {mount.get('container_path')} (spec §8.3)")
+            found.append(f"a mount names the Docker socket: {mount.get('container_path')}; it is never mounted")
     return found
 
 

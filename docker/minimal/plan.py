@@ -92,7 +92,7 @@ def load(root: Path) -> dict:
 
 
 def inputs_digest(root: Path, roots=INPUT_ROOTS) -> str:
-    """sha256 over every input file's relative path and bytes, in sorted order (R10).
+    """sha256 over every input file's relative path and bytes, in sorted order: same inputs, same tag.
 
     ⛔ `__pycache__` is skipped: a digest that moved because a module had been
     imported would give one image two tags.

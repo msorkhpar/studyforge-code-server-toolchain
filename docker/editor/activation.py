@@ -28,7 +28,8 @@ tag's. It also runs standalone against any image reference:
 browser on the host. ⛔ **A missing browser REFUSES rather than skips**: a gate
 that can be absent is not a gate, and this one exists because the previous one
 passed while the product was broken. ⛔ It mounts no Docker socket: it runs
-`docker` from outside, like everything else here (spec §8.3).
+`docker` from outside, like everything else here, because a socket inside a
+container is root on the host.
 """
 
 from __future__ import annotations

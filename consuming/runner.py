@@ -26,7 +26,7 @@ the editor's five finding groups — the published port, the named volumes, the
 health check — do not apply to an image that listens on nothing, mounts one
 bind and answers no request. Folding "unless it is the runner" into each of
 them would have made every editor check read as a pair of exceptions. So the
-rulings the two blocks SHARE (§8.3, the owner's uid:gid, a bind that exists
+rulings the two blocks SHARE (no Docker socket, the owner's uid:gid, a bind that exists
 first) are asserted here in the runner's own terms, and `consuming.findings`
 calls one function per block.
 
@@ -68,13 +68,13 @@ def findings(runner: dict) -> list[str]:
 
 
 def _socket_findings(runner: dict) -> list[str]:
-    """§8.3: never, not behind a flag and not only locally."""
+    """No Docker socket: never, not behind a flag and not only locally."""
     found = []
     if runner.get("docker_socket") is not False:
-        found.append("docker_socket is not declared false: the Docker socket is never mounted (spec §8.3)")
+        found.append("docker_socket is not declared false: the Docker socket is never mounted")
     for mount in runner.get("mounts", []):
         if "docker.sock" in f"{mount.get('host_path', '')}{mount.get('container_path', '')}":
-            found.append(f"a mount names the Docker socket: {mount.get('container_path')} (spec §8.3)")
+            found.append(f"a mount names the Docker socket: {mount.get('container_path')}; it is never mounted")
     return found
 
 
