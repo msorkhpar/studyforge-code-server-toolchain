@@ -14,7 +14,7 @@
 # ⛔ What this image is NOT: an editor. No IDE, no extensions, no port, never
 # served to a browser, and it must never grow into the code-server image.
 # ⛔ No Docker socket is mounted into it and it carries no `docker` CLI: the
-# runner reaches it from OUTSIDE with `docker exec` (studyforge spec §8.3).
+# runner reaches it from OUTSIDE with `docker exec`, since a socket is root on the host.
 #
 # How a runtime arrives, and why each is a pin:
 #   * images by multi-arch INDEX digest — a content address verifies itself;

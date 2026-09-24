@@ -6,7 +6,7 @@
 # component's contract and the only input. Edit the contract, not this file;
 # then copy it into your own repository and adapt it there.
 #
-# ⛔ No Docker socket is mounted here or anywhere else (spec §8.3).
+# ⛔ No Docker socket is mounted here or anywhere else: it would be root on the host.
 
 name: "studyforge-editor"
 

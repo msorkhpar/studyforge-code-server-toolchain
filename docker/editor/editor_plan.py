@@ -126,7 +126,7 @@ def load(root: Path) -> dict:
 
 
 def inputs_digest(root: Path) -> str:
-    """sha256 over the runner's inputs digest, then every editor input file (R10)."""
+    """sha256 over the runner's inputs digest, then every editor input file: one tag per input set."""
     root = Path(root)
     digest = hashlib.sha256(b"runner\0" + runner_plan.inputs_digest(root).encode() + b"\0")
     files: list[Path] = []

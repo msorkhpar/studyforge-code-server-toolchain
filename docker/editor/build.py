@@ -13,6 +13,7 @@ has a default, so this script is the only way that Dockerfile builds.
     python3 docker/editor/build.py --runtimes java,maven
     python3 docker/editor/build.py --runtimes java,maven --print-tag
     python3 docker/editor/build.py --runtimes java,maven --prime path/to/prime
+    python3 docker/editor/build.py --runtimes java,maven --pull never
 
 `--prime DIR` warms the image's caches from a consumer's prime directory
 (the contract is `prime/prime.py`'s); it is mounted read-only into the build
@@ -20,6 +21,9 @@ as the named context `consumer-prime`, and its digest moves the tag. Without
 it, the context is an empty directory and nothing is warmed.
 `--root DIR` builds a different copy of the component (the tests plant a
 defect in a temporary copy); `--platform` defaults to this machine's.
+`--pull never` fetches no image, for the runner's build as for the editor's:
+every base either build starts FROM must be on this host, and one that is not
+is refused by name before anything is built (`runner_build.pull_refusal`).
 
 ⛔ **The image is TAGGED only after TWO real sessions have been opened in it**,
 and the build writes an image ID rather than a tag until both pass:
@@ -71,7 +75,7 @@ def planned(root: Path, platform: str, names=editor_plan.DEFAULT_SET, prime=None
     return editor_plan.plan(pins, editor_plan.load(root), runner_built, editor_plan.inputs_digest(root), read)
 
 
-def runner_command(root: Path, platform: str, names=editor_plan.DEFAULT_SET) -> list[str]:
+def runner_command(root: Path, platform: str, names=editor_plan.DEFAULT_SET, pull: str = "missing") -> list[str]:
     """The runner's own build for the editor's set: exactly the command its own `build.py` runs.
 
     ⭐ It once rebuilt the runner's final stage with `--no-cache-filter runner`
@@ -82,10 +86,19 @@ def runner_command(root: Path, platform: str, names=editor_plan.DEFAULT_SET) -> 
     runner = editor_plan.runner_plan
     pins = runner.load(root)
     built = runner.plan(pins, editor_plan.selection(pins, names), platform, runner.inputs_digest(root))
-    return runner_build.docker_command(root, built)
+    return runner_build.docker_command(root, built, pull=pull)
 
 
-def docker_command(root: Path, built: editor_plan.EditorPlan, prime: Path, iidfile: Path | None = None) -> list[str]:
+def runner_bases(root: Path, platform: str, names=editor_plan.DEFAULT_SET) -> list[str]:
+    """Every image the runner's own build for the editor's set starts FROM."""
+    runner = editor_plan.runner_plan
+    pins = runner.load(root)
+    built = runner.plan(pins, editor_plan.selection(pins, names), platform, runner.inputs_digest(root))
+    return runner_build.base_images(built)
+
+
+def docker_command(root: Path, built: editor_plan.EditorPlan, prime: Path, iidfile: Path | None = None,
+                   pull: str = "missing") -> list[str]:
     """`docker build` for the editor, with `prime` as the read-only named context `consumer-prime`.
 
     ⛔ With an `iidfile` it takes NO `-t`: the build writes an image ID and the
@@ -94,7 +107,7 @@ def docker_command(root: Path, built: editor_plan.EditorPlan, prime: Path, iidfi
     lockdown did not load is not tagged"* a property of the tag rather than a
     sentence in a README.
     """
-    command = ["docker", "build", "--progress=plain", "--platform", built.platform,
+    command = ["docker", "build", "--progress=plain", "--platform", built.platform, *runner_build.pull_flags(pull),
                "-f", str(root / editor_plan.DOCKERFILE), "--target", "editor",
                *(["--iidfile", str(iidfile)] if iidfile else ["-t", built.tag]),
                "--build-context", f"consumer-prime={prime}"]
@@ -111,6 +124,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--root", default=str(COMPONENT))
     parser.add_argument("--print-tag", action="store_true")
     parser.add_argument("--prime", default=None, help="a consumer's prime directory to warm the caches from")
+    parser.add_argument("--pull", choices=runner_build.PULL, default="missing",
+                        help="never: fetch no image, and refuse when a base is absent (default: %(default)s)")
     args = parser.parse_args(argv)
 
     root = Path(args.root).resolve()
@@ -128,16 +143,22 @@ def main(argv: list[str]) -> int:
     # A runner tag exists only once its own build checked /opt and every version,
     # and the tag digests its inputs — so an existing one is reused, which also
     # keeps the editor's layers cached across builds.
-    present = subprocess.run(["docker", "image", "inspect", built.build_args["RUNNER_IMAGE"]],
-                             stdin=subprocess.DEVNULL, capture_output=True)
-    if present.returncode != 0:
-        runner = subprocess.run(runner_command(root, platform, names), stdin=subprocess.DEVNULL)
+    runner_present = runner_build.image_present(built.build_args["RUNNER_IMAGE"])
+    bases = [image for image in runner_build.base_images(built) if image != built.build_args["RUNNER_IMAGE"]]
+    refusal = runner_build.pull_refusal(bases + ([] if runner_present else runner_bases(root, platform, names)),
+                                        args.pull)
+    if refusal:
+        print(f"refused: {refusal}", file=sys.stderr)
+        return 2
+    if not runner_present:
+        runner = subprocess.run(runner_command(root, platform, names, args.pull), stdin=subprocess.DEVNULL)
         if runner.returncode != 0:
             return runner.returncode
     with tempfile.TemporaryDirectory(prefix="editor-build-") as work:
         built_id, empty = Path(work) / "image-id", Path(work) / "no-prime"
         empty.mkdir()
-        completed = subprocess.run(docker_command(root, built, prime or empty, built_id), stdin=subprocess.DEVNULL)
+        completed = subprocess.run(docker_command(root, built, prime or empty, built_id, args.pull),
+                                   stdin=subprocess.DEVNULL)
         if completed.returncode != 0:
             return completed.returncode
         image = built_id.read_text(encoding="utf-8").strip()
