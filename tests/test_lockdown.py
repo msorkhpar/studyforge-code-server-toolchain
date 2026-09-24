@@ -1,4 +1,4 @@
-"""The workbench lockdown extension (TC-04) — no Docker needed.
+"""The workbench lockdown extension — no Docker needed.
 
 Run from the component root: `python3 -m unittest discover -s tests -v`.
 Every clause is asserted BOTH ways: the real artifact passes, and a planted
@@ -180,7 +180,7 @@ class TheManifest(unittest.TestCase):
         self.assertEqual(LOCK.section, f"{lockdown.PUBLISHER}.practice")
 
     def test_the_manifest_declares_what_the_workbench_reads_before_it_runs_anything(self):
-        # ⛔ W432. Both of these are the difference between an extension that is
+        # ⛔ Both of these are the difference between an extension that is
         # installed and one that RUNS, and neither is visible in an installed
         # list: a manifest missing them packs, installs, lists and never
         # activates.
@@ -205,8 +205,8 @@ class TheManifest(unittest.TestCase):
 
     def test_the_running_fact_and_the_installed_fact_are_two_different_strings(self):
         # ⭐ `expected` is what the installed list is read against; `banner` is
-        # what a real session's log is read against. W432 is the round where
-        # the first was true for rounds while the second was never true.
+        # what a real session's log is read against. An earlier defect was
+        # exactly this: the first was true for rounds while the second was never true.
         self.assertEqual(LOCK.banner, f"{LOCK.id}: confined")
         self.assertEqual(LOCK.record, f"{MANIFEST['name']}.log")
         self.assertNotEqual(LOCK.banner, LOCK.expected)
@@ -271,8 +271,8 @@ class ThePackedVsix(unittest.TestCase):
     def test_it_holds_the_gallery_manifest_the_content_types_and_the_extension(self):
         _, archive = self.packed()
         # ⭐ Derived, never a second list: every script beside the manifest is
-        # packed, so a helper the extension requires cannot be left out (W433
-        # added two of them and this assertion did not have to be edited).
+        # packed, so a helper the extension requires cannot be left out (the
+        # confinement added two of them and this assertion did not have to be edited).
         self.assertEqual(sorted(archive.namelist()),
                          sorted(["[Content_Types].xml", "extension.vsixmanifest"]
                                 + [f"extension/{path.name}" for path in lockdown.sources(SOURCE)]))
@@ -434,7 +434,7 @@ class TheExtensionBehaviour(unittest.TestCase):
                           "activate", "closeStrangers", "deactivate"])
 
     def test_it_records_that_it_ran_where_the_image_gate_reads(self):
-        # ⛔ W432's durable half, from the extension's side. The banner goes to
+        # ⛔ The running fact's durable half, from the extension's side. The banner goes to
         # the log directory the workbench hands the extension, NOT to the
         # console: an extension's console reaches the browser's devtools and no
         # file on the server, so a gate could never read it. Measured.

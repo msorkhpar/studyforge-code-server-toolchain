@@ -1,4 +1,4 @@
-"""Drive a headless browser: press a key, read the page back (W433).
+"""Drive a headless browser: press a key, read the page back.
 
 **What it does.** A Chrome DevTools Protocol client small enough to live in
 the standard library: `targets()`/`wait_for_target()` find the page a probe
@@ -6,11 +6,11 @@ opened, `Session` speaks the protocol over a WebSocket this module implements
 in about forty lines, and `press()`/`click()`/`evaluate()` are the three verbs
 a confinement check needs.
 
-**Why it exists, rather than a settings file and a hope.** `W433` confines the
+**Why it exists, rather than a settings file and a hope.** The lockdown confines the
 workbench's command surface, and the only honest way to check a confinement is
 to be the reader: press `Ctrl+Shift+P` at a real session and look at what
 appears. ⛔ A check that reads the keybindings FILE cannot see what the
-workbench ALLOWS -- the same shape of error as `W432`, where a check that read
+workbench ALLOWS -- the same shape of error as the Restricted Mode defect, where a check that read
 INSTALLATION could not see ACTIVATION. `docker/editor/activation.py` already
 opens a real session with a real browser; this module is the half that can
 also TYPE into it.

@@ -6,7 +6,7 @@ it as ONE container job (the whole module under whatever lock the host uses):
     TC_DOCKER=1 python3 -m unittest tests.test_editor_image -v
 
 Every container runs with `--network none` and publishes no port; the editor's
-run shape is TC-05's. Plants go into temporary copies under `.work/`
+run shape is `consuming.json`'s. Plants go into temporary copies under `.work/`
 (git-ignored), and every image, container and volume this module creates is
 removed afterwards — the real editor image too, unless `TC_KEEP_IMAGES=1`.
 """
@@ -36,7 +36,7 @@ BUILD = ROOT / "docker" / "editor" / "build.py"
 WORK = ROOT / ".work" / "tests-editor"
 PINS = runner_plan.load(ROOT)
 EPINS = editor_plan.load(ROOT)
-#: The lockdown extension every image installs, whatever its set (TC-04).
+#: The lockdown extension every image installs, whatever its set.
 LOCKDOWN = editor_plan.lockdown_identity(ROOT)
 EXTENSIONS_DIR = "/opt/code-server/extensions"
 BASE_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -248,7 +248,7 @@ class TheEditorImage(unittest.TestCase):
 
     # ------------------------------------------------- the workbench lockdown
     def test_the_lockdown_is_loaded_in_the_running_container_and_a_copied_folder_is_not(self):
-        """TC-04's acceptance, read from the INSTALLED list rather than from a file being there.
+        """The lockdown's guarantee, read from the INSTALLED list rather than from a file being there.
 
         And the other way, which is the whole reason it is packaged: a folder
         copied into the extensions directory is present, correct, and never

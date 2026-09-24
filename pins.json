@@ -1,6 +1,6 @@
 {
   "pins_api": 1,
-  "about": "The ONE place a runtime version is chosen for this component. The runner image (docker/minimal) builds a declared subset of these, and the editor image (TC-02, later) selects from them; neither may choose a version of its own. Every Dockerfile ARG is passed from here by docker/minimal/build.py and carries no default.",
+  "about": "The ONE place a runtime version is chosen for this component. The runner image (docker/minimal) builds a declared subset of these, and the editor image selects from them; neither may choose a version of its own. Every Dockerfile ARG is passed from here by docker/minimal/build.py and carries no default.",
   "platforms": {
     "linux/amd64": "amd64",
     "linux/arm64": "arm64"
@@ -77,7 +77,7 @@
       "single_source": false,
       "warm": {
         "repository": "/opt/maven-repo",
-        "for": "docker/minimal/smoke/maven only; corpus warming is TC-03's",
+        "for": "docker/minimal/smoke/maven only; corpus warming is --prime's",
         "sources": [
           {
             "host": "repo1.maven.org",
@@ -452,7 +452,7 @@
         }
       ],
       "single_source": true,
-      "why_single": "no source other than the release page publishes a checksum for the compiler zip (register ruling 3)"
+      "why_single": "no source other than the release page publishes a checksum for the compiler zip, and a single source was accepted for it"
     },
     "node": {
       "version": "24.21.0",

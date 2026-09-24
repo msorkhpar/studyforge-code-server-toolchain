@@ -3,7 +3,7 @@
 # once, then hand over to the base image's own entrypoint with the arguments
 # untouched.
 #
-# The prime's caches (TC-03) are built into the image under
+# The prime's caches are built into the image under
 # /opt/code-server/prime and copied to where the tools look — the Gradle user
 # home and the Maven local repository — only when that directory is EMPTY, so
 # a volume that already holds a reader's cache is never touched. The copy goes
@@ -17,8 +17,8 @@
 # ONLY when no settings file exists, and never overwrites: an overwrite would
 # lose the reader's edits on every start.
 #
-# ⛔ THE KEYBINDINGS SEED IS THE OPPOSITE, AND THE DIFFERENCE IS DELIBERATE
-# (W433). settings.json is the READER's file — the paragraph above is about
+# ⛔ THE KEYBINDINGS SEED IS THE OPPOSITE, AND THE DIFFERENCE IS DELIBERATE.
+# settings.json is the READER's file — the paragraph above is about
 # their edits. keybindings.json is not theirs and never was: it is the
 # workbench lockdown, it is generated from lockdown/allowed.js, and a reader
 # confined by it has no command with which to write one. A volume carrying an
@@ -30,10 +30,10 @@
 # ⛔ The final `exec` chains to /usr/bin/entrypoint.sh, never to code-server
 # directly: bypassing it loses the base's fixuid, DOCKER_USER handling and
 # dumb-init. ⛔ There is no mode that runs some other command instead of
-# code-server: the reader's code runs in the runner image (TC-01/6).
+# code-server: the reader's code runs in the runner image.
 #
-# ⛔ fixuid RUNS FIRST, and that ordering belongs to the compose contract
-# (TC-05). The base runs it too, in /usr/bin/entrypoint.sh — which is AFTER
+# ⛔ fixuid RUNS FIRST, and that ordering belongs to the compose contract.
+# The base runs it too, in /usr/bin/entrypoint.sh — which is AFTER
 # everything below. A consumer runs this container as the uid:gid that owns its
 # sources, and any uid but the image's own has no passwd entry until fixuid
 # writes one: HOME is then `/`, the seed below tries `//.local` and fails, and

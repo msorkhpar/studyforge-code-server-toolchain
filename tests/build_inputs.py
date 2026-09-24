@@ -1,8 +1,8 @@
 """The build's inputs, copied ONCE for every test module that plants one.
 
-⛔ `W391` (`TC-04/3`): every module that planted a defect kept its own copy of
-this, so adding one top-level input directory — `lockdown/`, when TC-04 landed
-it — meant the same edit in each of them, and a module that was missed built
+⛔ Every module that planted a defect once kept its own copy of
+this, so adding one top-level input directory — `lockdown/`, when the lockdown
+landed — meant the same edit in each of them, and a module that was missed built
 against a context the real build does not have.
 
 ⭐ The entries are **derived** from the plans' own declarations,

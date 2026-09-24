@@ -1,12 +1,12 @@
-"""The editor carries no Copilot CLI, and no session forks an agent host (W454).
+"""The editor carries no Copilot CLI, and no session forks an agent host.
 
-⛔ **The reading this row started from** (`W449/1`, ruled on 2026-09-23): the
+⛔ **The reading this started from** (2026-09-23): the
 chat extension was deleted, and the SERVER half stayed. The first workbench to
 connect made the server fork `bootstrap-fork --type=agentHost`, and that
 process started the bundled Copilot CLI,
 `node_modules/@github/copilot-linux-x64/index.js --headless`, on a container
 with egress. ⭐ The image now deletes the modules and switches the fork off in
-the server and in the workbench (`docker/editor/Dockerfile`, the W454 step).
+the server and in the workbench (`docker/editor/Dockerfile`, the agent-host step).
 This module reads it the way it matters: `ps` inside a started editor while a
 real browser holds a real session.
 
@@ -95,7 +95,7 @@ class TheStepIsInTheBuild(unittest.TestCase):
 
     def test_the_server_takes_the_no_agent_host_branch_and_refuses_a_miss(self):
         self.assertIn(SERVER.replace(VSCODE, "$vscode"), DOCKERFILE)
-        self.assertIn("W454 patches exactly one", DOCKERFILE)
+        self.assertIn("agent host bridge branches; this step patches exactly one", DOCKERFILE)
         self.assertIn("the agent host was not switched off", DOCKERFILE)
 
     def test_both_workbench_bundles_are_disabled_and_a_miss_is_refused(self):

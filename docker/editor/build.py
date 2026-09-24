@@ -24,9 +24,9 @@ defect in a temporary copy); `--platform` defaults to this machine's.
 ⛔ **The image is TAGGED only after TWO real sessions have been opened in it**,
 and the build writes an image ID rather than a tag until both pass:
 
-1. **its lockdown RUNS** (`activation.py`, `W432`) -- the extension host's log
+1. **its lockdown RUNS** (`activation.py`) -- the extension host's log
    shows the extension activating AND the extension announcing that it ran;
-2. **the practice frame is CONFINED** (`confinement.py`, `W433`) -- a headless
+2. **the practice frame is CONFINED** (`confinement.py`) -- a headless
    browser presses `Ctrl+Shift+P`, `Ctrl+P`, `Ctrl+,`, `F5` and the rest at
    that session and nothing opens, while the editor's own find widget still
    opens and what is typed still reaches the file on disk.
@@ -75,9 +75,9 @@ def runner_command(root: Path, platform: str, names=editor_plan.DEFAULT_SET) -> 
     """The runner's own build for the editor's set: exactly the command its own `build.py` runs.
 
     ⭐ It once rebuilt the runner's final stage with `--no-cache-filter runner`
-    (TC-01/13: a warm cache served one selection's layers to another). `W379`
-    keyed that stage by the image's own tag, so a warm cache is now correct by
-    construction, and the editor no longer pays for a rebuild (`W379/1`).
+    (a warm cache served one selection's layers to another). Keying
+    that stage by the image's own tag, made a warm cache correct by
+    construction, and the editor no longer pays for a rebuild.
     """
     runner = editor_plan.runner_plan
     pins = runner.load(root)
@@ -92,7 +92,7 @@ def docker_command(root: Path, built: editor_plan.EditorPlan, prime: Path, iidfi
     tag is applied afterwards, by `main`, and only once `activation.py` has
     seen the lockdown run in that image. ⭐ That is what makes *"an image whose
     lockdown did not load is not tagged"* a property of the tag rather than a
-    sentence in a README (`W432`).
+    sentence in a README.
     """
     command = ["docker", "build", "--progress=plain", "--platform", built.platform,
                "-f", str(root / editor_plan.DOCKERFILE), "--target", "editor",

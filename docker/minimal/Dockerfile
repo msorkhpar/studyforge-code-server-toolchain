@@ -2,7 +2,7 @@
 # ⭐ That directive is deliberate: the linter warns that an ARG used in FROM has
 # no default, and having NO default is the point (see below).
 #
-# The RUNNER image (TC-00): the runtimes one corpus DECLARES, pinned, and nothing else.
+# The RUNNER image: the runtimes one corpus DECLARES, pinned, and nothing else.
 #
 # ⛔ Build it ONLY through `docker/minimal/build.py`, from the component root:
 #     python3 docker/minimal/build.py --runtimes java,maven
@@ -12,7 +12,7 @@
 # version is chosen).
 #
 # ⛔ What this image is NOT: an editor. No IDE, no extensions, no port, never
-# served to a browser, and it must never grow into the code-server image (TC-01).
+# served to a browser, and it must never grow into the code-server image.
 # ⛔ No Docker socket is mounted into it and it carries no `docker` CLI: the
 # runner reaches it from OUTSIDE with `docker exec` (studyforge spec §8.3).
 #
@@ -29,14 +29,14 @@
 # stage nothing selects, and a `-no` stage holds only an empty `/opt` (which
 # every base already has), so an undeclared runtime is absent from the image,
 # not merely off PATH.
-# ⛔ A `-no` stage is NEVER bare `scratch` (W374). Measured on BuildKit v0.31.1:
+# ⛔ A `-no` stage is NEVER bare `scratch`. Measured on BuildKit v0.31.1:
 # `COPY --from=<a bare scratch stage> / /` is served from the cache the `-yes`
 # twin's COPY recorded on the same base, so once a set with the runtime was
 # built on the python base, a `python`-only build came out holding every
 # runtime. The `WORKDIR /opt` gives the stage real, content-addressed bytes,
 # and `plan.dockerfile_findings` refuses a bare scratch stage.
-# ⛔ And the runner stage is KEYED before its first COPY (W379). Measured on the
-# same BuildKit (TC-01/13): with a `python`-only runner built, a build of
+# ⛔ And the runner stage is KEYED before its first COPY. Measured on the
+# same BuildKit: with a `python`-only runner built, a build of
 # `gradle,java,kotlin,node,python` served every `COPY --from=<runtime> / /` from
 # the `-no` twin's record and /opt came out empty. Each such COPY is cached on
 # two inputs, the runner's layer below it and the selected stage; the second is
@@ -90,12 +90,12 @@ COPY --from=maven-work /opt/maven /opt/maven
 FROM maven-${WITH_MAVEN} AS maven
 
 # The generic warm: the plugins and JUnit the SMOKE project needs, and nothing
-# a corpus needs (that is TC-03's). ⛔ `mvn -o test` cannot run on an empty
+# a corpus needs (that is `--prime`'s). ⛔ `mvn -o test` cannot run on an empty
 # local repository — an offline Maven cannot even resolve its compiler plugin.
 FROM unpack AS maven-fetch
 # ⭐ The `-yes` stages by name, not the selected `java` and `maven`: this stage
 # is reached only when maven is declared, and naming them makes its layers
-# independent of the selection by construction (W379).
+# independent of the selection by construction.
 COPY --from=java-yes / /
 COPY --from=maven-yes / /
 COPY docker/minimal/smoke/maven /unpack/smoke
@@ -170,7 +170,7 @@ FROM node-${WITH_NODE} AS node
 
 # ----------------------------------------------------------------------- runner
 FROM ${RUNNER_BASE} AS runner
-# ⛔ FIRST, before any COPY (W379, see the top of this file): every layer above
+# ⛔ FIRST, before any COPY (see the top of this file): every layer above
 # this one is cached per image tag. It writes nothing.
 ARG CACHE_KEY
 RUN : "runner ${CACHE_KEY}"
@@ -216,17 +216,17 @@ RUN if [ "${WITH_SQLITE}" = yes ]; then \
    && rm -rf /var/lib/apt/lists/* /tmp/apt-parts /tmp/apt-snapshot.list; \
     fi
 
-# ------------------------------------ a corpus's practice caches (W390, TC-03)
+# ------------------------------------ a corpus's practice caches
 # ⛔ A reader's graded run happens IN THIS IMAGE, under `--network none`, so a
 # corpus's practice dependencies must already be inside it — a download would
 # not be slow, it would simply fail. `build.py --prime DIR` passes the corpus's
 # prime directory as the read-only named context `consumer-prime`, and the
-# warmers in `prime/` — TC-03's own, the same two scripts the editor runs,
+# warmers in `prime/` — the same two scripts the editor runs,
 # shared unchanged — build it into a seed under /opt/prime. The version guards
 # ran before Docker started (`prime/prime.py`, from pins.json).
 # ⭐ No cache key of its own is needed, unlike the editor's PRIME_KEY: CACHE_KEY
 # is this image's TAG, the tag folds the prime's digest, and the runner stage's
-# first RUN reads it (W379) — so these layers are already cached per prime.
+# first RUN reads it — so these layers are already cached per prime.
 # ⛔ Without a prime the context is an EMPTY directory, both switches are `no`,
 # nothing runs, and no /opt/prime exists.
 # ⭐ The seed is left writable by any uid because the documented run line runs
@@ -267,7 +267,7 @@ ARG OPT_EXPECTED
 ARG RUNNER_HOME
 ENV HOME=${RUNNER_HOME}
 # ⛔ /opt holds exactly what the declared set places there, or the build fails
-# naming both (W374): an undeclared runtime is ABSENT, and this is where the
+# naming both: an undeclared runtime is ABSENT, and this is where the
 # image says so before it is tagged.
 RUN held="$(ls -A /opt | xargs)"; \
     [ "$held" = "${OPT_EXPECTED}" ] \

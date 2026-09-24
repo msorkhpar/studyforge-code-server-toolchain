@@ -1,5 +1,5 @@
 #!/bin/sh
-# The MAVEN warmer (TC-03): run a consumer's prime project's `test` phase once,
+# The MAVEN warmer: run a consumer's prime project's `test` phase once,
 # so a local repository holds everything a first `mvn -o test` needs.
 #
 #   warm-maven.sh warm  PROJECT REPO   run `mvn test` with the network into REPO

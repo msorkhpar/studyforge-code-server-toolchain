@@ -1,4 +1,4 @@
-"""The editor's toolchain SELECTION (TC-02) — no Docker needed.
+"""The editor's toolchain SELECTION — no Docker needed.
 
 Run from the component root: `python3 -m unittest discover -s tests -v`.
 Every clause is asserted BOTH ways: the declared runtimes are present, and an
@@ -35,10 +35,10 @@ EPINS = editor_plan.load(ROOT)
 DIGEST = "0" * 64
 DOCKERFILE = (ROOT / editor_plan.DOCKERFILE).read_text(encoding="utf-8")
 SEED = EDITOR / "seed" / "settings.json"
-#: TC-01's image, as its Dockerfile wrote PATH for the constant five.
-TC01_PATH = ("/opt/java/openjdk/bin:/opt/maven/bin:/opt/gradle/bin:/opt/kotlinc/bin:/opt/node/bin:"
+#: The editor's first image, as its Dockerfile wrote PATH for the constant five.
+FIRST_IMAGE_PATH = ("/opt/java/openjdk/bin:/opt/maven/bin:/opt/gradle/bin:/opt/kotlinc/bin:/opt/node/bin:"
              "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
-#: The lockdown extension: no runtime's, so every set installs it (TC-04).
+#: The lockdown extension: no runtime's, so every set installs it.
 LOCKDOWN = editor_plan.lockdown_identity(ROOT)
 
 
@@ -103,7 +103,7 @@ class TheDefaultSet(unittest.TestCase):
                          sorted([f"{e}@{EPINS['extensions'][e]['version']}" for e in EPINS["extensions"]]
                                 + [LOCKDOWN.expected]))
         self.assertEqual((built.build_args["WITH_TYPESCRIPT"], built.build_args["WITH_READLINE"]), ("yes", "yes"))
-        self.assertEqual(built.build_args["EDITOR_PATH"], TC01_PATH.replace("/opt/maven/bin:", ""))
+        self.assertEqual(built.build_args["EDITOR_PATH"], FIRST_IMAGE_PATH.replace("/opt/maven/bin:", ""))
         self.assertEqual(built.build_args["SEED_DROP"], "")
         self.assertIn("export JAVA_HOME=/opt/java/openjdk", built.build_args["PROFILE_D"])
 
@@ -167,7 +167,7 @@ class TheRefusals(unittest.TestCase):
 
 
 class TheEnvironment(unittest.TestCase):
-    """TC-01/16: `JAVA_HOME` and every /opt `PATH` entry name ONLY a declared runtime."""
+    """`JAVA_HOME` and every /opt `PATH` entry name ONLY a declared runtime."""
 
     def test_path_and_java_home_follow_the_set_both_ways_for_every_carried_set(self):
         for names in carried_sets():

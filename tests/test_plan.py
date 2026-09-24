@@ -49,7 +49,7 @@ class TheDeclaredSet(unittest.TestCase):
         with self.assertRaises(plan.Refused) as caught:
             plan.plan(PINS, ["java", "cobol"], AMD64, DIGEST)
         message = str(caught.exception)
-        self.assertIn("'cobol'", message, "a well-formed unpinned id is named (TC-02/2)")
+        self.assertIn("'cobol'", message, "a well-formed unpinned id is named")
         self.assertIn(str(sorted(PINS["runtimes"])), message)
         self.assertNotIn("'java'", message.split(";")[0], "only the unpinned id is named as unpinned")
         self.assertEqual(plan.plan(PINS, ["java"], AMD64, DIGEST).names, ("java",))
@@ -71,7 +71,7 @@ class TheDeclaredSet(unittest.TestCase):
     def test_the_runner_and_the_editor_accept_the_same_id_shape(self):
         editor = (ROOT / "docker" / "editor" / "editor_plan.py").read_text(encoding="utf-8")
         shape = re.search(r'^_NAME = re\.compile\(r"(?P<p>[^"]+)"\)$', editor, re.M)
-        self.assertIsNotNone(shape, "the editor's id shape is where TC-02 put it")
+        self.assertIsNotNone(shape, "the editor's id shape is where its selection code put it")
         self.assertEqual(shape.group("p"), plan.NAME.pattern)
 
     def test_the_build_names_an_unpinned_id_before_docker_starts(self):
@@ -196,7 +196,7 @@ class TheDockerfile(unittest.TestCase):
         self.assertNotEqual(plan.dockerfile_findings(DOCKERFILE + "\nFROM node:24 AS extra\n"), [])
 
     def test_a_planted_bare_scratch_stage_is_found_and_the_real_no_stages_are_not_bare(self):
-        """W374: a bare `-no` stage let a `python` build hold every runtime."""
+        """A bare `-no` stage let a `python` build hold every runtime."""
         for name in ("java", "maven", "mavenrepo", "gradle", "kotlin", "node"):
             with self.subTest(stage=f"{name}-no"):
                 stage = f"FROM scratch AS {name}-no\nWORKDIR /opt\n"
@@ -206,7 +206,7 @@ class TheDockerfile(unittest.TestCase):
         self.assertNotEqual(plan.dockerfile_findings(DOCKERFILE + "\nFROM scratch AS last\n"), [])
 
     def test_the_runner_reads_its_cache_key_before_it_copies_any_selected_stage(self):
-        """W379: every layer the runner copies a selection into is cached per image tag."""
+        """Every layer the runner copies a selection into is cached per image tag."""
         runner = DOCKERFILE[DOCKERFILE.index("FROM ${RUNNER_BASE} AS runner"):]
         keyed = runner.index('RUN : "runner ${CACHE_KEY}"')
         self.assertLess(runner.index("ARG CACHE_KEY"), keyed)
@@ -214,7 +214,7 @@ class TheDockerfile(unittest.TestCase):
         self.assertEqual(plan.keyed_copy_findings(DOCKERFILE), [])
 
     def test_a_selected_stage_copied_before_the_cache_key_is_found_each_way_it_can_be_planted(self):
-        """W379, the other way: the unkeyed runner and an unkeyed selected copy elsewhere are named."""
+        """The other way: the unkeyed runner and an unkeyed selected copy elsewhere are named."""
         key = 'ARG CACHE_KEY\nRUN : "runner ${CACHE_KEY}"\n'
         self.assertIn(key, DOCKERFILE)
         selected = ("java", "maven", "mavenrepo", "gradle", "kotlin", "node")
@@ -231,7 +231,7 @@ class TheDockerfile(unittest.TestCase):
                 self.assertNotEqual(planted, DOCKERFILE)
                 found = plan.keyed_copy_findings(planted)
                 self.assertEqual(sorted(re.findall(r"COPY --from=(\S+) copies", " ".join(found))), sorted(named))
-                self.assertEqual([f for f in plan.dockerfile_findings(planted) if "W379" in f], found)
+                self.assertEqual([f for f in plan.dockerfile_findings(planted) if "another selection's layer" in f], found)
 
     def test_the_cache_key_is_the_tag_so_it_moves_with_the_set_and_the_inputs(self):
         built = plan.plan(PINS, ["python"], AMD64, DIGEST)
@@ -265,7 +265,7 @@ class TheDockerfile(unittest.TestCase):
 
 
 class TheCorpusPrime(unittest.TestCase):
-    """W390: a corpus's practice dependencies are warmed INTO the runner, or nothing is."""
+    """A corpus's practice dependencies are warmed INTO the runner, or nothing is."""
 
     @staticmethod
     def projects(*keep: str) -> Path:
@@ -316,7 +316,7 @@ class TheCorpusPrime(unittest.TestCase):
         self.assertEqual(len({bare.tag, gradle_only.tag, both.tag}), 3, "a tag names the prime it was warmed for")
         prime = self.projects("maven")
         with tempfile.TemporaryDirectory() as scratch:
-            # ⭐ The context is copied by the ONE helper (`W391`), reading the
+            # ⭐ The context is copied by the ONE helper, reading the
             # declaration a primed build's digest is taken over — never a list
             # of directories written out here.
             root = build_inputs.copy_inputs(scratch, inputs=build.PRIMED_INPUT_ROOTS)

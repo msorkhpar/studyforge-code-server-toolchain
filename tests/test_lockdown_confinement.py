@@ -1,4 +1,4 @@
-"""The practice frame is CONFINED — the allow-list, the seed, and the gate (W433).
+"""The practice frame is CONFINED — the allow-list, the seed, and the gate.
 
 Run from the component root: `python3 -m unittest discover -s tests -v`.
 Everything here is asserted BOTH ways: the real artifact passes, and a planted

@@ -1,4 +1,4 @@
-"""The lockdown RUNS — the image's tagging gate, measured both ways (W432).
+"""The lockdown RUNS — the image's tagging gate, measured both ways.
 
 ⛔ Skipped unless `TC_DOCKER=1`: it builds an image, starts containers and
 drives a headless browser. Run it as ONE container job:
@@ -8,13 +8,13 @@ drives a headless browser. Run it as ONE container job:
 ⚠️ **What `tests/test_lockdown.py` cannot see, and why this module exists.**
 That module packs the extension, runs it against a stub `vscode` and reads the
 packed identity — all true of an extension that the real workbench never runs.
-`TC-04`'s guarantee was that *"an image whose lockdown did not load is not
+The lockdown's guarantee was that *"an image whose lockdown did not load is not
 tagged"*, and the check that carried it read
 `code-server --list-extensions`: ⛔ **the extension was installed, listed,
 present in `extensions.json`, parsed and inside its engine range while the
 extension host activated it in NO session.** ⭐ **So this module asserts the
 guarantee on a REAL session in a REAL image, and plants against the gate
-itself**: the same image with `W432`'s exact defect put back — no
+itself**: the same image with the Restricted Mode defect put back — no
 untrusted-workspace declaration and no `--disable-workspace-trust` — must be
 refused although it still passes the installed-list check, and so must an
 extension that activates and then throws.
@@ -103,7 +103,7 @@ class TheImageIsTaggedOnlyOnceItsLockdownRan(unittest.TestCase):
         self.assertIn("closeSidebar", proof.banner)
 
     def test_the_shipped_command_line_is_what_is_proved(self):
-        # ⛔ W432 was a flag the CONTRACT carried and the IMAGE's CMD did not,
+        # ⛔ The Restricted Mode defect was a flag the CONTRACT carried and the IMAGE's CMD did not,
         # so a probe with a command line of its own would have proved nothing.
         shipped = activation.command_of(self.tag)
         self.assertIn("--disable-workspace-trust", shipped)
@@ -113,13 +113,13 @@ class TheImageIsTaggedOnlyOnceItsLockdownRan(unittest.TestCase):
         # ⭐ MEASURED, and the reason the fix has two halves rather than one.
         # Dropping the image's `--disable-workspace-trust` leaves the manifest's
         # `capabilities.untrustedWorkspaces`, and the extension still runs;
-        # W432's plant below has to take BOTH away. ⚠️ This is the belt and
+        # the plant below has to take BOTH away. ⚠️ This is the belt and
         # braces asserted rather than asserted about.
         proof = activation.prove(self._derive(self._shipped_cmd(without="--disable-workspace-trust")), LOCKDOWN)
         self.assertTrue(proof.ok, proof.complaint())
 
     def test_an_image_whose_lockdown_cannot_activate_is_refused_naming_what_was_missing(self):
-        # ⛔ THE PLANT, and it reconstructs W432 exactly: a manifest with no
+        # ⛔ THE PLANT, and it reconstructs the Restricted Mode defect exactly: a manifest with no
         # untrusted-workspace declaration, in an image whose command line does
         # not disable workspace trust, against a bind-mounted (untrusted)
         # folder. The extension is still INSTALLED, still listed and still in

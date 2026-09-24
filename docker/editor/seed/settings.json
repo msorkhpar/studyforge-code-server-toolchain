@@ -25,7 +25,7 @@
 
     // @runtime python
     // Python: the runner's pinned interpreter, with pytest already installed.
-    // Where a corpus keeps its tests is the corpus's to say (TC-05).
+    // Where a corpus keeps its tests is the corpus's to say.
     "python.defaultInterpreterPath": "/usr/local/bin/python3",
     "python.testing.pytestEnabled": true,
     "python.testing.unittestEnabled": false,

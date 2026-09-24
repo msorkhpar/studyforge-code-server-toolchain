@@ -1,4 +1,4 @@
-"""The prime contract (TC-03): read a consumer's prime directory, and guard it against the pins.
+"""The prime contract: read a consumer's prime directory, and guard it against the pins.
 
 **What it does.** The build-time warm cache is the per-consumer part of an
 image: it is built from THAT consumer's build files, so a reader's
@@ -11,9 +11,9 @@ calls `guard` from its `plan()` and `docker/minimal/build.py` from its
 `planned()`, so a refusal comes before Docker starts.
 
 **How you use it.** Through `docker/editor/build.py --prime DIR` (a
-consumer's caches in the editor, TC-03) and `docker/minimal/build.py --prime
+consumer's caches in the editor) and `docker/minimal/build.py --prime
 DIR` (a corpus's practice dependencies in the runner, where a graded run
-happens with no network, W390). The contract, in full:
+happens with no network). The contract, in full:
 
 - ``DIR/gradle/`` — a Gradle build (``settings.gradle`` or
   ``settings.gradle.kts``) with ``gradle/verification-metadata.xml`` recording

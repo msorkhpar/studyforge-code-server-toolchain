@@ -1,5 +1,5 @@
 #!/bin/sh
-# The GRADLE warmer (TC-03): build a consumer's prime project once, so its
+# The GRADLE warmer: build a consumer's prime project once, so its
 # Gradle user home holds everything a first offline build needs.
 #
 #   warm-gradle.sh warm  PROJECT SEED   build PROJECT with the network into SEED
