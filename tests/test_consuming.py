@@ -324,7 +324,7 @@ class TheReleaseNotes(unittest.TestCase):
                 self.assertTrue(entry["measured"], "a tag claim is measured, never assumed")
 
     def test_this_releases_moves_every_tag_is_false_because_neither_half_is_a_build_input(self):
-        """Two rows converged into `provides` 2; the claim is the property, not convenience."""
+        """The newest release adds keys only; the claim is the property, not convenience."""
         newest = CONTRACT["releases"][0]
         self.assertIs(newest["moves_every_tag"], False)
         roots = set(EDITOR["image"]["tag"]["build_inputs"]) | set(RUNNER_TAG["build_inputs"])
@@ -340,10 +340,10 @@ class TheReleaseNotes(unittest.TestCase):
                 self.assertFalse(any(where == entry or entry in where.parents for entry in inputs))
 
     def test_one_entry_carries_both_halves_of_this_release(self):
-        """The format is one entry per `provides`, NOT one per change (they converged)."""
-        newest = CONTRACT["releases"][0]
-        self.assertIn("runner", newest["summary"])
-        self.assertIn("tag", newest["summary"])
+        """The format is one entry per `provides`, NOT one per change (two converged into 2)."""
+        converged = next(entry for entry in CONTRACT["releases"] if entry["provides"] == 2)
+        self.assertIn("runner", converged["summary"])
+        self.assertIn("tag", converged["summary"])
         self.assertIn("one entry per provides", TAG["upgrade"]["notes_per_release"])
         self.assertIn("one entry per provides", RUNNER_TAG["upgrade"]["notes_per_release"])
 
@@ -422,6 +422,23 @@ class TheContractAgreesWithTheImage(unittest.TestCase):
         self.assertIn("--print-tag", EDITOR["image"]["tag_from"])
         for label in EDITOR["image"]["labels"].values():
             self.assertIn(label, DOCKERFILE)
+
+    def test_the_editors_prime_is_declared_as_the_runners_and_is_the_builds_own(self):
+        """`editor.prime`: the flag its build takes, the seeds its Dockerfile warms, the tag it moves."""
+        prime, runner = EDITOR["prime"], CONTRACT["runner"]["prime"]
+        self.assertEqual(prime["declared_by"], runner["declared_by"], "one prime, one flag, both builds")
+        self.assertIs(prime["folded_into_tag"], True)
+        self.assertEqual(sorted(prime["seeds"]), sorted(editor_plan.prime_contract.TOOLS))
+        for tool, seed in prime["seeds"].items():
+            self.assertIn(f"/tmp/prime/{tool} {prime['root']}/{seed}", DOCKERFILE, tool)
+        fixture = str(ROOT / "tests" / "fixtures" / "prime")
+        flag = [fixture if part == "<directory>" else part for part in prime["declared_by"].split()]
+        tag_from = ["gradle,java,maven" if part == "<the declared set>" else part for part in EDITOR["image"]["tag_from"]]
+        unprimed, primed = (subprocess.run([sys.executable, *tag_from[1:], *extra], cwd=ROOT, text=True,
+                                           capture_output=True, check=True).stdout.strip()
+                            for extra in ((), flag))
+        self.assertTrue(primed.startswith(f"{editor_plan.REPOSITORY}:gradle-java-maven-"), primed)
+        self.assertNotEqual(primed, unprimed, "a prime handed to the declared flag moved no tag")
 
     def test_the_declared_runtimes_are_the_pinned_ones_the_editor_can_carry(self):
         carried = sorted(set(PINS["runtimes"]) - set(editor_plan.NOT_CARRIED))

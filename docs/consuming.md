@@ -61,6 +61,14 @@ what a build with no flag makes, `editor.runtimes.selectable` is everything
 pinned runtime the editor cannot carry and why. A built image states its own set
 in the label `editor.runtimes.read_back_from`.
 
+**The prime** is chosen when the image is BUILT too, exactly as the runner's
+is: `editor.prime.declared_by` is the flag its build takes, pointing at your
+corpus's prime directory, `editor.prime.root` and `editor.prime.seeds` say where
+the warmed caches land, and `editor.prime.folded_into_tag` is `true`, so a
+primed editor's tag names the prime it was warmed with. Hand the editor's build
+and its `editor.image.tag_from` the same prime you hand the runner's, and record
+the tag that primed command prints.
+
 **The image has no registry** (`editor.image.registry` is `null`): this
 component has no remote and is never pushed, so a consumer builds the image from
 its checkout and pins the tag the build prints. What that tag promises is the
