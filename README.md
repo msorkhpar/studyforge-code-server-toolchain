@@ -447,7 +447,9 @@ is not the image's own starts (and the same image without its entrypoint's
 written, a read-only root filesystem never starts at all, and no Docker socket
 is anywhere near it. It also builds a SECOND image from a second declared set
 and brings it up beside the first, on its own port: two consumers holding two
-tags, both healthy at once.
+tags, both healthy at once. It runs on a host whose reader's editor already holds
+the declared port: the first consumer then takes a free port, and its file is
+asserted to be the reference with that port alone replaced.
 
 The image tests build a full image and a `shell`-only image, run every smoke
 project under `docker/minimal/smoke/` with `--network none` (each passes, and a

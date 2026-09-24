@@ -12,6 +12,14 @@ So this module copies the CHECKED-IN reference fragment verbatim into an empty
 directory, supplies only what the fragment itself asks for by name, and brings
 it up. Nothing in the fragment is edited.
 
+⭐ **It runs BESIDE a reader's editor rather than skipping** (`W465`,
+`REL-13/3`). The reference publishes `editor.ports[0].host`, which a host serving
+a corpus already holds, so when that port is taken the first consumer takes a
+free one — rendered from the contract with that one value changed, as the
+two-tags clause's consumer always was — ⛔ **and the rendered bytes are asserted
+to be the checked-in reference's with the published port alone replaced**, so
+what comes up is still the fragment and not a second template.
+
 ⭐ **The versioning half.** One clause builds a SECOND image from a
 second declared set and brings it up beside the first, in its own compose
 project and on its own port: two consumers holding two tags, both healthy at
@@ -61,6 +69,7 @@ RUNTIMES = "java,maven"
 OTHER_RUNTIMES = "java"
 SOURCES = Path(EDITOR["mounts"][0]["host_path"])
 PORT = EDITOR["ports"][0]["host"]
+BIND = EDITOR["ports"][0]["host_bind"]
 
 
 def run(command: list[str], **kwargs) -> subprocess.CompletedProcess:
@@ -80,7 +89,6 @@ def free_port() -> int:
 
 
 @unittest.skipUnless(os.environ.get("TC_DOCKER") == "1", "set TC_DOCKER=1 to build and run the image")
-@unittest.skipIf(taken(PORT), f"the reference fragment publishes {PORT}, which is in use")
 class TheComposeContract(unittest.TestCase):
     """The reference fragment, copied verbatim and brought up as a consumer would."""
 
@@ -92,7 +100,10 @@ class TheComposeContract(unittest.TestCase):
         if built.returncode != 0:
             raise AssertionError(f"the editor image did not build:\n{built.stdout[-3000:]}{built.stderr[-3000:]}")
         cls.image = built.stdout.strip().splitlines()[-1]
-        cls.project, cls.directory = cls.consumer("up", sources=True)
+        # ⭐ The declared port when it is free; beside a reader's editor, a free one.
+        cls.port = free_port() if taken(PORT) else PORT
+        cls.project, cls.directory = cls.consumer(
+            "up", sources=True, port=None if cls.port == PORT else cls.port)
         brought = cls.compose(cls.project, cls.directory, "up", "-d", "--wait")
         assert brought.returncode == 0, brought.stdout + brought.stderr
         cls.container = cls.compose(cls.project, cls.directory, "ps", "-q", "editor").stdout.strip()
@@ -114,10 +125,12 @@ class TheComposeContract(unittest.TestCase):
     def consumer(cls, label: str, *, sources: bool, port: int | None = None) -> tuple[str, Path]:
         """An empty directory holding the checked-in fragment, copied and not edited.
 
-        ⚠️ `port` is for a SECOND consumer running beside the first, which cannot
-        publish the same one. `editor.ports[0].host` is `per_project: true`, so
-        that project's file is rendered from the contract with its own port —
-        the only project whose file is not the checked-in bytes.
+        ⚠️ `port` is for a consumer running beside another — a second one, or a
+        reader's own editor — which cannot publish the same one.
+        `editor.ports[0].host` is `per_project: true`, so that project's file is
+        rendered from the contract with its own port. ⛔ **It must be the
+        checked-in bytes with that port alone replaced**, or it is not the
+        fragment this module exists to bring up.
         """
         project = f"tc05-{label}-{uuid.uuid4().hex[:8]}"
         directory = WORK / project
@@ -127,7 +140,13 @@ class TheComposeContract(unittest.TestCase):
         else:
             adapted = json.loads(json.dumps(CONTRACT))
             adapted["editor"]["ports"][0]["host"] = port
-            (directory / "compose.yaml").write_text(consuming.render(adapted), encoding="utf-8")
+            rendered = consuming.render(adapted)
+            published = f'"{BIND}:{{}}:{EDITOR["ports"][0]["container"]}"'
+            reference = REFERENCE.read_text(encoding="utf-8")
+            assert reference.count(published.format(PORT)) == 1, "the reference publishes no port"
+            assert rendered == reference.replace(published.format(PORT), published.format(port)), (
+                "the adapted file differs from the checked-in fragment by more than its port")
+            (directory / "compose.yaml").write_text(rendered, encoding="utf-8")
         if sources:
             (directory / SOURCES).mkdir()
             (directory / SOURCES / "a-source.txt").write_text("written on the host\n", encoding="utf-8")
@@ -151,9 +170,9 @@ class TheComposeContract(unittest.TestCase):
     def exec(container: str, *command: str, user: str | None = None) -> subprocess.CompletedProcess:
         return run(["docker", "exec", *(["-u", user] if user else []), container, *command])
 
-    @staticmethod
-    def fetch(path: str) -> tuple[int, str]:
-        request = urllib.request.Request(f"http://127.0.0.1:{PORT}{path}",
+    @classmethod
+    def fetch(cls, path: str) -> tuple[int, str]:
+        request = urllib.request.Request(f"http://127.0.0.1:{cls.port}{path}",
                                          headers={"User-Agent": "Example/0.1 (+https://example.invalid)"})
         try:
             with urllib.request.urlopen(request, timeout=10) as answer:
@@ -171,9 +190,19 @@ class TheComposeContract(unittest.TestCase):
         found = self.exec(self.container, "cat", f"{EDITOR['mounts'][0]['container_path']}/a-source.txt")
         self.assertEqual(found.stdout, "written on the host\n")
 
-    def test_it_never_starts_unauthenticated(self):
+    def test_it_starts_unauthenticated_and_that_rests_on_the_loopback_bind(self):
+        """⛔ User ruling 2026-09-22: `--auth=none`, safe ONLY because the port is loopback.
+
+        ⚠️ This clause said the opposite until `W465` and was never read RED,
+        because the class skipped on every host whose reader's editor held the
+        port. The redirect is the reading `c535074` took: `/` no longer goes to
+        `/login`. ⭐ The bind half is asserted here too, so neither is read alone.
+        """
         status, where = self.fetch("/")
-        self.assertIn("/login", where, f"the root answered {status} without asking for the password")
+        self.assertEqual(status, 200)
+        self.assertNotIn("/login", where, "the editor asked for a password the ruling removed")
+        self.assertIn("--auth=none", EDITOR["command"])
+        self.assertIn(BIND, consuming.LOOPBACK)
 
     # -------------------------------------- ruling 1: loopback only, never 0.0.0.0
     def test_the_published_port_is_bound_to_loopback_and_to_nothing_else(self):
@@ -182,7 +211,7 @@ class TheComposeContract(unittest.TestCase):
         self.assertEqual(list(published), [declared])
         for binding in published[declared]:
             self.assertIn(binding["HostIp"], consuming.LOOPBACK)
-            self.assertEqual(binding["HostPort"], str(PORT))
+            self.assertEqual(binding["HostPort"], str(self.port))
 
     def test_a_fragment_rendered_without_that_ruling_is_refused_before_compose_sees_it(self):
         broken = json.loads(json.dumps(CONTRACT))
