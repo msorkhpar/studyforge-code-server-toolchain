@@ -218,9 +218,11 @@ class ASessionMakesNoOutboundConnection(unittest.TestCase):
         seen = self._watched(image)
         # ⚠️ The server's own switches are intact in this plant, so what connects
         # out is the language server; a socket that short-lived can close before
-        # its owner is read, so the address is asserted, not the owner.
-        self.assertNotEqual(seen["sockets"], [], f"the plant connected nowhere, so this is blind: {seen}")
-        self.assertTrue(all(entry.split(" by ")[0].endswith(":443") for entry in seen["sockets"]), seen)
+        # its owner is read, so the address is asserted, not the owner. A control
+        # asserts that the planted fetch APPEARS, and nothing about what else the
+        # sampler caught: the lookup before it is caught or not by timing alone.
+        fetches = [entry for entry in seen["sockets"] if entry.split(" by ")[0].endswith(":443")]
+        self.assertNotEqual(fetches, [], f"the plant made no :443 connection, so this is blind: {seen}")
 
 
 if __name__ == "__main__":
