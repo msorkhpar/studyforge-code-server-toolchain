@@ -149,7 +149,7 @@ class TheContract(unittest.TestCase):
 
 
 class TheTaggingScheme(unittest.TestCase):
-    """What a tag encodes, what moves it, and what a consumer pins (TC-06).
+    """What a tag encodes, what moves it, and what a consumer pins.
 
     ⭐ The scheme is asserted against the tag the BUILD computes, not against a
     second copy of it: `editor.image.tag.scheme` is formatted with the parts and
@@ -225,7 +225,7 @@ class TheTaggingScheme(unittest.TestCase):
                 self.assertFalse(any(where == entry or entry in where.parents for entry in inputs))
         self.assertIs(CONTRACT["releases"][0]["moves_every_tag"], False)
 
-    # ------------------------------------------- the runner block (TC-06/2)
+    # ------------------------------------------- the runner block
     def runner_tag(self, names, root: Path = ROOT) -> str:
         """The tag the RUNNER's own build prints, planned end to end and never Docker."""
         pins = runner_plan.load(root)
@@ -243,7 +243,7 @@ class TheTaggingScheme(unittest.TestCase):
         self.assertLess(len(RUNNER_TAG["build_inputs"]), len(TAG["build_inputs"]),
                         "the editor folds the runner in and adds its own; the runner does not")
         self.assertNotIn("prime", RUNNER_TAG["build_inputs"],
-                         "prime/ is folded into a PRIMED build's digest only (W390)")
+                         "prime/ is folded into a PRIMED build's digest only")
         self.assertIs(CONTRACT["runner"]["prime"]["folded_into_tag"], True)
 
     def test_an_editor_only_change_moves_no_runner_tag(self):
@@ -460,7 +460,7 @@ class TheContractAgreesWithTheImage(unittest.TestCase):
                          "an unauthenticated IDE may be published on loopback and nowhere else")
 
     def test_the_workspace_trust_flag_is_in_the_images_cmd_as_well_as_the_contract(self):
-        # ⛔ W432: the contract carried --disable-workspace-trust and the
+        # ⛔ The Restricted Mode defect: the contract carried --disable-workspace-trust and the
         # image's CMD did not, so a consumer that did not copy the compose
         # template got a workbench in Restricted Mode and a lockdown that never
         # ran. ⚠️ Both halves are asserted, because the defect was the gap
@@ -477,7 +477,7 @@ class TheContractAgreesWithTheImage(unittest.TestCase):
         self.assertEqual(EDITOR["extensions"]["settings_a_study_server_writes"], contributed)
 
     def test_the_entrypoint_repairs_the_uid_before_it_seeds_anything(self):
-        """Ruling 3's mechanism: without this ordering a uid but 1000 has HOME=/ here."""
+        """The uid ruling's mechanism: without this ordering a uid but 1000 has HOME=/ here."""
         self.assertIn('eval "$(fixuid -q)"', ENTRYPOINT)
         self.assertLess(ENTRYPOINT.index('eval "$(fixuid -q)"'), ENTRYPOINT.index('seed_tree "$SEED_GRADLE"'))
         self.assertIn("fixuid", EDITOR["runs_as"]["how"])

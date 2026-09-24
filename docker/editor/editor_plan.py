@@ -17,35 +17,35 @@ is.
 functions are reused unchanged.
 
 ## Why the runner's plan is an input
-⭐ The editor chooses NO runtime version (register ruling, PO round 122): it
+⭐ The editor chooses NO runtime version: it
 copies every runtime out of the runner image built for the same set, so
 `pins.json` stays the one place a runtime version is chosen. The runner's
 checks, its `/opt` expectation and its tag are therefore read from the
 runner's `Plan`, never re-derived here.
 
-## The selection (TC-02)
+## The selection
 A consumer declares a subset of `pins.json`'s runtimes; `DEFAULT_SET` is the
-image `TC-01` built. Everything the image carries is a function of that set:
+image's first, five-runtime set. Everything the image carries is a function of that set:
 the runner it copies, the extensions (each names the runtime it serves in
 `for`), TypeScript and readline, `PATH`, `JAVA_HOME` and the seed's
 per-runtime settings blocks. ⛔ A runtime that is not selected leaves no trace:
 no tree, no `PATH` entry, no `JAVA_HOME`, no extension and no setting.
 
-## The prime (TC-03)
+## The prime
 A consumer's prime directory is read by `prime/prime.py` and handed to
 `plan()`, which guards it against `pins.json` (never a pin of its own) and
 turns it into one `WITH_<TOOL>_PRIME` argument per warmer. Its digest is
 folded into the tag, so an image warmed for one prime never carries
 another's name.
 
-## The lockdown (TC-04)
+## The lockdown
 ⭐ The workbench lockdown extension is this repository's own artifact, not a
 consumer's choice: every declared set installs it. So it is NOT an
 `editor-pins.json` entry with a `for` — `lockdown/lockdown.py` reads its
 identity from the one manifest that carries it, `plan()` puts the file name in
 `LOCKDOWN_VSIX` and the id in `EXPECTED_EXTENSIONS`, and the image's own
 installed-list check fails the build naming the id when it is missing.
-⚠️ That check proves INSTALLATION and nothing more (`W432`); `build.py` proves
+⚠️ That check proves INSTALLATION and nothing more; `build.py` proves
 the extension RUNS, in a real session, before it tags the image.
 """
 
@@ -77,7 +77,7 @@ LOCKDOWN = "lockdown"
 OWN_INPUTS = (EDITOR_PINS, "docker/editor", "prime", LOCKDOWN)
 REPOSITORY = "code-server-toolchain/editor"
 #: The set built when none is declared: the extraction source's five, which is
-#: the image TC-01 built.
+#: the image's first set.
 DEFAULT_SET = ("gradle", "java", "kotlin", "node", "python")
 #: What the editor needs for each declared runtime. Removing one of these from
 #: editor-pins.json, or pinning it for another runtime, is refused before
@@ -144,8 +144,8 @@ def inputs_digest(root: Path) -> str:
 def selection(pins: dict, names) -> list[str]:
     """The declared set, checked before the runner is planned, or `Refused`.
 
-    ⭐ An unpinned toolchain is NAMED, as the runner's refusal names it
-    (`W387`): only a name shaped like a runtime id is ever echoed, and a
+    ⭐ An unpinned toolchain is NAMED, as the runner's refusal names it:
+    only a name shaped like a runtime id is ever echoed, and a
     malformed one is answered with what is pinned, by both components.
     """
     names = list(names)
@@ -253,7 +253,7 @@ def plan(pins: dict, editor_pins: dict, runner: runner_plan.Plan, digest: str,
 
 
 def primed(prime: prime_contract.Prime | None) -> dict[str, str]:
-    """One switch per warmer, and the key that caches the warm per prime (W379's lesson)."""
+    """One switch per warmer, and the key that caches the warm per prime."""
     tools = prime.tools if prime else ()
     args = {f"WITH_{tool.upper()}_PRIME": "yes" if tool in tools else "no" for tool in prime_contract.TOOLS}
     args["PRIME_KEY"] = prime.digest if prime else "none"
@@ -261,7 +261,7 @@ def primed(prime: prime_contract.Prime | None) -> dict[str, str]:
 
 
 def environment(declared) -> dict[str, str]:
-    """`PATH`, `JAVA_HOME`, profile.d and the seed, naming ONLY declared runtimes (TC-01/16)."""
+    """`PATH`, `JAVA_HOME`, profile.d and the seed, naming ONLY declared runtimes."""
     dirs = [path for name, path in PATH_DIRS if name in declared]
     profile = [f"export JAVA_HOME={JAVA_HOME}"] if "java" in declared else []
     profile += [f"export PATH={':'.join(dirs)}:$PATH"] if dirs else []
@@ -278,7 +278,7 @@ def java_runtime(pins: dict) -> str:
     """The execution-environment name the Java extension expects, from the pinned JDK.
 
     ⛔ Never written by hand: the extraction source's seed said `JavaSE-26`
-    against a JDK pinned elsewhere, and the two disagreed (TC-01/5).
+    against a JDK pinned elsewhere, and the two disagreed.
     """
     return f"JavaSE-{pins['runtimes']['java']['version'].split('.')[0]}"
 

@@ -14,7 +14,7 @@ this script is the only way the Dockerfile builds.
 
 `--prime DIR` warms a corpus's declared practice dependencies into the image
 from that corpus's own build files, so a graded run resolves them with no
-network (W390). The contract is `prime/prime.py`'s — TC-03's, shared with the
+network. The contract is `prime/prime.py`'s — shared with the
 editor — and the directory is mounted read-only as the named context
 `consumer-prime`; its digest moves the tag. Without it the context is an empty
 directory and nothing is warmed.
@@ -47,7 +47,7 @@ WARMERS = "prime"
 #: What a PRIMED build's digest is taken over: the runner's own inputs, plus
 #: the warmers, which run in such a build and in no other. ⛔ Declared once,
 #: here, and never listed again — `tests/build_inputs.py` copies a planted
-#: context by READING this (`W391`), so a new input is one edit.
+#: context by READING this, so a new input is one edit.
 PRIMED_INPUT_ROOTS = planning.INPUT_ROOTS + (WARMERS,)
 
 
@@ -61,14 +61,14 @@ def planned(root: Path, platform: str, names, prime: Path | None = None) -> plan
 
     ⭐ A prime is READ for its shape and GUARDED against `pins.json` here, so a
     prime the declared set cannot build, or one naming another version, is
-    refused before `docker build` starts — as it is for the editor (TC-03).
+    refused before `docker build` starts — as it is for the editor.
     """
     pins = planning.load(root)
     read = prime_contract.read(prime) if prime is not None else None
     # ⭐ The warmers RUN in a primed build, so they are an input to THAT image
     # and to no other one: taking the digest over `PRIMED_INPUT_ROOTS` only
     # when a prime is given leaves every unprimed tag exactly where it was,
-    # which is what the editor's Ruling 2 requires (`prime/` is an input of the
+    # which the rule "an editor-only change moves no runner tag" requires (`prime/` is an input of the
     # editor's image too).
     roots = planning.INPUT_ROOTS if read is None else PRIMED_INPUT_ROOTS
     built = planning.plan(pins, names, platform, planning.inputs_digest(root, roots), read)

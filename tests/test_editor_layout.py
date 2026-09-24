@@ -1,11 +1,11 @@
-"""The practice frame never paints the Explorer — measured from the first frame (W448).
+"""The practice frame never paints the Explorer — measured from the first frame.
 
 ⛔ **The reading this row started from** (user, 2026-09-23): *"the left explore
 panel of the code-server remains open till the page is fully loaded and then it
 gets closed."* ⚠️ Measured on code-server 4.137.0 in a real browser: every
 frame painted the primary side bar from the workbench's first frame for up to
 seven seconds, until the lockdown's `closeSidebar` passes won. ⭐ The image now
-starts the side bar CLOSED (`docker/editor/Dockerfile`, the W448 step), and this
+starts the side bar CLOSED (`docker/editor/Dockerfile`, the side bar step), and this
 module reads that the way a reader sees it: every animation frame, from before
 the workbench's own first script, never a single end state.
 
@@ -93,7 +93,7 @@ class TheStepIsInTheBuild(unittest.TestCase):
 
     def test_the_step_fails_the_build_unless_exactly_one_default_was_found_and_replaced(self):
         self.assertIn('[ "$found" = 1 ]', DOCKERFILE)
-        self.assertIn("W448 patches exactly one", DOCKERFILE)
+        self.assertIn("side bar defaults; this step patches exactly one", DOCKERFILE)
         self.assertIn("the side bar default was not replaced", DOCKERFILE)
 
 

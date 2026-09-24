@@ -77,7 +77,7 @@ class TheEditorsPins(unittest.TestCase):
                 self.assertNotEqual(editor_plan.pins_findings(planted), [])
 
     def test_no_runtime_version_is_chosen_in_the_editors_pins(self):
-        """Ruling 1: pins.json is the ONE place a runtime version is chosen."""
+        """pins.json is the ONE place a runtime version is chosen."""
         self.assertEqual(set(EPINS) & {"runtimes", "platforms"}, set())
         self.assertEqual(set(EPINS), {"pins_api", "about", "base", "typescript", "readline", "extensions"})
 
@@ -184,7 +184,7 @@ class TheTag(unittest.TestCase):
         return build_inputs.copy_inputs(tmp)
 
     def test_the_editors_tag_moves_with_every_input_and_the_runners_does_not_move_with_the_editors(self):
-        """Ruling 2: an editor-only change moves no runner tag; a runner change moves both."""
+        """An editor-only change moves no runner tag; a runner change moves both."""
         with tempfile.TemporaryDirectory() as tmp:
             root = self._copy(tmp)
             editor0, runner0 = editor_plan.inputs_digest(root), runner_plan.inputs_digest(root)
@@ -232,8 +232,8 @@ class TheDockerfile(unittest.TestCase):
         body = without_comments(DOCKERFILE)
         self.assertIn("--network=none --mount=type=bind,from=fetch", body)
         # Every step that must not reach the network: TypeScript from the pinned
-        # tarball, the extension install, the lockdown's pack stage (TC-04) and
-        # the prime's offline proof (TC-03).
+        # tarball, the extension install, the lockdown's pack stage and
+        # the prime's offline proof.
         offline = ("npm install -g --offline", "--install-extension", "/lockdown/lockdown.py", "prove")
         self.assertEqual(body.count("RUN --network=none"), len(offline))
         for needle in offline:
@@ -277,7 +277,7 @@ class TheEntrypointAndSeed(unittest.TestCase):
 
 class TheReadme(unittest.TestCase):
     def test_the_readme_documents_the_editor_with_no_run_line_of_its_own(self):
-        """TC-01/3: the editor's run shape is TC-05's; the runner's run-line check stays green."""
+        """The editor's run shape is `consuming.json`'s; the runner's run-line check stays green."""
         section = README.split("## The editor image", 1)[1].split("\n## ", 1)[0]
         self.assertNotIn("docker run", section)
         self.assertIn("docker/editor/build.py", section)

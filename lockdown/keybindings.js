@@ -29,7 +29,7 @@
  *
  * ⚠️ A REPORT IS NOT A PROOF, and this module is careful not to be read as
  * one. Comparing a derived list with a file on disk cannot see what the
- * workbench ALLOWS -- that is `W432`'s lesson, where a check that read
+ * workbench ALLOWS -- that is the Restricted Mode lesson, where a check that read
  * INSTALLATION could not see ACTIVATION. The proof is a real browser
  * pressing real keys at a real session, in `docker/editor/confinement.py`.
  * This half is the exhaustive one and that half is the behavioural one.

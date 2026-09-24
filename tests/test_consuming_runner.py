@@ -8,7 +8,7 @@ violation is caught.
 deliberately the same — the contract, the rendering, the agreement with the
 image, the document. The anti-drift class is the point of the row: the runner's
 run shape used to live only in the README's prose, so the framework had to
-re-derive it by parsing that sentence (`TC-05/3`). It is now data, and the
+re-derive it by parsing that sentence. It is now data, and the
 README's line is asserted to be what the data renders.
 """
 
@@ -86,11 +86,11 @@ class TheBlock(unittest.TestCase):
         self.assertIn("run shape is data, not prose", " ".join(runner.findings({})))
 
     def test_the_hole_the_editor_declared_is_filled_in_the_same_commit(self):
-        """`TC-05` named this block in `not_yet_declared`; filling it removes the entry.
+        """The editor's contract named this block in `not_yet_declared`; filling it removes the entry.
 
-        ⚠️ This clause once also asserted that the OTHER hole `TC-05` declared —
-        what a tag promises — was still open. `TC-06` converged into this branch
-        and filled it, so the list is now EMPTY and the assertion was inverted
+        ⚠️ This clause once also asserted that the OTHER hole that contract declared —
+        what a tag promises — was still open. The versioning work filled it
+        in the same change, so the list is now EMPTY and the assertion was inverted
         here rather than deleted: an empty list is a claim, and the contract
         backs it with `why_nothing_is_undeclared`.
         """

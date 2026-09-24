@@ -1,4 +1,4 @@
-"""Prove the workbench ALLOWS nothing outside the practice, before the image is tagged (W433).
+"""Prove the workbench ALLOWS nothing outside the practice, before the image is tagged.
 
 **What it does.** `prove(image)` starts a container from `image` with the
 image's own command line, opens a workbench in a headless browser at the URL a
@@ -8,10 +8,10 @@ for what appeared. It then presses the keys a practice NEEDS -- find, type,
 save -- and checks those still work. `Confinement.ok` is true only when every
 confined chord opened nothing AND the practice still edits and saves.
 
-**Why it is keys and pixels rather than a file.** `W433` confines by
+**Why it is keys and pixels rather than a file.** The lockdown confines by
 keybinding; the keybindings live in a file; and a check that reads that file
-cannot see what the workbench ALLOWS. ⛔ That is the exact shape of the error
-`W432` exists because of, where a check that read INSTALLATION could not see
+cannot see what the workbench ALLOWS. ⛔ That is the exact shape of the Restricted
+Mode defect, where a check that read INSTALLATION could not see
 ACTIVATION and passed for five rounds against a broken product. ⚠️ It would
 have been especially wrong here: measured, the workbench reads the user
 keybindings file when a session STARTS and ignores a write made while one is
@@ -73,7 +73,7 @@ SEED = Path("docker/editor/seed/keybindings.json")
 
 #: The chords this presses, and what each of them is. ⛔ The first of them are
 #: the ones the reader's own screenshot named; the rest are the surfaces around
-#: the editor, which `W432` could only close after the fact. ⚠️ `Run Task` has
+#: the editor, which the Restricted Mode defect could only close after the fact. ⚠️ `Run Task` has
 #: NO default keybinding at all -- it is reachable only THROUGH the palette, so
 #: closing the palette closes it and there is no chord to press for it.
 CONFINED = (

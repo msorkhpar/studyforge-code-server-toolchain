@@ -1,9 +1,9 @@
-"""The one copy of the build's inputs (`W391`) — every clause BOTH ways.
+"""The one copy of the build's inputs — every clause BOTH ways.
 
 No Docker needed. Run from the component root:
 `python3 -m unittest discover -s tests -v`.
 
-⛔ `TC-04/3`: the modules that plant a defect each kept their own list of the
+⛔ The modules that plant a defect each once kept their own list of the
 directories to copy, so `lockdown/` had to be added to each of them by hand.
 ⭐ What settles it is asserted here: the list is DERIVED from the plans' own
 declarations, and a new top-level input directory is ONE edit — in the plan

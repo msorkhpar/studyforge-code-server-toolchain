@@ -12,7 +12,7 @@ So this module copies the CHECKED-IN reference fragment verbatim into an empty
 directory, supplies only what the fragment itself asks for by name, and brings
 it up. Nothing in the fragment is edited.
 
-⭐ **The versioning half (`TC-06`).** One clause builds a SECOND image from a
+⭐ **The versioning half.** One clause builds a SECOND image from a
 second declared set and brings it up beside the first, in its own compose
 project and on its own port: two consumers holding two tags, both healthy at
 once, each container wearing its own set's label. Another runs the image with a
@@ -267,7 +267,7 @@ class TheComposeContract(unittest.TestCase):
         for mount in binds:
             self.assertIs(mount["must_exist_before_start"], True, mount["container_path"])
 
-    # ------------------- ruling 5: the root filesystem stays writable (W390/3)
+    # ------------------- ruling 5: the root filesystem stays writable
     def test_a_read_only_root_filesystem_never_starts_and_the_declared_one_does(self):
         """The entrypoint repairs the passwd record at every start; /etc is written."""
         self.assertIs(EDITOR["filesystem"]["read_only_root"], False)
@@ -286,7 +286,7 @@ class TheComposeContract(unittest.TestCase):
                     self.assertFalse(mount["Destination"] == path
                                      or mount["Destination"].startswith(f"{path}/"), mount)
 
-    # ----------------- TC-06: two consumers pin two tags and run them at once
+    # ----------- versioning: two consumers pin two tags and run them at once
     def test_two_consumers_pin_two_tags_and_run_them_side_by_side(self):
         """Acceptance: two consumers can pin different tags simultaneously."""
         built = run([sys.executable, str(BUILD), "--runtimes", OTHER_RUNTIMES])

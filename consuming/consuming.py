@@ -40,7 +40,7 @@ be complete, and a consumer still adapts every part that must differ.
 ## ⛔ What the rendered file may never say
 
 §8.3 is the non-negotiable: no Docker socket reaches a serving process. The five
-rulings E12 gives a consumer are the rest — loopback-only publishing, the sources
+rulings `docs/consuming.md` gives a consumer are the rest — loopback-only publishing, the sources
 and nothing else, the repository owner's uid:gid, a bind source that exists
 before the container starts, and a writable root filesystem. `findings` asserts
 each of them against the data, so a contract edited into breaking one stops here
@@ -106,14 +106,14 @@ def load(root: Path = COMPONENT) -> dict:
 def findings(contract: dict) -> list[str]:
     """What is wrong with the contract, empty when nothing is.
 
-    ⭐ One call per BLOCK, not per ruling (`TC-05/3`): the editor publishes a
+    ⭐ One call per BLOCK, not per ruling: the editor publishes a
     port, mounts named volumes and answers a health check, and the runner does
     none of the three, so `runner.findings` states the rulings they share in
     the runner's own terms rather than threading exceptions through these.
 
     ⭐ `_tag_findings` is the exception that proves it, and it runs on BOTH
     blocks: nothing about what a tag promises is editor-specific, so the check
-    takes a block rather than being copied per image (`TC-06/2`). What differs
+    takes a block rather than being copied per image. What differs
     between the two — the repository, the build command, and which input roots
     the digest reads — is data each block states for itself.
     """

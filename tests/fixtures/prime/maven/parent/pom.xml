@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- A FIXTURE parent POM (TC-03): a placeholder standing where a consumer
+<!-- A FIXTURE parent POM: a placeholder standing where a consumer
      copies its own parent POM verbatim. Like the Java corpus's, it declares an
      inherited test dependency that no test uses (AssertJ): Maven resolves it
      for every module regardless, so the warm must fetch it. -->

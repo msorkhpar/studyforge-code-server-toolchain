@@ -38,13 +38,13 @@ BINARIES = {
     "node": ["node"], "python": ["python3", "pytest"], "sqlite": ["sqlite3"], "shell": ["bash"],
 }
 #: What the base brings to EVERY image, declared or not — named so an absence
-#: assertion never pretends otherwise (W374).
+#: assertion never pretends otherwise.
 BASE_TOOLS = {"shell"}
 #: One image per runtime in the vocabulary: the runtime and what it runs on.
 SINGLES = sorted({tuple(sorted({name, *PINS["runtimes"][name].get("requires", [])})) for name in EVERYTHING})
 #: A LARGE set built AFTER the singles, `python` among them: the order that served
-#: a five-runtime build the `python`-only build's layers and left /opt empty
-#: (W379, TC-01/13). EVERYTHING before the singles is the other direction (W374).
+#: a five-runtime build the `python`-only build's layers and left /opt empty.
+#: EVERYTHING before the singles is the other direction.
 LATE = ["gradle", "java", "kotlin", "node", "python"]
 
 
@@ -86,7 +86,7 @@ class TheRunnerImage(unittest.TestCase):
         WORK.mkdir(parents=True, exist_ok=True)
         # ⭐ EVERYTHING first, on purpose: it is the build that left BuildKit's
         # cache holding every runtime on the python base, which a `python`-only
-        # build then came out carrying (W374). The singles are built after it.
+        # build then came out carrying. The singles are built after it.
         cls.singles = {}
         for names in [EVERYTHING] + [list(names) for names in SINGLES] + [LATE]:
             result = build(names)
@@ -123,7 +123,7 @@ class TheRunnerImage(unittest.TestCase):
         self.assertEqual(in_image(self.shell_only, "ls /opt").stdout.strip(), "")
 
     def test_every_runtime_alone_builds_an_image_holding_exactly_its_declared_set(self):
-        """W374: for EVERY runtime in the vocabulary, present iff declared or the base's own."""
+        """For EVERY runtime in the vocabulary, present iff declared or the base's own."""
         for names, image in self.singles.items():
             with self.subTest(declared=names):
                 label = run(["docker", "image", "inspect", "--format",
@@ -139,7 +139,7 @@ class TheRunnerImage(unittest.TestCase):
                             self.assertEqual(found, expect)
 
     def test_a_large_set_built_after_a_small_one_holds_exactly_its_declared_set(self):
-        """W379: small then large, from the cache the singles just warmed; the reverse is W374's case."""
+        """Small then large, from the cache the singles just warmed; the reverse is the bare-scratch case."""
         image = self.singles[tuple(LATE)]
         self.assertIn(("python",), self.singles, "the small set was built first")
         held = in_image(image, "ls -A /opt | xargs").stdout.strip()
@@ -150,7 +150,7 @@ class TheRunnerImage(unittest.TestCase):
                     self.assertEqual(in_image(image, f"command -v {binary}").returncode, 0)
 
     def test_every_image_was_built_under_its_own_tag_as_the_cache_key(self):
-        """W379: the runner's keyed RUN carries the image's own tag, so its layers are cached per tag."""
+        """The runner's keyed RUN carries the image's own tag, so its layers are cached per tag."""
         for image in self.built:
             with self.subTest(image=image):
                 history = run(["docker", "history", "--no-trunc", "--format", "{{.CreatedBy}}", image]).stdout
@@ -242,7 +242,7 @@ class TheRunnerImage(unittest.TestCase):
         self.assertIn("does not report", result.stdout + result.stderr)
 
     def test_an_undeclared_runtime_under_opt_stops_the_build(self):
-        """W374: the build refuses an image whose /opt is not the declared set's."""
+        """The build refuses an image whose /opt is not the declared set's."""
         root = planted_copy("undeclared-opt")
         dockerfile = root / "docker" / "minimal" / "Dockerfile"
         stage = "FROM scratch AS node-no\nWORKDIR /opt\n"

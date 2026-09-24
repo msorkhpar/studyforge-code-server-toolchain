@@ -17,7 +17,7 @@
  *   - it does not make files read-only. That is `files.readonlyInclude` /
  *     `files.readonlyExclude` in the workspace settings the study server
  *     writes, which the editor enforces itself. ⛔ But it DOES keep that
- *     lock standing, and `W433` is why: `files.readonlyExclude` is an object
+ *     lock standing, and this is why: `files.readonlyExclude` is an object
  *     setting, VS Code MERGES object settings across scopes, and a USER-scope
  *     entry naming the test file is merged INTO the workspace lock and
  *     re-opens it. Measured, in a real session:
@@ -64,7 +64,7 @@ const manifest = require('./package.json');
 /** The ONE line that says this extension RAN.
  *
  *  ⚠️ An installed extension and a running one are different facts, and
- *  `W432` is the proof: this extension was installed, listed by
+ *  this extension's own history is the proof: it was installed, listed by
  *  `code-server --list-extensions` and present in `extensions.json` for five
  *  rounds while the extension host activated it in NO session -- the
  *  workbench's Restricted Mode had disabled it, silently and with no error.

@@ -1,4 +1,4 @@
-"""The editor's toolchain SELECTION (TC-02), built and run for real — both ways.
+"""The editor's toolchain SELECTION, built and run for real — both ways.
 
 ⛔ Skipped unless `TC_DOCKER=1`: it builds images and starts containers. Run it
 as ONE container job (the whole module under whatever lock the host uses):
@@ -37,7 +37,7 @@ BUILD = ROOT / "docker" / "editor" / "build.py"
 WORK = ROOT / ".work" / "tests-editor-selection"
 PINS = editor_plan.runner_plan.load(ROOT)
 EPINS = editor_plan.load(ROOT)
-#: The lockdown extension every image installs, whatever its set (TC-04).
+#: The lockdown extension every image installs, whatever its set.
 LOCKDOWN = editor_plan.lockdown_identity(ROOT)
 EXTENSIONS_DIR = "/opt/code-server/extensions"
 SHELLS = (["sh", "-c"], ["bash", "-lc"], ["bash", "-ic"])
@@ -180,7 +180,7 @@ class TheSelectedImages(unittest.TestCase):
                         self.assertNotEqual(found.returncode, 0, found.stdout)
         self.assertEqual(self.exec(self.running[PYTHON], "python3", "--version").returncode, 0)
 
-    # --------------------------------------------- JAVA_HOME and PATH (TC-01/16)
+    # --------------------------------------------- JAVA_HOME and PATH
     def test_java_home_is_set_exactly_when_java_is_selected_in_every_shell(self):
         for names, want in ((JAVA_MAVEN, editor_plan.JAVA_HOME), (PYTHON, "unset")):
             for shell in SHELLS:

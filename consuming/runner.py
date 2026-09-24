@@ -21,7 +21,7 @@ container and mounts no socket.
 
 ## ⛔ Why this is a module of its own and not more branches in `consuming.py`
 
-`TC-05`'s handoff asked for the split at the BLOCK, not at the ruling: three of
+The split is at the BLOCK, not at the ruling, because three of
 the editor's five finding groups — the published port, the named volumes, the
 health check — do not apply to an image that listens on nothing, mounts one
 bind and answers no request. Folding "unless it is the runner" into each of
@@ -33,7 +33,7 @@ calls one function per block.
 ## ⛔ Why the README still carries the run line
 
 A consumer copies a command out of prose; that is what prose is for. What
-`TC-05/3` named as the defect is not the sentence, it is the sentence being the
+was wrong was never the sentence, it is the sentence being the
 only copy — so the framework had to re-derive a run shape by parsing it. The
 block is now the authority, and a test asserts the documented line is what this
 module renders from it. Prose that drifts is a red test, not a stale

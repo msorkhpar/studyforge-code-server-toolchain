@@ -1,4 +1,4 @@
-"""A corpus's practice caches in the RUNNER (W390), built and run for real — both ways.
+"""A corpus's practice caches in the RUNNER, built and run for real — both ways.
 
 ⛔ Skipped unless `TC_DOCKER=1`: it builds images and starts containers. Run it
 as ONE container job (the whole module under whatever lock the host uses):
@@ -94,7 +94,7 @@ class TheWarmedRunner(unittest.TestCase):
         return run(["docker", "exec", container, "sh", "-c", script])
 
     def graded(self, container: str, tool: str) -> subprocess.CompletedProcess:
-        """A graded run as `TC-01/6` makes one: offline, and with no cache flag of its own."""
+        """A graded run as the framework makes one: offline, and with no cache flag of its own."""
         commands = {"gradle": f"cd {WORK}/gradle && gradle build --offline --no-daemon --console=plain",
                     "maven": f"cd {WORK}/maven && mvn -B -o test"}
         for flag in ("-Dmaven.repo.local", "GRADLE_USER_HOME", plan.PRIME_ROOT):

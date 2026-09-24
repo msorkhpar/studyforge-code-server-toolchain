@@ -2,9 +2,9 @@
 # ⭐ That directive is deliberate: the linter warns that an ARG used in FROM has
 # no default, and having NO default is the point (see below).
 #
-# The EDITOR image (TC-01): code-server, with the runner's pinned toolchains and
+# The EDITOR image: code-server, with the runner's pinned toolchains and
 # pinned extensions, and a shell that finds every toolchain.
-# ⭐ For a DECLARED SET of runtimes (TC-02): every tree, PATH entry, JAVA_HOME,
+# ⭐ For a DECLARED SET of runtimes: every tree, PATH entry, JAVA_HOME,
 # extension and seed block below belongs to a declared runtime, and nothing to
 # an undeclared one.
 #
@@ -16,11 +16,11 @@
 #
 # ⛔ This file chooses NO runtime version. Every runtime is COPIED out of the
 # runner image (`docker/minimal/`) built for the same set, so `pins.json` stays
-# the one place a runtime version is chosen (register ruling, PO round 122).
-# ⛔ No stage here is `FROM scratch` (W374/3): a bare scratch stage was served
+# the one place a runtime version is chosen.
+# ⛔ No stage here is `FROM scratch`: a bare scratch stage was served
 # from another stage's cache and put every runtime in a `python` runner.
 # ⛔ No Docker socket, no `docker` CLI. The reader's code runs in the RUNNER,
-# never here: the extraction source's `exec` mode is dropped (TC-01/6).
+# never here: the extraction source's `exec` mode is dropped.
 
 ARG RUNNER_IMAGE
 ARG EDITOR_BASE
@@ -42,7 +42,7 @@ RUN printf '%s\n' "${FETCH}" > /tmp/fetch.txt \
  && rm /tmp/fetch.txt
 
 # -------------------------------------------------------------------- lockdown
-# The practice-focus extension (TC-04), this repository's own artifact and no
+# The practice-focus extension, this repository's own artifact and no
 # consumer's: plain CommonJS against the `vscode` module the workbench
 # provides, no build step and no dependencies. It is PACKAGED into a .vsix here
 # and INSTALLED below, never copied into the extensions directory -- the
@@ -60,7 +60,7 @@ RUN --network=none python3 /lockdown/lockdown.py /lockdown "/packed/${LOCKDOWN_V
 
 # ------------------------------------------------------------------ JAVA_HOME
 # ⛔ A set without java carries NO JAVA_HOME, not an empty one and not one that
-# points at nothing (TC-01/16). ENV cannot be conditional, so the editor stage
+# points at nothing. ENV cannot be conditional, so the editor stage
 # starts from one of two stages on the same base.
 FROM ${EDITOR_BASE} AS home-java-yes
 ARG JAVA_HOME_DIR
@@ -73,14 +73,14 @@ FROM home-java-${WITH_JAVA} AS editor
 USER root
 
 # The runtimes, exactly as the runner holds them: /opt is the declared set's
-# trees and nothing else (W374), and /usr/local carries the pinned Python with
+# trees and nothing else, and /usr/local carries the pinned Python with
 # its hash-pinned pytest when python is declared. The base's own /usr/local
 # holds only `fixuid`, which the copy leaves in place.
 COPY --from=toolchain /opt/ /opt/
 COPY --from=toolchain /usr/local/ /usr/local/
 
 # ⚠️ The runner's Python links libreadline.so.8 from lib-dynload, and this base
-# does not carry it (measured, TC-01/7): `import readline` fails without it.
+# does not carry it (measured): `import readline` fails without it.
 # From snapshot.debian.org at a pinned timestamp and exact versions; only the
 # snapshot is consulted, so nothing arrives from a moving archive.
 ARG WITH_READLINE
@@ -125,7 +125,7 @@ RUN --network=none --mount=type=bind,from=fetch,source=/fetch,target=/tmp/fetch 
 # serves no runtime, so it is no consumer's selection, and its id is in
 # EXPECTED_EXTENSIONS unconditionally.
 # ⛔ THE CHECK BELOW PROVES INSTALLATION AND NOTHING MORE, AND SAYING SO IS
-# W432: it read the INSTALLED list, passed, and the image it passed had a
+# THE LESSON OF AN EARLIER DEFECT: it read the INSTALLED list, passed, and the image it passed had a
 # lockdown the extension host never activated. ⭐ The RUNNING fact is proved
 # outside this file, after the build, by `docker/editor/activation.py`, and
 # the image is tagged only once that passes.
@@ -153,7 +153,7 @@ RUN --network=none --mount=type=bind,from=fetch,source=/fetch,target=/tmp/fetch 
 # Chat, Open Inline Chat and Open Quick Chat from the title bar, and the
 # secondary side bar opened itself on it despite
 # `workbench.secondarySideBar.defaultVisibility: hidden`.
-# ⭐ A SETTING WOULD BE THE WRONG INSTRUMENT HERE (the W433 lesson): a hidden
+# ⭐ A SETTING WOULD BE THE WRONG INSTRUMENT HERE (the command-surface lesson): a hidden
 # entry point is still a capability, and a practice frame that can reach a
 # model is grading theatre (R5). Deleting the directory removes the capability
 # rather than the button.
@@ -168,7 +168,7 @@ RUN set -eu; \
     done; \
     ! ls -d "$built_in"/*copilot* >/dev/null 2>&1
 
-# ⛔ THE BUNDLED COPILOT CLI IS DELETED, AND THE AGENT HOST THAT RAN IT IS OFF (W454).
+# ⛔ THE BUNDLED COPILOT CLI IS DELETED, AND THE AGENT HOST THAT RAN IT IS OFF.
 # ⚠️ The chat deletion above left the SERVER half: the first workbench to
 # connect made the server fork `bootstrap-fork --type=agentHost`, which ran
 # `node_modules/@github/copilot-linux-x64/index.js --headless` (136 MB, with
@@ -201,7 +201,7 @@ RUN set -eu; \
     server="$vscode/out/server-main.js"; \
     found="$(grep -o 'else if([a-zA-Z_$]*\["agent-host-bridge-port"\]||' "$server" | wc -l)"; \
     [ "$found" = 1 ] \
-      || { echo "$server holds $found agent host bridge branches; W454 patches exactly one" >&2; exit 1; }; \
+      || { echo "$server holds $found agent host bridge branches; this step patches exactly one" >&2; exit 1; }; \
     sed -i 's/else if(\([a-zA-Z_$]*\["agent-host-bridge-port"\]||\)/else if(!0||\1/' "$server"; \
     [ "$(grep -o 'else if(!0||[a-zA-Z_$]*\["agent-host-bridge-port"\]||' "$server" | wc -l)" = 1 ] \
       || { echo "$server: the agent host was not switched off" >&2; exit 1; }; \
@@ -209,17 +209,17 @@ RUN set -eu; \
                   "$vscode/out/vs/workbench/workbench.web.main.internal.js"; do \
       found="$(grep -o 'super(!![a-zA-Z_$]*\.remoteAuthority,' "$bundle" | wc -l)"; \
       [ "$found" = 1 ] \
-        || { echo "$bundle holds $found agent host enablements; W454 patches exactly one" >&2; exit 1; }; \
+        || { echo "$bundle holds $found agent host enablements; this step patches exactly one" >&2; exit 1; }; \
       sed -i 's/super(!!\([a-zA-Z_$]*\)\.remoteAuthority,/super(!1\&\&!!\1.remoteAuthority,/' "$bundle"; \
       [ "$(grep -o 'super(!1&&!![a-zA-Z_$]*\.remoteAuthority,' "$bundle" | wc -l)" = 1 ] \
         || { echo "$bundle: the agent host enablement was not switched off" >&2; exit 1; }; \
     done
 
-# ⛔ THE PRIMARY SIDE BAR STARTS CLOSED, before the workbench's first paint (W448).
+# ⛔ THE PRIMARY SIDE BAR STARTS CLOSED, before the workbench's first paint.
 # ⚠️ Measured on code-server 4.137.0 in a real browser: every practice frame
 # painted the Explorer from the workbench's first frame for up to seven seconds,
 # until the lockdown's `closeSidebar` passes won -- and each close then moved
-# focus to the editor, which scrolled the reader's page to the frame (W449).
+# focus to the editor, which scrolled the reader's page to the frame.
 # ⭐ WHY THE BUNDLE AND NOT A SETTING: no setting names the primary side bar's
 # visibility. It is workbench layout STATE, kept per workspace in the BROWSER's
 # own storage, so neither the server nor this image can seed it; with nothing
@@ -236,7 +236,7 @@ RUN set -eu; \
                   /usr/lib/code-server/lib/vscode/out/vs/workbench/workbench.web.main.internal.js; do \
       found="$(grep -o 'SIDEBAR_HIDDEN\.defaultValue=[^,]*,' "$bundle" | wc -l)"; \
       [ "$found" = 1 ] \
-        || { echo "$bundle holds $found side bar defaults; W448 patches exactly one" >&2; exit 1; }; \
+        || { echo "$bundle holds $found side bar defaults; this step patches exactly one" >&2; exit 1; }; \
       sed -i 's/SIDEBAR_HIDDEN\.defaultValue=[^,]*,/SIDEBAR_HIDDEN.defaultValue=!0,/' "$bundle"; \
       grep -q 'SIDEBAR_HIDDEN\.defaultValue=!0,' "$bundle" \
         || { echo "$bundle: the side bar default was not replaced" >&2; exit 1; }; \
@@ -253,13 +253,12 @@ RUN printf '%s\n' "${PROFILE_D}" \
 
 # The settings seed. Each `// @runtime <name>` block of an undeclared runtime is
 # dropped, so no setting points at a runtime the image does not hold. Its Java
-# runtime name is derived from pins.json at build time, never written by hand
-# (TC-01/5).
+# runtime name is derived from pins.json at build time, never written by hand.
 ARG JAVA_RUNTIME
 ARG SEED_DROP
 COPY docker/editor/entrypoint.sh /opt/code-server/entrypoint.sh
 COPY docker/editor/seed/settings.json /opt/code-server/seed/settings.json
-# The keybindings seed (W433). ⛔ GENERATED, never hand-edited: it is every
+# The keybindings seed. ⛔ GENERATED, never hand-edited: it is every
 # default keybinding whose command `lockdown/allowed.js` does not allow, and
 # `python3 docker/editor/confinement.py --write <image>` rewrites it from a
 # real workbench. No `@runtime` block and no placeholder -- a keybinding names
@@ -282,13 +281,13 @@ RUN for name in ${SEED_DROP}; do \
 # owned by the runtime uid. (`.m2` holds the Maven repository the prime seeds.)
 RUN install -d -o 1000 -g 1000 /home/coder/.config /home/coder/.local /home/coder/.gradle /home/coder/.m2
 
-# ----------------------------------------------------------- the prime (TC-03)
+# ----------------------------------------------------------- the prime
 # The build-time warm cache: a consumer's prime directory (`build.py --prime`)
 # arrives as the read-only named context `consumer-prime`, and each warmer in
 # `prime/` builds its project with the network into a seed under
 # /opt/code-server/prime. Without a prime the context is empty and both
 # switches are `no`. ⭐ PRIME_KEY is the prime's digest, so the warm is cached
-# per prime and never served to another (W379's lesson). ⛔ A prime whose
+# per prime and never served to another. ⛔ A prime whose
 # compile or test step has no sources fails here, naming the project: it would
 # prime nothing while appearing to succeed. The version guards ran before
 # Docker started (`prime/prime.py`, from pins.json).
@@ -367,9 +366,9 @@ USER 1000
 # The base bakes `--bind-addr 0.0.0.0:8080 .` into its ENTRYPOINT, so a compose
 # `command:` would be APPENDED after those arguments. Both are re-declared: the
 # entrypoint takes no arguments of its own, and CMD is the whole code-server
-# command line, which a compose file replaces outright (its run shape is TC-05's).
+# command line, which a compose file replaces outright (its run shape is `consuming.json`'s).
 #
-# ⛔ `--disable-workspace-trust` IS LOAD-BEARING AND IS NOT A PREFERENCE (W432).
+# ⛔ `--disable-workspace-trust` IS LOAD-BEARING AND IS NOT A PREFERENCE.
 # ⚠️ A corpus's sources arrive as a bind mount, which is an UNTRUSTED folder,
 # and a workbench in Restricted Mode DISABLES every extension that does not
 # declare support -- with no error and no log line. Measured on code-server

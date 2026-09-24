@@ -1,4 +1,4 @@
-"""The prime contract (TC-03) — its reading, its guards, its plan and its warmers, with no Docker.
+"""The prime contract — its reading, its guards, its plan and its warmers, with no Docker.
 
 Run from the component root: `python3 -m unittest discover -s tests -v`.
 Every rule is asserted BOTH ways: the fixture prime passes, and a planted
@@ -241,7 +241,7 @@ class ThePlan(unittest.TestCase):
         command = editor_build.docker_command(ROOT, built, FIXTURE)
         self.assertIn(f"consumer-prime={FIXTURE}", command[command.index("--build-context") + 1])
         runner = editor_build.runner_command(ROOT, "linux/amd64", SET)
-        self.assertNotIn("--no-cache-filter", runner, "W379/1: the runner's warm cache is keyed now")
+        self.assertNotIn("--no-cache-filter", runner, "the runner's warm cache is keyed now")
         own = runner_plan.plan(PINS, list(SET), "linux/amd64", runner_plan.inputs_digest(ROOT))
         self.assertEqual(runner, editor_build.runner_build.docker_command(ROOT, own))
 

@@ -18,16 +18,16 @@ somewhere later with a message about a missing argument. So every refusal a
 person should read happens before `docker build` starts, and names what IS
 permitted.
 
-## A corpus's practice caches (W390)
+## A corpus's practice caches
 ⛔ A reader's graded run happens in THIS image, under `--network none`, so a
 corpus's practice dependencies must already be inside it. `build.py --prime
-DIR` hands `prime/prime.py`'s contract — TC-03's, shared with the editor and
+DIR` hands `prime/prime.py`'s contract — shared with the editor and
 unchanged — a consumer's prime directory; `plan()` turns it into one
 `WITH_<TOOL>_PRIME` switch per warmer, folds its digest into the tag, and
 points each tool at the seed the warmer wrote. Without one, nothing is warmed
 and the image is what it was.
 
-## What a refusal echoes (TC-02/2, W387)
+## What a refusal echoes
 An unpinned name shaped like a runtime id (`NAME`) is NAMED, with the pinned
 ones listed: `--runtimes java,cobol` says `cobol`, as the editor's refusal does,
 so the two components answer one mistake alike. A name not shaped like an id is
@@ -46,14 +46,14 @@ PINS = "pins.json"
 DOCKERFILE = "docker/minimal/Dockerfile"
 #: The build's inputs, hashed into the tag: change any of them and the tag moves.
 #: ⛔ `prime/` is NOT among them: its warmers run only in a PRIMED build, so
-#: `build.py` folds them into that build's digest instead (W390). Putting them
+#: `build.py` folds them into that build's digest instead. Putting them
 #: here would move every unprimed runner tag when a warmer changed, and the
-#: editor's Ruling 2 — an editor-only change moves no runner tag — says it must
+#: rule that an editor-only change moves no runner tag says it must
 #: not; `prime/` is an input of the editor's image as well.
 INPUT_ROOTS = (PINS, "docker/minimal")
 REPOSITORY = "code-server-toolchain/runner"
 #: Where a corpus's warmed practice caches live in the image, and the seed each
-#: of `prime/prime.py`'s warmers writes there (W390). ⛔ The keys are that
+#: of `prime/prime.py`'s warmers writes there. ⛔ The keys are that
 #: module's `TOOLS`; a test asserts it, so the two cannot drift.
 PRIME_ROOT = "/opt/prime"
 PRIME_SEEDS = {"gradle": "gradle-home", "maven": "maven-repo"}
@@ -63,13 +63,13 @@ RUNNER_HOME = "/tmp"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 #: The shape of a runtime id: the only kind of arrived name a refusal echoes.
-#: The editor's `_NAME` is the same pattern (TC-02).
+#: The editor's `_NAME` is the same pattern.
 NAME = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
 _ARCHIVE_STAGES = ("maven", "gradle", "kotlin", "node")
 #: What each runtime places under /opt — the Dockerfile's COPY destinations.
 #: A runtime not named here places nothing there (it arrives in the base, or
 #: from Debian's packages), so the image's /opt is exactly the union for the
-#: declared set, and the build refuses one that is not (W374).
+#: declared set, and the build refuses one that is not.
 OPT_DIRS = {"java": ("java",), "maven": ("maven", "maven-repo"), "gradle": ("gradle",),
             "kotlin": ("kotlinc",), "node": ("node",)}
 
@@ -115,7 +115,7 @@ def tag_for(names: tuple[str, ...], arch: str, digest: str) -> str:
     """The image tag: the sorted set, the architecture, and the inputs' digest.
 
     Anybody holding the same `pins.json` and `docker/minimal/` recomputes it,
-    which is what lets a report (EX-00) name the toolchain that produced it.
+    which is what lets a report name the toolchain that produced it.
     """
     label = "-".join(names) if names else "none"
     return f"{REPOSITORY}:{label}-{arch}-{digest[:12]}"
@@ -126,7 +126,7 @@ def plan(pins: dict, names, platform: str, digest: str, prime=None) -> Plan:
 
     With a `prime` — a `prime.Prime`, read and guarded by `build.py` — the
     warmers run in this build, its digest moves the tag, and the image holds
-    one seed per warmer under `PRIME_ROOT` (W390).
+    one seed per warmer under `PRIME_ROOT`.
     """
     runtimes = pins["runtimes"]
     platforms = pins["platforms"]
@@ -177,7 +177,7 @@ def plan(pins: dict, names, platform: str, digest: str, prime=None) -> Plan:
                                                                  if prime is not None else [])))
     tag = tag_for(declared, arch, digest)
     # ⛔ The runner stage's first RUN reads this, so its layers are cached per
-    # tag and never served to another selection or another set of pins (W379).
+    # tag and never served to another selection or another set of pins.
     args["CACHE_KEY"] = tag
     return Plan(declared, arch, platform, tag, args)
 
@@ -188,7 +188,7 @@ def opt_dirs(declared) -> list[str]:
 
 
 def primed(prime) -> dict[str, str]:
-    """One switch per warmer, and where each tool then looks for its cache (W390).
+    """One switch per warmer, and where each tool then looks for its cache.
 
     ⛔ Unprimed, every value is what the image already had: no seed under
     `/opt`, Gradle's own default under `HOME`, and no Maven argument at all. So
@@ -197,7 +197,7 @@ def primed(prime) -> dict[str, str]:
 
     ⭐ There is no cache key of its own here, unlike the editor's `PRIME_KEY`:
     `CACHE_KEY` is this image's TAG, the tag folds the prime's digest, and the
-    runner stage's first RUN reads it (W379) — so every layer the warmers write
+    runner stage's first RUN reads it — so every layer the warmers write
     is already cached per prime.
     """
     tools = prime.tools if prime is not None else ()
@@ -269,10 +269,10 @@ def dockerfile_findings(text: str) -> list[str]:
     ⛔ An `ARG X=value` is a second place a version could be chosen, and a
     literal `FROM image:tag` is an input no pin governs. ⛔ A bare `FROM scratch`
     stage, copied from, is served from the cache of whatever other stage the
-    same COPY last read on the same base (W374): the runtime a set did NOT
+    same COPY last read on the same base: the runtime a set did NOT
     declare arrives anyway. ⛔ A stage that copies from a SELECTED stage
     (`FROM java-${WITH_JAVA} AS java`) must first run a RUN that reads
-    `${CACHE_KEY}` (W379): without it, a warm cache served a five-runtime build
+    `${CACHE_KEY}`: without it, a warm cache served a five-runtime build
     the `python`-only build's layers.
     """
     found: list[str] = []
@@ -327,7 +327,7 @@ def keyed_copy_findings(text: str) -> list[str]:
         copied = re.match(r"^\s*COPY\s+--from=(\S+)", line)
         if copied and copied.group(1) in selected and not keyed:
             found.append(f"line {number}: COPY --from={copied.group(1)} copies a selected stage before a RUN "
-                         "reads ${CACHE_KEY}; a warm cache can serve it another selection's layer (W379)")
+                         "reads ${CACHE_KEY}; a warm cache can serve it another selection's layer")
     return found
 
 

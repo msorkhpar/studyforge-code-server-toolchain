@@ -1,4 +1,4 @@
-"""Prove the workbench lockdown RUNS in a real session, before the image is tagged (W432).
+"""Prove the workbench lockdown RUNS in a real session, before the image is tagged.
 
 **What it does.** `prove(image)` starts a container from `image` with the
 image's OWN command line, opens the workbench in a headless browser against an
@@ -7,7 +7,7 @@ then reads the extension host's log out of that container. It returns a `Proof`
 that is true only when BOTH lines are there: the host saying it activated
 `studyforge.practice-focus`, and the extension's own banner saying it ran.
 
-**Why it exists, and why the check it replaces could not work.** `TC-04`'s
+**Why it exists, and why the check it replaces could not work.** The lockdown's
 stated guarantee was that *"an image whose lockdown did not load is not
 tagged"*, and the check that carried it read
 `code-server --list-extensions`. ⛔ **The extension was installed, listed,
@@ -121,7 +121,7 @@ def browser(env=None) -> str:
         if found:
             return found
     raise Refused(f"no browser to prove the lockdown with: looked for {', '.join(BROWSERS)} on PATH, and "
-                  f"{BROWSER_ENV} names none. The image is NOT tagged without this proof (W432)")
+                  f"{BROWSER_ENV} names none. The image is NOT tagged without this proof")
 
 
 def workbench_url(port: int, folder: str = SOURCES, name: str = PROBE_FILE) -> str:
@@ -139,7 +139,7 @@ def workbench_url(port: int, folder: str = SOURCES, name: str = PROBE_FILE) -> s
 def command_of(image: str) -> list[str]:
     """The image's OWN command line, with authentication turned off for the probe.
 
-    ⛔ The probe runs what the image SHIPS -- `W432` was a flag the contract
+    ⛔ The probe runs what the image SHIPS -- the defect this gate exists for was a flag the contract
     carried and the image's `CMD` did not, so a probe that invented its own
     command line would have proved nothing. ⭐ Only `--auth` is added: a
     password would have to be generated, held and then kept out of a log, and

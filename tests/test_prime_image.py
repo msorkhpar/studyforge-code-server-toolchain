@@ -1,4 +1,4 @@
-"""The prime (TC-03), built and run for real — both ways.
+"""The prime, built and run for real — both ways.
 
 ⛔ Skipped unless `TC_DOCKER=1`: it builds images and starts containers. Run it
 as ONE container job (the whole module under whatever lock the host uses):
@@ -9,7 +9,7 @@ It builds the `gradle,java,maven` editor warmed from the FIXTURE prime
 (`tests/fixtures/prime/`, placeholders, no consumer's project) and the same
 set with no prime. The runner for the set is built by the editor's build
 straight after a `python`-only runner, from the same warm cache, with no
-cache filter: the sequence that once left `/opt` empty (TC-01/13, `W379/1`).
+cache filter: the sequence that once left `/opt` empty.
 Every container runs with `--network none`. Plants go into `.work/`
 (git-ignored), and every container, volume and planted image is removed
 afterwards — the two real editor images too, unless `TC_KEEP_IMAGES=1`.
@@ -82,7 +82,7 @@ class ThePrimedImage(unittest.TestCase):
         small = run([sys.executable, RUNNER_BUILD, "--runtimes", "python"])
         assert small.returncode == 0, small.stderr[-3000:]
         # The set's runner is built by the editor's build from the warm cache the
-        # small one just left, as TC-01/13 measured it, never reused from before.
+        # small one just left, as once measured, never reused from before.
         run(["docker", "image", "rm", "-f", cls.runner])
         for label, prime in (("primed", FIXTURE), ("bare", None)):
             built = build(prime)
@@ -190,7 +190,7 @@ class ThePrimedImage(unittest.TestCase):
         self.assertTrue(self.wait_for(bare, "no maven repository seed in this image; skipping"), self.logs(bare))
 
     def test_a_warm_cache_serves_the_sets_runner_its_own_layers_with_no_cache_filter(self):
-        """W379/1: the set's runner came from the small runner's warm cache, and holds exactly its trees."""
+        """The set's runner came from the small runner's warm cache, and holds exactly its trees."""
         expected = " ".join(runner_plan.opt_dirs(SET))
         for image in (self.runner, self.image):
             with self.subTest(image=image):

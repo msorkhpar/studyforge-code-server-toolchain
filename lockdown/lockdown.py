@@ -1,4 +1,4 @@
-"""The workbench lockdown extension (TC-04): its identity, and packing it into a `.vsix`.
+"""The workbench lockdown extension: its identity, and packing it into a `.vsix`.
 
 **What it does.** `lockdown/` holds the practice-focus extension — plain
 CommonJS against the `vscode` module the workbench provides, no build step and
@@ -26,7 +26,7 @@ refuses with one class.
 
 ## ⛔ Why INSTALLED is not RUNNING
 ⚠️ An extension can be packed, installed, listed and present in
-`extensions.json` and still never activate: `W432`. The two clauses
+`extensions.json` and still never activate, as this one once did. The two clauses
 `_workbench_findings` adds are what the workbench reads BEFORE it will run
 anything, and `Lockdown.banner` is the line the extension prints once it HAS
 run, which the image's build greps out of a real session's extension-host log
@@ -73,7 +73,7 @@ PUBLISHER = "studyforge"
 #: or the image layer that installs it changes for no reason.
 EPOCH = (1980, 1, 1, 0, 0, 0)
 #: What `keybindings.js` writes its derived keybinding removals to, inside the
-#: log directory the workbench hands the extension (`W433`). ⛔ The name is
+#: log directory the workbench hands the extension. ⛔ The name is
 #: spelled in two languages because the two halves are in two: the extension
 #: writes it and `docker/editor/confinement.py` reads it. ⭐ This is the Python
 #: side, and `tests/test_lockdown.py` asserts the JavaScript side says the
@@ -120,7 +120,7 @@ class Lockdown:
         """The line the extension prints once it has RUN, which the image's gate greps for.
 
         ⛔ `expected` above is the INSTALLED fact and this one is the RUNNING
-        fact; `W432` is why both exist. ⭐ `extension.js` builds the same
+        fact; an extension that was installed and never ran is why both exist. ⭐ `extension.js` builds the same
         string from the same manifest, so neither side spells the id.
         """
         return f"{self.id}: confined"
@@ -188,7 +188,7 @@ EXTENSION_KIND = ["workspace"]
 def _workbench_findings(manifest: dict) -> list[str]:
     """What the WORKBENCH would refuse to run, which a manifest can be perfectly valid and still get wrong.
 
-    ⛔ Both clauses are `W432`'s, and both were measured on code-server 4.137.0
+    ⛔ Both clauses come from that defect, and both were measured on code-server 4.137.0
     (VS Code 1.137.0) against a bind-mounted corpus, which is an UNTRUSTED
     folder and is the normal shape of this product:
 
@@ -208,10 +208,10 @@ def _workbench_findings(manifest: dict) -> list[str]:
     supported = manifest.get("capabilities", {}).get("untrustedWorkspaces", {}).get("supported")
     if supported is not True:
         found.append("capabilities.untrustedWorkspaces.supported is not true, so a workbench in Restricted "
-                     "Mode disables the extension silently (W432)")
+                     "Mode disables the extension silently")
     if manifest.get("extensionKind") != EXTENSION_KIND:
         found.append(f"extensionKind is {manifest.get('extensionKind')!r}; under code-server it is "
-                     f"{EXTENSION_KIND!r}, and an inferred 'ui' kind has nowhere to run (W432)")
+                     f"{EXTENSION_KIND!r}, and an inferred 'ui' kind has nowhere to run")
     return found
 
 

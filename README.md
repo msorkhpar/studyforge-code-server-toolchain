@@ -4,10 +4,33 @@ The toolchain images the studyforge framework runs a corpus's code in. It is a
 sibling repository of the framework, pinned by commit in the framework's
 `workspace.json`. ⛔ It has no remote and is never pushed.
 
-It holds two images: the **runner** (`docker/minimal/`), built by the
-framework's task `TC-00`, and the browser **editor** (`docker/editor/`), added by
-`TC-01`, which copies its toolchains out of the runner so they come from the same
-pins.
+It holds two images: the **runner** (`docker/minimal/`), where a reader's code
+is built and graded, and the browser **editor** (`docker/editor/`), which copies
+its toolchains out of the runner so they come from the same pins.
+
+## Reading list
+
+Read in this order; nothing outside this repository is needed.
+
+1. **This README**: what each image is, how to build it locally by tag, and how
+   to run this repository's own suite (*Building*, *The editor image*, *Tests*).
+2. **[`consuming.json`](consuming.json)**: the machine-readable contract, one
+   block per image (`runner`, `editor`). It states each image's repository, how
+   its tag is computed and what a tag promises, the run shape or compose shape,
+   mounts, uid, ports and their loopback binding. ⛔ **A consumer reads this, not
+   the Dockerfiles.** `provides` versions the promise; `not_yet_declared` lists
+   anything still owed, and is empty.
+3. **[`docs/consuming.md`](docs/consuming.md)**: the same contract in prose, with
+   the five rulings a consumer inherits and the failure behind each.
+4. **[`docs/compose.reference.yaml`](docs/compose.reference.yaml)**: a working
+   compose file for the editor, generated from `consuming.json`.
+5. **[`pins.json`](pins.json)** and **[`editor-pins.json`](editor-pins.json)**:
+   every pinned version, digest and checksum, with where each came from.
+
+What a build needs on the host: Docker with BuildKit, `python3` (standard
+library only), and for an editor build a Chromium-family browser (see *The
+editor image*). Nothing is pulled but the pinned bases and archives
+`pins.json` and `editor-pins.json` name, each checked by digest or sha256.
 
 ## What the runner image is, and is not
 
@@ -86,7 +109,7 @@ into `.work/record/` for a person to review and copy into `pins.json`.
 whatever a corpus's practices depend on must already be inside it: a download
 would not be slow, it would simply fail. `--prime DIR` warms them from that
 corpus's own build files, exactly as the editor image warms a consumer's
-(`TC-03`) — the contract, the version guards and the two warmers are
+ — the contract, the version guards and the two warmers are
 [`prime/`](prime/prime.py)'s, shared unchanged between the two images, and
 `DIR` is mounted read-only as the named build context `consumer-prime`.
 
@@ -219,7 +242,7 @@ the workbench provides — no build step, no dependencies, and nothing fetched.
   `.vsix` with the standard library (`lockdown/lockdown.py`, never a
   marketplace tool) and installs it with the pinned extensions.
 - ⛔ **INSTALLED IS NOT RUNNING, and the image is tagged on the RUNNING fact**
-  ([`docker/editor/activation.py`](docker/editor/activation.py)). ⚠️ **`W432`:
+  ([`docker/editor/activation.py`](docker/editor/activation.py)). ⚠️ **Once,
   the extension was installed, listed by `code-server --list-extensions`,
   present in `extensions.json`, parsed under the image's own node and inside
   its engine range — and the extension host activated it in NO session, with
@@ -238,12 +261,12 @@ the workbench provides — no build step, no dependencies, and nothing fetched.
   `editor.command` while the image's `CMD` did not, so every consumer that
   started the image on its own command line rather than through the compose
   template got a workbench in Restricted Mode with no lockdown at all — which
-  is exactly how `W432` reached a reader, twice. ⭐ The manifest's
+  is exactly how that defect reached a reader, twice. ⭐ The manifest's
   `capabilities.untrustedWorkspaces` is the other half: the flag covers a
   consumer who keeps the image's command, the declaration covers one who
   replaces it.
 - ⛔ **The COMMAND SURFACE is confined, and hiding a surface is not the same
-  thing** ([`lockdown/allowed.js`](lockdown/allowed.js), `W433`). ⚠️ Closing
+  thing** ([`lockdown/allowed.js`](lockdown/allowed.js)). ⚠️ Closing
   the Explorer leaves the reader one `Ctrl+P` from being somewhere else, and a
   reader's own screenshot showed the palette open inside a practice frame
   offering Go to File, Show and Run Commands, Search for Text, Open Quick
@@ -385,8 +408,8 @@ the editor at start and every graded run in it.
 python3 -m unittest discover -s tests -v                   # the plans, pins and static checks
 TC_DOCKER=1 python3 -m unittest tests.test_image -v        # builds and runs the runner
 TC_DOCKER=1 python3 -m unittest tests.test_editor_image -v # builds and runs the editor
-TC_DOCKER=1 python3 -m unittest tests.test_editor_layout -v # the side bar is never painted (W448)
-TC_DOCKER=1 python3 -m unittest tests.test_editor_agent_host -v # no agent host, no Copilot CLI (W454)
+TC_DOCKER=1 python3 -m unittest tests.test_editor_layout -v # the side bar is never painted
+TC_DOCKER=1 python3 -m unittest tests.test_editor_agent_host -v # no agent host, no Copilot CLI
 TC_DOCKER=1 python3 -m unittest tests.test_editor_selection_image -v # the selected sets
 TC_DOCKER=1 python3 -m unittest tests.test_prime_image -v   # the prime, warm and offline
 TC_DOCKER=1 python3 -m unittest tests.test_runner_prime_image -v # a graded run, offline
