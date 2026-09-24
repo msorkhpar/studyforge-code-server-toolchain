@@ -400,6 +400,27 @@ class TheDerivedIdentity(unittest.TestCase):
             self.assertIn("the publisher is 'example'", refused.stderr)
 
 
+class TheRetriesNote(unittest.TestCase):
+    """The comment on `RETRIES` states the image it runs in, not an older one."""
+
+    def note(self) -> str:
+        text = (SOURCE / "extension.js").read_text(encoding="utf-8")
+        return text[text.index("/** When to close again"):text.index("const RETRIES")]
+
+    def test_it_names_the_side_bar_step_as_the_reason_there_is_no_explorer_to_close(self):
+        """⛔ The note once said the Explorer "comes back", after the image stopped showing it.
+
+        ⭐ It is true only while the Dockerfile carries the step it names, so
+        both halves are read here: remove the step and this goes RED too.
+        """
+        note = self.note()
+        self.assertIn('"THE PRIMARY SIDE BAR STARTS CLOSED"', note)
+        self.assertIn("A BELT, NOT THE MECHANISM", note)
+        self.assertNotIn("the explorer comes back", note)
+        self.assertIn("THE PRIMARY SIDE BAR STARTS CLOSED", DOCKERFILE)
+        self.assertIn("SIDEBAR_HIDDEN.defaultValue=!0,", DOCKERFILE)
+
+
 class TheExtensionBehaviour(unittest.TestCase):
     """The ported CommonJS, run under `node` against a stub `vscode` with the timers replaced."""
 

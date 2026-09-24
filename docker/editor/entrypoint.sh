@@ -1,7 +1,7 @@
 #!/bin/sh
 # The editor's entrypoint: seed the reader's settings and the prime's caches
 # once, then hand over to the base image's own entrypoint with the arguments
-# untouched.
+# untouched and the two call-home switches after them (see the end).
 #
 # The prime's caches are built into the image under
 # /opt/code-server/prime and copied to where the tools look — the Gradle user
@@ -106,4 +106,27 @@ else
     log "no keybindings seed in this image; the workbench keeps its defaults"
 fi
 
-exec /usr/bin/entrypoint.sh "$@"
+# ⛔ BUILDSHIP'S GRADLE VERSION LIST IS SEEDED, SO THE LANGUAGE SERVER NEVER
+# FETCHES IT. Measured: every session's Java language server connected to
+# services.gradle.org, whatever the Gradle settings said -- Buildship, inside
+# it, downloads the published Gradle versions whenever its cache file is
+# missing or older than a day, and honours no proxy or offline setting. Its
+# cache is `$XDG_CACHE_HOME/tooling/gradle/versions.json` when that variable is
+# set (the image sets it to the XDG default, `~/.cache`), so an empty list is
+# written there on every start with a modification time that never ages. The
+# list feeds Buildship's version pickers, which this editor has no surface for.
+versions="${XDG_CACHE_HOME:-${HOME:-/home/coder}/.cache}/tooling/gradle/versions.json"
+mkdir -p "$(dirname "$versions")"
+printf '[]\n' > "$versions"
+touch -d '2100-01-01 00:00:00' "$versions"
+
+# ⛔ THE EDITOR MAKES NO OUTBOUND REQUEST OF ITS OWN, WHATEVER THE COMMAND.
+# Measured on an idle session before this: the server looked up and connected
+# to api.github.com (code-server's update check) and v1.telemetry.coder.com
+# (its telemetry) within seconds of starting. Both switches are flags only, and
+# a consumer's compose `command:` replaces CMD, so they are appended HERE, to
+# whatever command arrived: the entrypoint is the one part a command cannot
+# drop. A repeated boolean flag is harmless. The rest of the call-homes are the
+# image's ENV (the extension gallery) and the lockdown manifest's defaults (the
+# extensions' own); `tests/test_editor_egress.py` reads the whole of it live.
+exec /usr/bin/entrypoint.sh "$@" --disable-update-check --disable-telemetry

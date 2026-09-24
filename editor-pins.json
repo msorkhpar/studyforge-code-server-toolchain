@@ -1,6 +1,6 @@
 {
   "pins_api": 1,
-  "about": "The editor image's OWN pins: the code-server base, its extensions, TypeScript and the one Debian package the runner's Python needs on this base. Kept apart from pins.json so an editor-only bump moves no runner tag. ⛔ No runtime version is chosen here: the editor copies every runtime out of the runner image, which pins.json alone governs. Every value is passed to docker/editor/Dockerfile by docker/editor/build.py. Each extension, TypeScript and the readline package name the one runtime they serve (`for`): a build installs them only when that runtime is in its declared set.",
+  "about": "The editor image's OWN pins: the code-server base, its extensions, TypeScript, the one Debian package the runner's Python needs on this base, and the study page's code face. Kept apart from pins.json so an editor-only bump moves no runner tag. ⛔ No runtime version is chosen here: the editor copies every runtime out of the runner image, which pins.json alone governs. Every value is passed to docker/editor/Dockerfile by docker/editor/build.py. Each extension, TypeScript and the readline package name the one runtime they serve (`for`): a build installs them only when that runtime is in its declared set.",
   "base": {
     "image": "codercom/code-server:4.137.0",
     "digest": "sha256:57ac684d44deb6fa94317b3e8f3e128dd7fb897fffd95b4efcd16f56ce607971",
@@ -70,6 +70,37 @@
     ],
     "single_source": true,
     "why_single": "the archive signature is Debian's own; there is no second publisher of the package"
+  },
+  "face": {
+    "family": "JetBrains Mono",
+    "release": "v2.304",
+    "licence": "SIL Open Font License 1.1",
+    "url": "https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip",
+    "sha256": "6f6376c6ed2960ea8a963cd7387ec9d76e3f629125bc33d1fdcd7eb7012f7bbf",
+    "files": {
+      "fonts/webfonts/JetBrainsMono-Regular.woff2": {
+        "weight": "400",
+        "sha256": "a9cb1cd82332b23a47e3a1239d25d13c86d16c4220695e34b243effa999f45f2"
+      },
+      "fonts/webfonts/JetBrainsMono-Bold.woff2": {
+        "weight": "700",
+        "sha256": "c503cc5ec5f8b2c7666b7ecda1adf44bd45f2e6579b2eba0fc292150416588a2"
+      },
+      "OFL.txt": {
+        "weight": "licence",
+        "sha256": "30f0c136e3c88e422d0791acd97238870f9054a9729bc34cf2ff0d4ed8cac4ad"
+      }
+    },
+    "why": "the study page sets code in this face, regular and bold, vendored from the same release archive; the editor draws the practice's code in it so a reader sees one face on the page and in the frame. Each file's sha256 is the one the page's vendored copy carries, so the two are the same bytes",
+    "sources": [
+      {
+        "host": "github.com",
+        "what": "the JetBrains/JetBrainsMono v2.304 release asset downloaded; its sha256 is the one the study page's pin records, and each file taken out of it hashes to the page's vendored file",
+        "taken": "2026-09-24"
+      }
+    ],
+    "single_source": true,
+    "why_single": "the release archive is published on GitHub only; the value agrees with the page's own pin, taken independently"
   },
   "extensions": {
     "ms-python.python": {

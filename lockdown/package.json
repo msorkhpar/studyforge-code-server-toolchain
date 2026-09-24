@@ -41,6 +41,16 @@
           "description": "Workspace-relative path of the test that judges it. Written by the study server and left read-only. Declared here for the same reason as the key above; which file a window shows is decided by that window's URL, not by this setting."
         }
       }
+    },
+    "configurationDefaults": {
+      "editor.fontFamily": "'JetBrains Mono', 'DejaVu Sans Mono', monospace",
+      "editor.fontLigatures": true,
+      "java.import.maven.offline.enabled": true,
+      "java.import.gradle.offline.enabled": true,
+      "redhat.telemetry.enabled": false,
+      "json.schemaDownload.enable": false,
+      "npm.fetchOnlinePackageInfo": false,
+      "typescript.disableAutomaticTypeAcquisition": true
     }
   }
 }
