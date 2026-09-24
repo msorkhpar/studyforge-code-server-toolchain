@@ -79,7 +79,7 @@ class TheEditorsPins(unittest.TestCase):
     def test_no_runtime_version_is_chosen_in_the_editors_pins(self):
         """pins.json is the ONE place a runtime version is chosen."""
         self.assertEqual(set(EPINS) & {"runtimes", "platforms"}, set())
-        self.assertEqual(set(EPINS), {"pins_api", "about", "base", "typescript", "readline", "extensions"})
+        self.assertEqual(set(EPINS), {"pins_api", "about", "base", "typescript", "readline", "face", "extensions"})
 
     def test_the_readline_snapshot_is_the_one_pins_json_already_uses(self):
         self.assertEqual(EPINS["readline"]["snapshot"], PINS["runtimes"]["sqlite"]["snapshot"])
@@ -233,8 +233,10 @@ class TheDockerfile(unittest.TestCase):
         self.assertIn("--network=none --mount=type=bind,from=fetch", body)
         # Every step that must not reach the network: TypeScript from the pinned
         # tarball, the extension install, the lockdown's pack stage and
-        # the prime's offline proof.
-        offline = ("npm install -g --offline", "--install-extension", "/lockdown/lockdown.py", "prove")
+        # the prime's offline proof, and the code face taken out of its archive
+        # and then placed beside the workbench's stylesheet.
+        offline = ("npm install -g --offline", "--install-extension", "/lockdown/lockdown.py", "prove",
+                   "python3 /face.py", "--mount=type=bind,from=face")
         self.assertEqual(body.count("RUN --network=none"), len(offline))
         for needle in offline:
             self.assertIn(needle, body)

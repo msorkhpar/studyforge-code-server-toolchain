@@ -193,7 +193,8 @@ computes and needs neither.
 - ⭐ **Its own pins live in [`editor-pins.json`](editor-pins.json)**: the
   code-server base (by index digest), each extension's `.vsix` (by sha256, per
   platform where the publisher builds per platform), TypeScript (by sha256),
-  and the one Debian package the runner's Python needs on this base. Keeping them
+  the one Debian package the runner's Python needs on this base, and the code
+  face's release archive and files (by sha256). Keeping them
   out of `pins.json` means an editor-only bump moves no runner tag.
 - ⛔ **Extensions are installed with no network, from the pinned files only.**
   The build then requires the installed set to equal the pins exactly, and every
@@ -212,6 +213,25 @@ computes and needs neither.
   The settings seed declares the integrated terminal a login shell.
 - ⭐ **Every image carries the workbench lockdown**, whatever its set — it
   serves no runtime, so it is nothing a consumer selects (below).
+- ⭐ **The editor draws code in the study page's face.** The page sets code
+  in JetBrains Mono (SIL Open Font License 1.1), regular with bold keywords.
+  The image takes the same two files out of the same release archive, each by
+  the sha256 `editor-pins.json` records under `face`, serves them beside the
+  workbench's stylesheet and declares them there, and the lockdown's manifest
+  makes the family the editor's default (`configurationDefaults`), so a
+  reader's own `editor.fontFamily` still wins. The licence ships beside them.
+  ⚠️ The workbench draws in the reader's browser, so a face held on disk would
+  never reach it, and its content policy allows fonts from its own origin
+  only.
+- ⭐ **A closed practice session is released in minutes, not hours.** The image
+  sets `CODE_SERVER_RECONNECTION_GRACE_TIME` to 180 seconds (upstream's is
+  three hours). A window that closes cleanly is disposed at once; one that
+  ends without saying so (a crash, a killed browser, a machine that sleeps)
+  keeps its extension host and language server until the grace ends, and a
+  connection that comes back inside it reconnects to the same session. It is
+  an `ENV` because a compose `command:` replaces `CMD`; ⚠️ it also overrides a
+  `--reconnection-grace-time` flag, so a consumer who wants another value
+  sets the variable.
 
 The tag is `code-server-toolchain/editor:<the set>-<arch>-<12 hex>`, and its
 inputs are `editor-pins.json`, `docker/editor/`, `prime/`, `lockdown/`, the
@@ -315,7 +335,9 @@ the workbench provides — no build step, no dependencies, and nothing fetched.
   decided by that window's own URL. It contributes
   `studyforge.practice.main` and `studyforge.practice.test` only so the
   workbench accepts the keys a study server writes, and treats a change to that
-  section as the one signal that the practice moved.
+  section as the one signal that the practice moved. ⭐ Its manifest also
+  carries the editor's default font family (`configurationDefaults`, the
+  page's code face, above): a default, so a setting of the reader's wins.
 - ⚠️ **It is not a security boundary.** code-server is an IDE with a shell;
   this removes the ways *in*, not the possibility. The boundary is the
   container and how it is run.
@@ -413,6 +435,8 @@ TC_DOCKER=1 python3 -m unittest tests.test_image -v        # builds and runs the
 TC_DOCKER=1 python3 -m unittest tests.test_editor_image -v # builds and runs the editor
 TC_DOCKER=1 python3 -m unittest tests.test_editor_layout -v # the side bar is never painted
 TC_DOCKER=1 python3 -m unittest tests.test_editor_agent_host -v # no agent host, no Copilot CLI
+TC_DOCKER=1 python3 -m unittest tests.test_editor_face -v # the page's face, as drawn
+TC_DOCKER=1 python3 -m unittest tests.test_editor_idle -v # a closed session is released
 TC_DOCKER=1 python3 -m unittest tests.test_editor_selection_image -v # the selected sets
 TC_DOCKER=1 python3 -m unittest tests.test_prime_image -v   # the prime, warm and offline
 TC_DOCKER=1 python3 -m unittest tests.test_runner_prime_image -v # a graded run, offline

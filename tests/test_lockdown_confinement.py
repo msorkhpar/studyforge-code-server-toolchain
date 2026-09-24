@@ -188,6 +188,24 @@ class TheSeed(unittest.TestCase):
         self.assertEqual(set(confinement.SEED_SETS),
                          {("java", "maven"), ("python",), tuple(editor_plan.DEFAULT_SET)})
 
+    def test_every_pinned_extension_is_installed_by_some_set_the_seed_is_derived_from(self):
+        """⛔ Only the sets in `SEED_SETS` are PROVED, so every pinned extension must be in one.
+
+        An extension binds keys of its own, and one the seed was never derived
+        beside is a workbench whose keybindings nobody read. ⭐ Read from the
+        pins and the plan's own selection, never from a list kept here.
+        """
+        pins = editor_plan.runner_plan.load(ROOT)
+        editor_pins = editor_plan.load(ROOT)
+        installed = set()
+        for names in confinement.SEED_SETS:
+            installed |= set(editor_plan.extensions_for(pins, editor_pins, names))
+        pinned = set(editor_pins["extensions"])
+        self.assertTrue(pinned, "editor-pins.json pins no extension, so this reads nothing")
+        self.assertEqual(sorted(pinned - installed), [],
+                         "pinned in editor-pins.json and installed by no set in confinement.SEED_SETS: "
+                         "add a set that installs it, and regenerate the seed from it")
+
     def test_the_generator_writes_the_union_of_every_image_it_is_given(self):
         derived = {"one": [{"key": "b", "command": "-y"}, {"key": "a", "command": "-x"}],
                    "two": [{"key": "a", "command": "-x"}, {"key": "c", "command": "-z"}]}

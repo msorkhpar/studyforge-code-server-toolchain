@@ -125,12 +125,17 @@ const CONFINE = [
 
 /** When to close again after the first attempt, in milliseconds.
  *
- *  Closing once is not enough and this is why: extensions activate on
- *  `onStartupFinished`, and the workbench goes on restoring its own layout
- *  and other extensions go on opening views after that -- the Java extension
- *  raises "Opening Java Projects" and the explorer comes back. Measured: a
- *  single close at activation left the sidebar open, and the same close
- *  repeated at six seconds left it shut.
+ *  ⭐ A BELT, NOT THE MECHANISM, and the side bar is no longer why. The image
+ *  starts the primary side bar CLOSED -- the Dockerfile step
+ *  "THE PRIMARY SIDE BAR STARTS CLOSED" patches the workbench's default --
+ *  so there is no Explorer for a retry to close: measured on the image with
+ *  that step, a two-practice session painted the side bar in 0 frames over
+ *  30 s, the Java language server running. What the retries still cover is
+ *  anything that opens AFTER activation -- a panel, the auxiliary bar or a
+ *  stray editor raised by an extension that activates later than this one.
+ *  ⚠️ An earlier image started with the Explorer open, a single close at
+ *  activation did not hold, and these retries were what shut it; that is the
+ *  history of the schedule, not its current reason.
  *
  *  A decaying schedule rather than a permanent interval, so this settles the
  *  workbench and then stops. Nothing here fights the reader forever. */

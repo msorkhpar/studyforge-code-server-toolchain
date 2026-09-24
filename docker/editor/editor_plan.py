@@ -223,6 +223,7 @@ def plan(pins: dict, editor_pins: dict, runner: runner_plan.Plan, digest: str,
     if with_typescript:
         fetch.append(f"typescript.tgz|{typescript['url']}|{typescript['sha256']}")
     readline = editor_pins["readline"]
+    face = editor_pins["face"]
     checks = runner.build_args["CHECKS"].splitlines()
     if with_typescript:
         checks += [f"typescript|{c['command']}|{c['expect'].format(version=typescript['version'])}"
@@ -241,6 +242,11 @@ def plan(pins: dict, editor_pins: dict, runner: runner_plan.Plan, digest: str,
         "WITH_READLINE": "yes" if readline["for"] in declared else "no",
         "READLINE_SNAPSHOT": readline["snapshot"],
         "READLINE_PACKAGES": " ".join(f"{k}={v}" for k, v in sorted(readline["packages"].items())),
+        # ⭐ The page's code face, for every set: it serves no runtime.
+        "FACE_URL": face["url"],
+        "FACE_SHA256": face["sha256"],
+        "FACE_FILES": "\n".join(f"{member}|{entry['weight']}|{entry['sha256']}"
+                                for member, entry in face["files"].items()),
         "CHECKS": "\n".join(checks),
         "OPT_EXPECTED": " ".join(sorted(runner_plan.opt_dirs(declared) + ["code-server"])),
         "JAVA_RUNTIME": java_runtime(pins),
@@ -297,7 +303,8 @@ def pins_findings(editor_pins: dict) -> list[str]:
     """What is wrong with the editor pins' shape, empty when nothing is."""
     found: list[str] = []
     entries = [("base", editor_pins["base"]), ("typescript", editor_pins["typescript"]),
-               ("readline", editor_pins["readline"])] + sorted(editor_pins["extensions"].items())
+               ("readline", editor_pins["readline"]), ("face", editor_pins["face"])] \
+        + sorted(editor_pins["extensions"].items())
     if not _DIGEST.match(editor_pins["base"].get("digest", "")):
         found.append("base: the image is pinned by a sha256 index digest")
     if not _SHA256.match(editor_pins["typescript"].get("sha256", "")):
@@ -307,6 +314,12 @@ def pins_findings(editor_pins: dict) -> list[str]:
     for arch, debs in editor_pins["readline"]["debs"].items():
         if set(debs) != set(editor_pins["readline"]["packages"]) or not all(_SHA256.match(v) for v in debs.values()):
             found.append(f"readline ({arch}): every package has a recorded sha256")
+    face = editor_pins["face"]
+    if not _SHA256.match(face.get("sha256", "")) or not face.get("files") \
+            or not all(_SHA256.match(f.get("sha256", "")) for f in face["files"].values()):
+        found.append("face: the archive and every file taken out of it are pinned by a recorded sha256")
+    if not any(f.get("weight") == "licence" for f in face.get("files", {}).values()):
+        found.append("face: the licence ships beside the faces")
     for ext, entry in sorted(editor_pins["extensions"].items()):
         if not isinstance(entry.get("for"), str) or not entry["for"]:
             found.append(f"{ext}: every extension names the runtime it serves in 'for'")

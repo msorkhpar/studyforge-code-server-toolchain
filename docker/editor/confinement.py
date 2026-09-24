@@ -39,22 +39,19 @@ is not the same in two sessions of one image, so a regeneration that replaced
 would oscillate and drop what another session found.
 
 **Depends on.** The standard library, `activation.py` (container, browser),
-`cdp.py`, a Docker CLI and a Chromium-family browser. ⛔ A missing browser
-REFUSES rather than skips; no Docker socket is mounted (spec §8.3).
+`probe.py` (the session both halves open), `cdp.py`, a Docker CLI and a
+Chromium-family browser. ⛔ A missing browser REFUSES rather than skips; no
+Docker socket is mounted (spec §8.3).
 """
 
 from __future__ import annotations
 
 import argparse
-import contextlib
 import json
 import re
-import socket
 import subprocess
 import sys
-import tempfile
 import time
-import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -65,6 +62,11 @@ sys.path.insert(0, str(COMPONENT / "lockdown"))
 import activation  # noqa: E402
 import cdp  # noqa: E402
 import lockdown as lockdown_extension  # noqa: E402
+import probe  # noqa: E402
+
+# ⭐ The session this gate and its generator open lives in `probe.py`; these
+# names are re-exported so every reader of `confinement.<name>` keeps working.
+from probe import MAIN, MAIN_TEXT, OTHER, OTHER_TEXT, free_port, session  # noqa: E402, F401
 
 Refused = activation.Refused
 
@@ -115,15 +117,10 @@ SURFACES = {
 #: workbench from a browser that never delivered a keystroke.
 ALLOWED_CHORD = ("ctrl+f", ".editor-widget.find-widget", "the editor's own find widget")
 
-#: The probe workspace -- the file the URL opens, a second one to be tempted
-#: by, and what is typed into the first, which must reach the disk.
-MAIN, OTHER = "practice.txt", "judge.txt"
-MAIN_TEXT = "The confinement probe edits this file. It belongs to no corpus.\n"
-OTHER_TEXT = "The confinement probe never opens this one.\n"
+#: What is typed into the file the URL opens, which must reach the disk.
 TYPED = "probe-edit"
 
 SETTLE = 1.4
-READY_TIMEOUT = 180.0
 
 
 @dataclass(frozen=True)
@@ -181,39 +178,6 @@ class Confinement:
         return f"{self.image}: the practice frame is not confined -- {'; '.join(wrong)}"
 
 
-def free_port() -> int:
-    """A port nothing is listening on, for the browser's debugger."""
-    with socket.socket() as held:
-        held.bind(("127.0.0.1", 0))
-        return held.getsockname()[1]
-
-
-@contextlib.contextmanager
-def session(image: str, kind: str):
-    """One container of `image`, one practice-shaped folder and one browser at its workbench.
-
-    ⭐ The setup both readings need, so neither can drift from the other: the
-    behavioural proof and the generator must open the SAME shape of session or
-    what the one measures is not what the other writes down.
-    """
-    found = activation.browser()
-    name = f"{kind}-probe-{uuid.uuid4().hex[:12]}"
-    with tempfile.TemporaryDirectory(prefix=f"{kind}-probe-") as scratch:
-        sources = Path(scratch) / "sources"
-        sources.mkdir()
-        (sources / MAIN).write_text(MAIN_TEXT, encoding="utf-8")
-        (sources / OTHER).write_text(OTHER_TEXT, encoding="utf-8")
-        Path(scratch).chmod(0o755)
-        try:
-            activation.start(image, name, sources)
-            port = activation.published_port(name)
-            activation.wait_for_health(port)
-            with _browser(found, port, Path(scratch) / "profile") as debug:
-                yield name, port, debug
-        finally:
-            subprocess.run(["docker", "rm", "-f", name], stdin=subprocess.DEVNULL, capture_output=True)
-
-
 def prove(image: str, lock=None) -> Confinement:
     """Open a real session in `image` and press the keys a reader would."""
     lock = lock or lockdown_extension.identity(COMPONENT / "lockdown")
@@ -235,28 +199,6 @@ def derived(image: str, lock=None) -> list:
         return _wait_for_derived(name, lock)
 
 
-class _browser:
-    """The headless browser, with its debugger open, for as long as the probe needs it."""
-
-    def __init__(self, found: str, port: int, profile: Path):
-        self.debug = free_port()
-        url = activation.workbench_url(port, name=MAIN)
-        self.session = subprocess.Popen(
-            [found, *activation.BROWSER_FLAGS, f"--remote-debugging-port={self.debug}",
-             f"--user-data-dir={profile}", url],
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-    def __enter__(self) -> int:
-        return self.debug
-
-    def __exit__(self, *_) -> None:
-        self.session.terminate()
-        try:
-            self.session.wait(timeout=20)
-        except subprocess.TimeoutExpired:
-            self.session.kill()
-
-
 #: The page probe: which surfaces are visibly open right now. ⚠️ `width > 2`
 #: rather than `> 0`, because a closed part keeps a one-pixel sash.
 _VISIBLE = """(() => {
@@ -272,14 +214,6 @@ _VISIBLE = """(() => {
   return open;
 })()"""
 
-_EDITOR_BOX = """(() => {
-  const lines = document.querySelector('.monaco-editor .view-lines');
-  if (!lines) { return null; }
-  const box = lines.getBoundingClientRect();
-  if (box.width < 10 || box.height < 5) { return null; }
-  return {x: Math.round(box.x + 20), y: Math.round(box.y + 6)};
-})()"""
-
 
 def _surfaces(session, pairs=None) -> list:
     return cdp.evaluate(session, _VISIBLE % json.dumps(list((pairs or SURFACES).items())))
@@ -290,7 +224,7 @@ def _drive(image: str, name: str, port: int, lock, debug: int) -> Confinement:
     page = cdp.wait_for_target(debug, f":{port}/")
     with cdp.Session(page["webSocketDebuggerUrl"]) as session:
         session.call("Runtime.enable")
-        box = _wait_for_editor(session)
+        box = probe.wait_for_editor(session)
         opened = {}
         for chord, _ in CONFINED:
             cdp.click(session, box["x"], box["y"])
@@ -309,18 +243,6 @@ def _drive(image: str, name: str, port: int, lock, debug: int) -> Confinement:
         edited = _edit_and_save(session, name, box)
     return Confinement(image=image, opened=opened, find=find, edited=edited,
                        report=_report(name, lock))
-
-
-def _wait_for_editor(session) -> dict:
-    """The editor's own text area, once the workbench has opened the URL's file."""
-    deadline = time.monotonic() + READY_TIMEOUT
-    while time.monotonic() < deadline:
-        box = cdp.evaluate(session, _EDITOR_BOX)
-        if box:
-            time.sleep(4.0)  # let the lockdown's own closing passes settle first
-            return box
-        time.sleep(2.0)
-    raise Refused(f"the workbench never showed an editor for {MAIN} within {READY_TIMEOUT:.0f}s")
 
 
 def _edit_and_save(session, name: str, box: dict) -> bool:

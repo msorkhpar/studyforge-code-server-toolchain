@@ -21,6 +21,10 @@
 # from another stage's cache and put every runtime in a `python` runner.
 # ⛔ No Docker socket, no `docker` CLI. The reader's code runs in the RUNNER,
 # never here: the extraction source's `exec` mode is dropped.
+#
+# ⚠️ OVER THE 400-LINE BOUND, AND JUSTIFIED HERE (R11). A Dockerfile has no
+# import, so it cannot be split into modules; each step keeps its reason beside
+# it, and the tests read the steps by their text.
 
 ARG RUNNER_IMAGE
 ARG EDITOR_BASE
@@ -57,6 +61,20 @@ FROM ${FETCH_IMAGE} AS lockdown
 ARG LOCKDOWN_VSIX
 COPY lockdown /lockdown
 RUN --network=none python3 /lockdown/lockdown.py /lockdown "/packed/${LOCKDOWN_VSIX}"
+
+# ------------------------------------------------------------------------ face
+# The study page's code face, JetBrains Mono (SIL OFL 1.1), from its release
+# archive by the sha256 editor-pins.json records; every file taken out of it
+# is checked against its own recorded sha256, which is the page's vendored
+# copy's, so the page and the editor draw code with the same bytes.
+FROM ${FETCH_IMAGE} AS face
+ARG FACE_URL
+ARG FACE_SHA256
+ARG FACE_FILES
+ADD --checksum=sha256:${FACE_SHA256} ${FACE_URL} /face.zip
+COPY docker/editor/face.py /face.py
+RUN --network=none printf '%s\n' "${FACE_FILES}" > /tmp/face.txt \
+ && python3 /face.py /face.zip /tmp/face.txt /faces
 
 # ------------------------------------------------------------------ JAVA_HOME
 # ⛔ A set without java carries NO JAVA_HOME, not an empty one and not one that
@@ -241,6 +259,30 @@ RUN set -eu; \
       grep -q 'SIDEBAR_HIDDEN\.defaultValue=!0,' "$bundle" \
         || { echo "$bundle: the side bar default was not replaced" >&2; exit 1; }; \
     done
+
+# ⭐ THE EDITOR DRAWS CODE IN THE PAGE'S FACE. The workbench runs in the
+# READER's browser, so the face is SERVED beside the workbench's stylesheet
+# (its content policy allows fonts from its own origin only) and declared at
+# the end of that stylesheet; `lockdown/package.json` makes it the editor's
+# default family. ⛔ Exactly one declaration after, or the build fails.
+# `tests/test_editor_face.py` reads the face the browser actually drew.
+RUN --network=none --mount=type=bind,from=face,source=/faces,target=/tmp/faces \
+    set -eu; \
+    dir=/usr/lib/code-server/lib/vscode/out/vs/code/browser/workbench; \
+    cp -R /tmp/faces "$dir/faces"; \
+    cat "$dir/faces/faces.css" >> "$dir/workbench.css"; \
+    [ "$(grep -c -F "/* studyforge: the page's code face */" "$dir/workbench.css")" = 1 ] \
+      || { echo "$dir/workbench.css: the code face is not declared exactly once" >&2; exit 1; }; \
+    chmod -R a+rX "$dir/faces"
+
+# ⭐ A CLOSED PRACTICE SESSION IS RELEASED IN MINUTES, NOT HOURS. A closed tab
+# leaves its extension host and language server running until the server's
+# reconnection grace ends, and upstream's is three hours: measured, every
+# closed session held about 1.1 GiB until then. ⚠️ It stays long enough for a
+# hidden tab, whose timers the browser throttles to once a minute, to
+# reconnect. An ENV and not a flag, because a consumer's `command:` replaces
+# CMD. `tests/test_editor_idle.py` reads both halves in a real session.
+ENV CODE_SERVER_RECONNECTION_GRACE_TIME=180
 
 # ⭐ A LOGIN shell rebuilds PATH from /etc/profile, which assigns it outright
 # (measured on this base) and silently drops /opt: a tool works under
