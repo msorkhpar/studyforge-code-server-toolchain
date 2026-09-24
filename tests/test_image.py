@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(ROOT / "docker" / "minimal"))
 
+import build as runner_build  # noqa: E402
 import build_inputs  # noqa: E402
 import plan  # noqa: E402
 
@@ -66,8 +67,15 @@ def in_image(image: str, script: str, login: bool = False) -> subprocess.Complet
 
 
 def planted_copy(name: str) -> Path:
-    """A copy of the build's inputs, to plant a defect in without touching the tree."""
-    return build_inputs.copy_inputs(WORK / name, inputs=plan.INPUT_ROOTS)
+    """A copy of the build's inputs, to plant a defect in without touching the tree.
+
+    ⛔ The copy is the runner's whole build CONTEXT, `PRIMED_INPUT_ROOTS`, and not
+    only its digest inputs: the Dockerfile's warm step binds `prime/` in every
+    build, primed or not, so a copy without it fails on `"/prime": not found`
+    before it reaches the defect it plants. An unprimed tag is still taken over
+    `plan.INPUT_ROOTS` alone, so carrying `prime/` moves no tag.
+    """
+    return build_inputs.copy_inputs(WORK / name, inputs=runner_build.PRIMED_INPUT_ROOTS)
 
 
 def rewrite_pins(root: Path, mutate) -> None:
