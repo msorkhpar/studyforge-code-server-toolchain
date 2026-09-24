@@ -194,8 +194,8 @@ class TheComposeContract(unittest.TestCase):
 
         ⚠️ This clause once said the opposite and was never read RED,
         because the class skipped on every host whose reader's editor held the
-        port. The redirect is the reading `c535074` took: `/` no longer goes to
-        `/login`. ⭐ The bind half is asserted here too, so neither is read alone.
+        port. The redirect is what the first reading on a free port found: `/`
+        no longer goes to `/login`. ⭐ The bind half is asserted here too, so neither is read alone.
         """
         status, where = self.fetch("/")
         self.assertEqual(status, 200)
