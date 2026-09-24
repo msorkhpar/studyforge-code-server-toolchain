@@ -41,7 +41,7 @@ would oscillate and drop what another session found.
 **Depends on.** The standard library, `activation.py` (container, browser),
 `probe.py` (the session both halves open), `cdp.py`, a Docker CLI and a
 Chromium-family browser. ⛔ A missing browser REFUSES rather than skips; no
-Docker socket is mounted (spec §8.3).
+Docker socket is mounted: it runs `docker` from outside.
 """
 
 from __future__ import annotations

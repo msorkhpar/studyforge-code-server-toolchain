@@ -1,4 +1,4 @@
-"""This component's source files stay under the file-size bound (R11).
+"""This component's source files stay under the file-size bound.
 
 Run from the component root: `python3 -m unittest tests.test_file_bounds -v`.
 
@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE_BOUND = 400
 TEST_BOUND = 600
 #: Files over the bound, by path, and the sentence their own header justifies it with.
-JUSTIFIED = {"docker/editor/Dockerfile": "OVER THE 400-LINE BOUND, AND JUSTIFIED HERE (R11)"}
+JUSTIFIED = {"docker/editor/Dockerfile": "OVER THE 400-LINE BOUND FOR A SOURCE FILE, AND JUSTIFIED HERE"}
 
 
 def lines(path: Path) -> int:
@@ -52,13 +52,13 @@ class TheBound(unittest.TestCase):
                     self.assertIn(reason, path.read_text(encoding="utf-8"), "a justified file states why")
                     continue
                 self.assertLessEqual(lines(path), SOURCE_BOUND,
-                                     f"{path.relative_to(ROOT)} is over {SOURCE_BOUND} lines; split it (R11)")
+                                     f"{path.relative_to(ROOT)} is over {SOURCE_BOUND} lines; split it")
 
     def test_no_test_module_is_over_the_bound(self):
         for path in sorted((ROOT / "tests").glob("test_*.py")):
             with self.subTest(path=path.name):
                 self.assertLessEqual(lines(path), TEST_BOUND,
-                                     f"{path.relative_to(ROOT)} is over {TEST_BOUND} lines; split it (R11)")
+                                     f"{path.relative_to(ROOT)} is over {TEST_BOUND} lines; split it")
 
 
 if __name__ == "__main__":

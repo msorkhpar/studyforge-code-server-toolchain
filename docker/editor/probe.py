@@ -11,12 +11,13 @@ where the editor's own text area is, once the workbench has opened the file.
 **Why it is a module of its own.** The confinement gate (`confinement.py`)
 and its seed generator both open THIS session, and must open the same shape of
 session or what the one measures is not what the other writes down. ⚠️ It was
-split out of `confinement.py` when that file reached the 400-line bound (R11),
+split out of `confinement.py` when that file reached the 400-line bound,
 with no change to what either does: the names below are re-exported there.
 
 **Depends on.** The standard library, `activation.py` (container, browser and
 the workbench URL) and `cdp.py`. ⛔ A missing browser REFUSES rather than skips,
-through `activation.browser()`; no Docker socket is mounted (spec §8.3).
+through `activation.browser()`; no Docker socket is mounted: it runs `docker`
+from outside, like everything else here.
 """
 
 from __future__ import annotations

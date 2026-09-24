@@ -22,7 +22,7 @@
 # ⛔ No Docker socket, no `docker` CLI. The reader's code runs in the RUNNER,
 # never here: the extraction source's `exec` mode is dropped.
 #
-# ⚠️ OVER THE 400-LINE BOUND, AND JUSTIFIED HERE (R11). A Dockerfile has no
+# ⚠️ OVER THE 400-LINE BOUND FOR A SOURCE FILE, AND JUSTIFIED HERE. A Dockerfile has no
 # import, so it cannot be split into modules; each step keeps its reason beside
 # it, and the tests read the steps by their text.
 

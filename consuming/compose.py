@@ -6,7 +6,7 @@ every value and every comment taken from the contract block it is given, and
 one YAML scalar.
 
 **Why it is a module of its own.** `consuming.py` reached the 400-line bound
-(R11), and this is its seam: that module decides WHETHER a contract may be
+for a source file, and this is its seam: that module decides WHETHER a contract may be
 rendered (`findings`, `render`'s refusal), this one only writes the text of a
 contract already accepted. ⛔ Nothing here checks a ruling, so it is only ever
 called through `consuming.render`.
