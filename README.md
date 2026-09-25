@@ -345,6 +345,14 @@ the workbench provides — no build step, no dependencies, and nothing fetched.
   touches; these edits hold on a fresh volume and on an existing one, even one
   whose settings turn the switch back off. Each edit must find exactly one
   anchor, or the build fails naming it.
+- ⛔ **A changed editor is never run from a browser's cache.** ⚠️ The
+  workbench is served under `/stable-<commit>/static/` for a year, and that
+  commit was code-server's own, the same for every image on one release: a
+  reader's browser kept running an older image's `workbench.js` against a newer
+  image. ⭐ The build rewrites the commit to a digest of every file under the
+  product, in `product.json` and in every bundle that bakes it in, as the last
+  step that writes the product. Any edit gives a new path; identical product
+  files keep the same one, so an unchanged rebuild downloads nothing.
 - ⛔ **This is an INTEGRITY clause, not a tidiness one.** ⚠️ `files.readonlyExclude`
   is what makes a Submit mean anything — the test that judges the reader is not
   theirs to edit — and it is an **object setting, which VS Code MERGES across
@@ -488,6 +496,7 @@ TC_DOCKER=1 python3 -m unittest tests.test_editor_image -v # builds and runs the
 TC_DOCKER=1 python3 -m unittest tests.test_editor_layout -v # the side bar is never painted
 TC_DOCKER=1 python3 -m unittest tests.test_editor_agent_host -v # no agent host, no Copilot CLI
 TC_DOCKER=1 python3 -m unittest tests.test_editor_no_ai -v # no chat, agent or AI surface
+TC_DOCKER=1 python3 -m unittest tests.test_editor_static_path -v # a changed editor is fetched, an unchanged one is not
 TC_DOCKER=1 python3 -m unittest tests.test_editor_face -v # the page's face, as drawn
 TC_DOCKER=1 python3 -m unittest tests.test_editor_idle -v # a closed session is released
 TC_DOCKER=1 python3 -m unittest tests.test_editor_egress -v # no outbound connection
