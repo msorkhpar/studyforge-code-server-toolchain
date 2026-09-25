@@ -294,18 +294,46 @@ class TheWarmersSourceCheck(unittest.TestCase):
         self.assertEqual(nothing.returncode, 1)
         self.assertIn("compiled nothing", nothing.stderr)
 
-    def test_maven_passes_real_sources_and_fails_no_sources_or_no_tests_naming_the_module(self):
+    def test_maven_passes_real_sources_and_fails_a_build_with_no_source_or_no_test_naming_why(self):
         good = MAVEN_LOG.format("Compiling 1 source file", "Tests run: 1, Failures: 0, Errors: 0, Skipped: 0")
         self.assertEqual(self.check("warm-maven.sh", good).returncode, 0)
         for main, tests, needle in (
-                ("No sources to compile", "Tests run: 1, Failures: 0", "module prime compiles no sources in compile"),
-                ("Compiling 1 source file", "No tests to run.", "module prime runs no tests"),
-                ("Compiling 1 source file", "Tests are skipped.", "module prime runs no tests"),
+                ("No sources to compile", "Tests run: 1, Failures: 0", "the maven prime compiled no source"),
+                ("Compiling 1 source file", "No tests to run.", "the maven prime ran no test"),
+                ("Compiling 1 source file", "Tests are skipped.", "the maven prime ran no test"),
                 ("Compiling 1 source file", "Tests run: 0, Failures: 0", "ran no test")):
             with self.subTest(needle):
                 failed = self.check("warm-maven.sh", MAVEN_LOG.format(main, tests))
                 self.assertEqual(failed.returncode, 1)
                 self.assertIn(needle, failed.stderr)
+
+    def test_maven_primes_a_module_with_no_sources_through_its_pom_and_names_it(self):
+        """A multi-module build: one module compiles and tests, and the other has nothing to compile."""
+        log = MAVEN_LOG.format("Compiling 1 source file", "Tests run: 1, Failures: 0") + EMPTY_MODULE
+        checked = self.check("warm-maven.sh", log)
+        self.assertEqual(checked.returncode, 0, checked.stderr)
+        self.assertIn("maven module empty compiles no sources in compile, so it is primed through its POM alone",
+                      checked.stderr)
+        self.assertIn("maven module empty runs no tests, so it is primed through its POM alone", checked.stderr)
+
+    def test_a_test_that_fails_in_the_consumers_build_is_named_and_does_not_fail_the_prime(self):
+        log = MAVEN_LOG.format("Compiling 1 source file", FAILED_TEST)
+        checked = self.check("warm-maven.sh", log)
+        self.assertEqual(checked.returncode, 0, checked.stderr)
+        self.assertIn("own test org.example.PrimeTest.parses(String)[1] fails in maven module prime; that is "
+                      "the consumer's finding", checked.stderr)
+
+
+EMPTY_MODULE = """[INFO] --- compiler:3.15.0:compile (default-compile) @ empty ---
+[INFO] No sources to compile
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ empty ---
+[INFO] No sources to compile
+[INFO] --- surefire:3.5.4:test (default-test) @ empty ---
+[INFO] No tests to run.
+"""
+FAILED_TEST = """Tests run: 2, Failures: 1, Errors: 0, Skipped: 0
+[ERROR] Tests run: 2, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.1 s <<< FAILURE! -- in org.example.PrimeTest
+[ERROR] org.example.PrimeTest.parses(String)[1] -- Time elapsed: 0.01 s <<< FAILURE!"""
 
 
 FAKE = """#!/bin/sh
@@ -345,7 +373,7 @@ class TheWarmersCommands(unittest.TestCase):
         self.assertEqual(warmed.returncode, 0, warmed.stderr)
         args = self.record.read_text(encoding="utf-8").splitlines()
         for needed in ("-C", f"-Dmaven.repo.local={seed}", "-Daether.connector.userAgent=Example/0.1 "
-                       "(+https://example.invalid)", "test"):
+                       "(+https://example.invalid)", "-Dmaven.test.failure.ignore=true", "test"):
             self.assertIn(needed, args)
         self.assertNotIn("-o", args)
         self.assertEqual(sorted(p.name for p in (seed / "g" / "a").iterdir()), ["a.jar"])

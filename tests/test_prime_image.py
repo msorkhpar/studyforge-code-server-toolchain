@@ -216,8 +216,8 @@ class ThePrimedImage(unittest.TestCase):
 
     def test_a_maven_prime_with_no_sources_fails_the_build_naming_the_module_and_why(self):
         prime = planted_prime("maven-no-sources", "maven", "src")
-        self.planted_build_fails(prime, "maven module prime compiles no sources in compile",
-                                 "maven module prime runs no tests")
+        self.planted_build_fails(prime, "the maven prime compiled no source",
+                                 "the maven prime ran no test")
 
     def test_a_version_mismatch_is_refused_before_docker_starts_naming_why(self):
         prime = planted_prime("kotlin-mismatch", "gradle")

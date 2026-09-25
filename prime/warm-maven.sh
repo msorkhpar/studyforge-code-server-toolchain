@@ -12,8 +12,15 @@
 # it arrives (`-C`, strict checksums), and the request carries a placeholder
 # User-Agent and no identity.
 #
-# ⛔ THE SOURCES MUST BE REAL: a module that compiles no sources, or runs no
-# tests, never resolves what those steps need, so the build fails naming it.
+# ⛔ THE SOURCES MUST BE REAL: a build that compiles no source, compiles no
+# test, or runs no test, never resolves what those steps need, so the build
+# fails naming what it lacked. ⭐ That is asked of the BUILD, not of each
+# module: a module of a multi-module build that carries no sources is primed
+# through its POM, because Maven resolves every dependency a POM declares
+# before a step runs, whether or not that step then finds a source — so it is
+# named, and never refused. ⭐ A test that FAILS in the consumer's own build is
+# the consumer's finding and not the prime's: the run it failed in resolved
+# what it needed, so it is named and the warm goes on.
 # There is no Maven wrapper to honour: the image's pinned Maven IS the version
 # (the version guards refuse a prime whose wrapper names another).
 set -eu
@@ -26,17 +33,24 @@ check() {
     awk '
     /^\[INFO\] --- .* @ [^ ]+ ---$/ { module = $(NF - 1); goal = $3; sub(/.*:/, "", goal) }
     /^\[INFO\] No sources to compile$/ {
-        printf "prime: maven module %s compiles no sources in %s: a step with no sources never resolves what it needs, so the prime would prime nothing; give it one real source and one real test\n", module, goal > "/dev/stderr"
-        bad = 1
+        printf "prime: maven module %s compiles no sources in %s, so it is primed through its POM alone\n", module, goal > "/dev/stderr"
     }
     /^\[INFO\] No tests to run\.$/ || /^\[INFO\] Tests are skipped\.$/ {
-        printf "prime: maven module %s runs no tests: the test step never resolves its provider, so the prime would prime nothing; give it one real test\n", module > "/dev/stderr"
-        bad = 1
+        printf "prime: maven module %s runs no tests, so it is primed through its POM alone\n", module > "/dev/stderr"
     }
-    /^\[INFO\] Tests run: [1-9]/ { tested = 1 }
+    /^\[INFO\] Compiling [1-9][0-9]* source files?( |$)/ { if (goal == "compile") compiled = 1; if (goal == "testCompile") testcompiled = 1 }
+    /^\[(INFO|WARNING|ERROR)\] Tests run: [1-9]/ { tested = 1 }
+    /^\[ERROR\] .* -- Time elapsed: .* <<< (FAILURE|ERROR)!$/ {
+        name = $0; sub(/^\[ERROR\] /, "", name); sub(/ -- Time elapsed: .*$/, "", name)
+        printf "prime: the consumer'"'"'s own test %s fails in maven module %s; that is the consumer'"'"'s finding, and the prime is warmed regardless\n", name, module > "/dev/stderr"
+    }
     END {
-        if (!bad && !tested) {
-            print "prime: the maven prime ran no test: a prime with no sources primes nothing" > "/dev/stderr"
+        if (!compiled) {
+            print "prime: the maven prime compiled no source: a step with no sources never resolves what it needs, so the prime would prime nothing; give one module one real source and one real test" > "/dev/stderr"
+            bad = 1
+        }
+        if (!testcompiled || !tested) {
+            print "prime: the maven prime ran no test: the test step never resolves its provider, so the prime would prime nothing; give one module one real test" > "/dev/stderr"
             bad = 1
         }
         exit bad
@@ -50,7 +64,7 @@ build() {  # PROJECT REPO [-o]
     repo="$2"
     shift 2
     if ! (cd "$work" && mvn -B -C -ntp "$@" -Dmaven.repo.local="$repo" \
-            "-Daether.connector.userAgent=$AGENT" test) > "$log" 2>&1; then
+            "-Daether.connector.userAgent=$AGENT" -Dmaven.test.failure.ignore=true test) > "$log" 2>&1; then
         tail -n 60 "$log" >&2
         fail "the maven prime did not build"
     fi

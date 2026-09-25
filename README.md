@@ -405,8 +405,13 @@ produced is.
 - ⛔ **The sources must be real.** A compile task with no sources never
   resolves its classpath, so an empty prime would prime nothing while
   appearing to succeed. Every Gradle project that compiles must run a main
-  compile, a test compile and `test`; every Maven module must compile
-  sources and run a test. Otherwise the build fails, naming the project.
+  compile, a test compile and `test`; a Maven build must compile a source,
+  compile a test and run it. Otherwise the build fails, naming the project.
+  ⭐ A Maven module with no sources is primed through its POM, and named:
+  Maven resolves what a POM declares before a step runs, whether or not the
+  step then finds a source. ⭐ A test that fails in the consumer's own build
+  is named as the consumer's finding and does not fail the prime: the run it
+  failed in resolved what it needed.
 - ⛔ **Versions must agree with `pins.json`, or the build is refused before
   Docker starts**, naming the file and both versions: a Gradle or Maven
   wrapper naming another version (and a Gradle wrapper that does not pin the

@@ -344,7 +344,7 @@ RUN install -d -o 1000 -g 1000 /home/coder/.config /home/coder/.local /home/code
 # /opt/code-server/prime. Without a prime the context is empty and both
 # switches are `no`. ⭐ PRIME_KEY is the prime's digest, so the warm is cached
 # per prime and never served to another. ⛔ A prime whose
-# compile or test step has no sources fails here, naming the project: it would
+# build compiles or tests nothing fails here, naming what it lacked: it would
 # prime nothing while appearing to succeed. The version guards ran before
 # Docker started (`prime/prime.py`, from pins.json).
 ARG WITH_GRADLE_PRIME
