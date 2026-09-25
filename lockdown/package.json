@@ -44,7 +44,7 @@
     },
     "configurationDefaults": {
       "editor.fontFamily": "'JetBrains Mono', 'DejaVu Sans Mono', monospace",
-      "editor.fontLigatures": true,
+      "editor.fontLigatures": false,
       "java.import.maven.offline.enabled": true,
       "java.import.gradle.offline.enabled": true,
       "redhat.telemetry.enabled": false,
