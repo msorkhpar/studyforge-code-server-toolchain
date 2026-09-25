@@ -14,7 +14,10 @@ the way a reader meets it:
   extension (`tests/fixtures/command-probe`) installed into a derived image:
   no AI command id at all;
 - **what asking for the chat does**: the four ways in (the view, the panel's
-  id, its toggle and Quick Chat) each answer "not found".
+  id, its toggle and Quick Chat) each answer "not found";
+- **the AI switch's default** as the workbench hands it to an extension host:
+  on. ⚠️ Nothing on screen tells it apart from the hidden entitlement in a
+  practice frame, so this is the reading that sees the first edit.
 
 It reads that on a FRESH volume and on an EXISTING one whose settings.json the
 entrypoint leaves alone, and whose settings turn the workbench's AI switch
@@ -358,6 +361,7 @@ class NoAiSurfaceInASession(unittest.TestCase):
         raise AssertionError("the command probe wrote nothing, so this session read nothing")
 
     def _assert_no_ai(self, seen: dict) -> None:
+        self.assertIs(seen["aiSwitch"]["defaultValue"], True, f"the AI switch does not default on: {seen['aiSwitch']}")
         self.assertGreater(len(seen["commands"]), 1000, "too few commands to be the workbench's registry")
         self.assertEqual(ai_ids(seen["commands"]), [], "AI commands the workbench still registers")
         for opener in OPENERS:
@@ -372,6 +376,7 @@ class NoAiSurfaceInASession(unittest.TestCase):
     def test_an_existing_settings_file_that_turns_ai_back_on_shows_none_either(self):
         seen = self._session(self.probed, "existing", volume=self._existing_volume())
         self.assertIn("settings exist at", seen["log"], "the entrypoint wrote the seed, so the volume was not existing")
+        self.assertIs(seen["aiSwitch"]["globalValue"], False, "the settings file did not turn the switch back off")
         self._assert_no_ai(seen)
 
     def test_the_edits_planted_back_out_show_the_chat_again(self):

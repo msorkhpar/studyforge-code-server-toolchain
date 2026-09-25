@@ -3,9 +3,10 @@
  *
  * It reads the workbench's own command registry -- `getCommands` answers from
  * the workbench, not from this extension host -- and then asks for the chat
- * the way a menu or a keybinding would, with `executeCommand`. Both land in
- * `commands.json` in the log directory the workbench gives it, for the test
- * to read with `docker exec`.
+ * the way a menu or a keybinding would, with `executeCommand`. It also reads
+ * the AI switch's default, which the workbench's configuration registry hands
+ * every extension host. All of it lands in `commands.json` in the log directory
+ * the workbench gives it, for the test to read with `docker exec`.
  *
  * ⚠️ It waits until the lockdown's last close has run (its retries end at
  * 12 s), so a chat view it opens is one the reader would be left looking at.
@@ -38,8 +39,10 @@ exports.activate = function (context) {
                 opened[id] = String((error && error.message) || error).slice(0, 200);
             }
         }
+        const inspected = vscode.workspace.getConfiguration('chat').inspect('disableAIFeatures') || {};
+        const aiSwitch = { defaultValue: inspected.defaultValue, globalValue: inspected.globalValue };
         const partial = path.join(out, 'commands.partial');
-        fs.writeFileSync(partial, JSON.stringify({ commands, opened }));
+        fs.writeFileSync(partial, JSON.stringify({ commands, opened, aiSwitch }));
         fs.renameSync(partial, path.join(out, 'commands.json'));
     }, AFTER_THE_LOCKDOWN);
 };
