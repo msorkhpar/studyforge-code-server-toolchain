@@ -178,7 +178,8 @@ RUN --network=none --mount=type=bind,from=fetch,source=/fetch,target=/tmp/fetch 
 # ⭐ The `[ -d ]` guard is deliberate: a future code-server that no longer
 # bundles it must not fail this build, and the ASSERTION that it is gone lives
 # in `tests/test_editor_image.py` against the built image, where a silent
-# rename would be caught.
+# rename would be caught. ⚠️ This removes the chat EXTENSION only; the
+# workbench's own chat is the step after the agent host's.
 RUN set -eu; \
     built_in=/usr/lib/code-server/lib/vscode/extensions; \
     for gone in copilot; do \
@@ -232,6 +233,24 @@ RUN set -eu; \
       [ "$(grep -o 'super(!1&&!![a-zA-Z_$]*\.remoteAuthority,' "$bundle" | wc -l)" = 1 ] \
         || { echo "$bundle: the agent host enablement was not switched off" >&2; exit 1; }; \
     done
+
+# ⛔ THE WORKBENCH'S OWN CHAT IS TAKEN OUT OF THE PRODUCT, WHATEVER A VOLUME HOLDS.
+# ⚠️ Both deletions above left it: Code 1.137 carries a chat view of its own
+# ("Build with Agent", a chat input), a title-bar chat button, a Copilot status
+# item and about 470 AI commands, none of them an extension. Measured on
+# 4.137.0: a reader reached the chat view in a practice frame.
+# ⭐ `no_ai.js` makes four edits in both bundles: the workbench's AI switch
+# DEFAULTS on, the chat entitlement is always hidden (so a settings.json that
+# turns the switch back off still shows no chat), and the command registry and
+# the palette refuse every AI command id. ⛔ A setting in the seed would miss
+# every existing volume, whose settings.json the entrypoint never touches.
+# Each edit must find exactly one anchor, or the build fails naming it.
+# `tests/test_editor_no_ai.py` reads the EFFECT in a real browser, fresh and on
+# an existing volume, and plants the edits back out.
+RUN --network=none --mount=type=bind,source=docker/editor/no_ai.js,target=/tmp/no_ai.js \
+    /usr/lib/code-server/lib/node /tmp/no_ai.js \
+      /usr/lib/code-server/lib/vscode/out/vs/code/browser/workbench/workbench.js \
+      /usr/lib/code-server/lib/vscode/out/vs/workbench/workbench.web.main.internal.js
 
 # ⛔ THE PRIMARY SIDE BAR STARTS CLOSED, before the workbench's first paint.
 # ⚠️ Measured on code-server 4.137.0 in a real browser: every practice frame

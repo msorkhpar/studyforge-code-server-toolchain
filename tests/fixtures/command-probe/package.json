@@ -1,0 +1,23 @@
+{
+  "name": "command-probe",
+  "displayName": "Command Probe",
+  "description": "A test fixture, never shipped: writes the workbench's registered commands beside its log, and what happened when it asked for the chat.",
+  "publisher": "probe",
+  "version": "0.0.1",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.70.0"
+  },
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    }
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js"
+}

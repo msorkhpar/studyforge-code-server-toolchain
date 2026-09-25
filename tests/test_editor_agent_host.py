@@ -18,8 +18,9 @@ browser, and a missing browser FAILS it rather than skipping it.
 
 ⭐ **Positive controls.** The same image with the two switches planted back
 out (one derived layer, so the plant is provably the only difference) must show
-the agent host forked, or the `ps` reading is blind. A build that keeps the
-modules must be refused.
+the agent host forked, or the `ps` reading is blind. ⚠️ Its settings seed also
+turns the workbench's AI switch back off, since the image defaults it on. A
+build that keeps the modules must be refused.
 """
 
 from __future__ import annotations
@@ -54,6 +55,12 @@ BUNDLES = (
     f"{VSCODE}/out/vs/code/browser/workbench/workbench.js",
     f"{VSCODE}/out/vs/workbench/workbench.web.main.internal.js",
 )
+#: The workbench's AI switch, set back off in the plant's settings seed. ⚠️ The
+#: image now DEFAULTS it on (the no-AI step), and the enablement this module
+#: plants back reads `remoteAuthority && !chat.disableAIFeatures`, so without
+#: this the plant would fork nothing and the `ps` reading would be blind.
+AI_BACK_ON = '"chat.disableAIFeatures": false,'
+SEED = "/opt/code-server/seed/settings.json"
 #: The module loop, exactly as the step spells it, so a plant can empty it.
 DELETION = "for gone in @github/copilot @github/copilot-linux-x64 @github/copilot-linux-arm64 @github/copilot-sdk"
 #: What the server logs when it takes upstream's own "no agent host" path.
@@ -127,7 +134,8 @@ class NoSessionForksAnAgentHost(unittest.TestCase):
         """The tagged image with both switches undone, as one derived layer."""
         name = f"agent-host-plant:{uuid.uuid4().hex[:12]}"
         undo = "; ".join([f"sed -i 's/else if(!0||/else if(/' {SERVER}"]
-                         + [f"sed -i 's/super(!1\\&\\&!!/super(!!/' {b}" for b in BUNDLES])
+                         + [f"sed -i 's/super(!1\\&\\&!!/super(!!/' {b}" for b in BUNDLES]
+                         + [f"sed -i 's|\"files.autoSave\": \"afterDelay\",|&\\n    {AI_BACK_ON}|' {SEED}"])
         with tempfile.TemporaryDirectory(prefix="agent-host-plant-") as context:
             Path(context, "Dockerfile").write_text(
                 f"FROM {self.tag}\nUSER root\nRUN {undo}\nUSER 1000\n", encoding="utf-8")

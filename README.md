@@ -333,6 +333,18 @@ the workbench provides — no build step, no dependencies, and nothing fetched.
   tab guard is the other half, because removing a keybinding does not
   unregister a command: any editor tab that is not the file that window's URL
   opened is closed, whatever opened it, and no surface is named in the source.
+- ⛔ **The editor has no chat, agent or AI surface, and that is the PRODUCT,
+  not a setting** ([`docker/editor/no_ai.js`](docker/editor/no_ai.js)). ⚠️
+  Deleting the bundled chat extension and the Copilot modules left the
+  workbench's own chat: a reader saw a "Build with Agent" side bar with a chat
+  input in a practice frame. ⭐ The build edits both workbench bundles: the AI
+  switch (`chat.disableAIFeatures`) defaults on, the chat entitlement is always
+  hidden, and the command registry and the palette refuse every AI command id,
+  so asking for the chat answers "command not found". ⛔ A seeded setting would
+  miss every existing volume, whose `settings.json` the entrypoint never
+  touches; these edits hold on a fresh volume and on an existing one, even one
+  whose settings turn the switch back off. Each edit must find exactly one
+  anchor, or the build fails naming it.
 - ⛔ **This is an INTEGRITY clause, not a tidiness one.** ⚠️ `files.readonlyExclude`
   is what makes a Submit mean anything — the test that judges the reader is not
   theirs to edit — and it is an **object setting, which VS Code MERGES across
@@ -475,6 +487,7 @@ TC_DOCKER=1 python3 -m unittest tests.test_image -v        # builds and runs the
 TC_DOCKER=1 python3 -m unittest tests.test_editor_image -v # builds and runs the editor
 TC_DOCKER=1 python3 -m unittest tests.test_editor_layout -v # the side bar is never painted
 TC_DOCKER=1 python3 -m unittest tests.test_editor_agent_host -v # no agent host, no Copilot CLI
+TC_DOCKER=1 python3 -m unittest tests.test_editor_no_ai -v # no chat, agent or AI surface
 TC_DOCKER=1 python3 -m unittest tests.test_editor_face -v # the page's face, as drawn
 TC_DOCKER=1 python3 -m unittest tests.test_editor_idle -v # a closed session is released
 TC_DOCKER=1 python3 -m unittest tests.test_editor_egress -v # no outbound connection
