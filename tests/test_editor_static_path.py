@@ -200,7 +200,7 @@ class ABrowserRunsTheImageItIsServed(unittest.TestCase):
         return readings[0], readings[1]
 
     def test_a_then_b_runs_bs_files_fetched_over_the_network(self):
-        self.assertNotEqual(static_path(self.a), static_path(self.b), "an edit to the product kept its path")
+        # ⭐ The browser is read first, so a failure here is what a reader would meet.
         first, then = self._one_browser(self.a, self.b)
         self.assertEqual(len(first["workbench"]), 1, first)
         self.assertGreater(first["workbench"][0]["transfer"], 0, f"A's first load came from a cache: {first}")
@@ -209,13 +209,14 @@ class ABrowserRunsTheImageItIsServed(unittest.TestCase):
         self.assertTrue(then["workbench"][0]["path"].startswith(static_path(self.b)), then)
         self.assertGreater(then["workbench"][0]["transfer"], 0, f"B's workbench.js came from the cache: {then}")
         self.assertTrue(then["marker"], f"the browser ran A's workbench against B: {then}")
+        self.assertNotEqual(static_path(self.a), static_path(self.b), "an edit to the product kept its path")
 
     def test_a_then_an_image_with_the_same_product_downloads_nothing_again(self):
         self.assertNotEqual(self.a, self.a2, "the change outside the product did not make a second image")
-        self.assertEqual(static_path(self.a), static_path(self.a2), "identical product files, different paths")
         first, then = self._one_browser(self.a, self.a2)
-        self.assertEqual(first["workbench"][0]["path"], then["workbench"][0]["path"])
         self.assertEqual(then["workbench"][0]["transfer"], 0, f"an unchanged workbench was downloaded again: {then}")
+        self.assertEqual(first["workbench"][0]["path"], then["workbench"][0]["path"])
+        self.assertEqual(static_path(self.a), static_path(self.a2), "identical product files, different paths")
 
 
 if __name__ == "__main__":
