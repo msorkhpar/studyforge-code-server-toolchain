@@ -223,7 +223,7 @@ class ThePatchIsInTheBuild(unittest.TestCase):
         self.assertIn("already refuses the AI commands", again.stderr)
 
     def test_it_refuses_the_ai_commands_and_never_a_practice_command(self):
-        """⭐ Read through the very code the edit inserts, `refuse`, not through the pattern alone."""
+        # ⭐ Read through the very code the edit inserts, `refuse`, not through the pattern alone.
         self._need_node()
         ai = ["workbench.action.chat.open", "workbench.action.openQuickChat", "inlineChat.start",
               "workbench.panel.chat", "workbench.mcp.addConfiguration", "agentSession.archive",
@@ -256,8 +256,11 @@ class NoAiSurfaceInASession(unittest.TestCase):
             raise AssertionError(f"the editor build did not pass its own gate:\n{built.stdout}\n{built.stderr}")
         cls.made: list[str] = []
         cls.volumes: list[str] = []
-        cls.probed = cls._derive(cls.tag, "probed")
-        cls.planted = cls._derive(cls._derive(cls.tag, "planted"), "probed")
+        try:
+            cls.probed = cls._derive(cls.tag, "probed")
+        except BaseException:
+            cls.tearDownClass()
+            raise
 
     @classmethod
     def tearDownClass(cls):
@@ -372,7 +375,8 @@ class NoAiSurfaceInASession(unittest.TestCase):
         self._assert_no_ai(seen)
 
     def test_the_edits_planted_back_out_show_the_chat_again(self):
-        seen = self._session(self.planted, "planted")
+        planted = self._derive(self._derive(self.tag, "planted"), "probed")
+        seen = self._session(planted, "planted")
         self.assertGreater(len(ai_ids(seen["commands"])), 100, "the plant registered no AI command: this is blind")
         self.assertEqual(seen["opened"]["workbench.action.chat.open"], "ran", seen["opened"])
         surface = seen["surface"]
