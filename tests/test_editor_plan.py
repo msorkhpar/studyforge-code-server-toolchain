@@ -233,10 +233,11 @@ class TheDockerfile(unittest.TestCase):
         self.assertIn("--network=none --mount=type=bind,from=fetch", body)
         # Every step that must not reach the network: TypeScript from the pinned
         # tarball, the extension install, the lockdown's pack stage and
-        # the prime's offline proof, and the code face taken out of its archive
-        # and then placed beside the workbench's stylesheet.
+        # the prime's offline proof, the code face taken out of its archive
+        # and then placed beside the workbench's stylesheet, and the workbench's
+        # own AI taken out of its bundles.
         offline = ("npm install -g --offline", "--install-extension", "/lockdown/lockdown.py", "prove",
-                   "python3 /face.py", "--mount=type=bind,from=face")
+                   "python3 /face.py", "--mount=type=bind,from=face", "/tmp/no_ai.js")
         self.assertEqual(body.count("RUN --network=none"), len(offline))
         for needle in offline:
             self.assertIn(needle, body)
