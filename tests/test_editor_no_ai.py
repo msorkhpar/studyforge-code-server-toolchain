@@ -223,6 +223,7 @@ class ThePatchIsInTheBuild(unittest.TestCase):
         self.assertIn("already refuses the AI commands", again.stderr)
 
     def test_it_refuses_the_ai_commands_and_never_a_practice_command(self):
+        """⭐ Read through the very code the edit inserts, `refuse`, not through the pattern alone."""
         self._need_node()
         ai = ["workbench.action.chat.open", "workbench.action.openQuickChat", "inlineChat.start",
               "workbench.panel.chat", "workbench.mcp.addConfiguration", "agentSession.archive",
@@ -233,7 +234,7 @@ class ThePatchIsInTheBuild(unittest.TestCase):
                 "workbench.action.output.show.remoteagent", "java.test.editor.run", "testing.reRunFailTests",
                 "editor.action.trimTrailingWhitespace", "workbench.action.closeAuxiliaryBar"]
         script = (f"const n=require({json.dumps(str(NO_AI))}),a=require({json.dumps(str(ALLOWED))});"
-                  "const r=(id)=>n.AI.test(id)&&!n.KEPT.test(id);"
+                  "const f=new Function('c',n.refuse('c')+'return false;'),r=(id)=>f({id})!==false;"
                   f"console.log(JSON.stringify({{ai:{json.dumps(ai)}.filter(r),"
                   f"kept:{json.dumps(kept)}.concat(a.COMMANDS).filter(r)}}))")
         done = run([self.node, "-e", script])
