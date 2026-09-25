@@ -294,6 +294,38 @@ RUN --network=none --mount=type=bind,from=face,source=/faces,target=/tmp/faces \
       || { echo "$dir/workbench.css: the code face is not declared exactly once" >&2; exit 1; }; \
     chmod -R a+rX "$dir/faces"
 
+# ⛔ THE STATIC PATH CHANGES WHENEVER THE PRODUCT'S FILES DO, AND ONLY THEN.
+# ⚠️ The workbench is served under `/stable-<product.json commit>/static/`
+# with `Cache-Control: public, max-age=31536000`, and that commit is
+# code-server's, the same for every image built on one release. Measured: a
+# browser that had loaded one image kept running its cached `workbench.js`
+# (transferSize 0) against the next, so every edit above reached a reader only
+# when their cache expired. ⛔ A cache header would not help: it cannot evict
+# what a browser already holds.
+# ⭐ So the commit becomes a digest of every file under the product's root,
+# product.json included as it stood: identical product files give the same
+# path (an unchanged rebuild downloads nothing), any edit a new one.
+# ⚠️ The commit is BAKED into every bundle as well as product.json, and the
+# server refuses a workbench whose commit differs ("Client refused: version
+# mismatch", measured when only product.json was rewritten), so it is
+# rewritten in every file under the product that carries it, and none is left.
+# ⛔ This must stay the LAST step that writes under /usr/lib/code-server.
+# `tests/test_editor_static_path.py` reads it with a real browser, A then B.
+RUN --network=none set -eu; \
+    vscode=/usr/lib/code-server/lib/vscode; product="$vscode/product.json"; \
+    was="$(grep -o '"commit": *"[0-9a-f]*"' "$product" | grep -o '[0-9a-f]\{40\}' || true)"; \
+    [ "$(printf '%s' "$was" | grep -c .)" = 1 ] \
+      || { echo "$product names $(printf '%s' "$was" | grep -c .) commits; this step rewrites exactly one" >&2; exit 1; }; \
+    now="$(cd "$vscode" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -c1-40)"; \
+    baked="$(grep -rlF "$was" "$vscode" | wc -l)"; \
+    [ "$baked" -ge 2 ] || { echo "$vscode carries the commit in $baked files; the product and its bundles expected" >&2; exit 1; }; \
+    grep -rlF "$was" "$vscode" | xargs sed -i "s/$was/$now/g"; \
+    left="$(grep -rlF "$was" "$vscode" || true)"; \
+    [ -z "$left" ] || { echo "the old commit is still in: $left" >&2; exit 1; }; \
+    [ "$(grep -c "\"commit\": \"$now\"" "$product")" = 1 ] \
+      || { echo "$product: the static path was not rewritten" >&2; exit 1; }; \
+    echo "static path: stable-$now, rewritten in $baked files"
+
 # ⭐ A CLOSED PRACTICE SESSION IS RELEASED IN MINUTES, NOT HOURS. A closed tab
 # leaves its extension host and language server running until the server's
 # reconnection grace ends, and upstream's is three hours: measured, every

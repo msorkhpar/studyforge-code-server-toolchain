@@ -235,9 +235,9 @@ class TheDockerfile(unittest.TestCase):
         # tarball, the extension install, the lockdown's pack stage and
         # the prime's offline proof, the code face taken out of its archive
         # and then placed beside the workbench's stylesheet, and the workbench's
-        # own AI taken out of its bundles.
+        # own AI taken out of its bundles, and the static path's digest.
         offline = ("npm install -g --offline", "--install-extension", "/lockdown/lockdown.py", "prove",
-                   "python3 /face.py", "--mount=type=bind,from=face", "/tmp/no_ai.js")
+                   "python3 /face.py", "--mount=type=bind,from=face", "/tmp/no_ai.js", "static path: stable-")
         self.assertEqual(body.count("RUN --network=none"), len(offline))
         for needle in offline:
             self.assertIn(needle, body)
