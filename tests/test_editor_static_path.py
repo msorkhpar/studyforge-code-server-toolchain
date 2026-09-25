@@ -13,8 +13,9 @@ next on the same port, with no cache cleared in between.
 
 1. **A then B**, where B carries one more edit to the product: B's
    `workbench.js` arrives over the network, and B's edit is what runs.
-2. **A then A'**, where A' differs from A only OUTSIDE the product (an `ENV`):
-   the same static path, and `workbench.js` comes from the cache.
+2. **A then A'**, where A' differs from A only OUTSIDE the product (a directory
+   under `/opt`, made before the step so its digest is computed afresh): the
+   same static path, and `workbench.js` comes from the cache.
 
 The static half runs everywhere. ⚠️ The browser half is skipped unless
 `TC_DOCKER=1`: it builds three images (the tree, and two planted copies of its
@@ -66,8 +67,10 @@ PRODUCT_EDITS = ("THE BUNDLED CHAT IS DELETED FROM THE PRODUCT", "THE AGENT HOST
 #: B's one extra edit to the product, placed before the static path step, and what it leaves in the page.
 MARKER = "__studyforgeStaticPathB"
 EDIT_B = f"RUN printf '\\n;globalThis.{MARKER}=1;\\n' >> {BUNDLE}\n\n"
-#: A''s one change, outside the product.
-EDIT_A2 = "ENV STUDYFORGE_STATIC_PATH_PROBE=1\n"
+#: A''s one change, OUTSIDE the product but BEFORE the step. ⚠️ Before it, so the
+#: step is not served from the build cache: the digest is computed again and
+#: must come out the same.
+EDIT_A2 = "RUN mkdir /opt/code-server/static-path-probe\n\n"
 
 READ = r"""(() => {
   const js = performance.getEntriesByType('resource').filter((r) => /\/workbench\.js(\?|$)/.test(r.name));
@@ -88,7 +91,7 @@ def step_at(text: str, phrase: str) -> int:
 
 
 def copy_with(name: str, before_step: str = "", after_step: str = "") -> Path:
-    """A copy of the build's inputs with one line placed before or after the static path step."""
+    """A copy of the build's inputs with one step placed before or after the static path step."""
     target = build_inputs.copy_inputs(WORK / name)
     path = target / editor_plan.DOCKERFILE
     text = path.read_text(encoding="utf-8")
@@ -149,7 +152,7 @@ class ABrowserRunsTheImageItIsServed(unittest.TestCase):
     def setUpClass(cls):
         cls.a = build(ROOT)
         cls.b = build(copy_with("b", before_step=EDIT_B))
-        cls.a2 = build(copy_with("a2", after_step=EDIT_A2))
+        cls.a2 = build(copy_with("a2", before_step=EDIT_A2))
 
     @classmethod
     def tearDownClass(cls):
