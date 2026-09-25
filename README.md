@@ -229,9 +229,11 @@ computes and needs neither.
   the sha256 `editor-pins.json` records under `face`, serves them beside the
   workbench's stylesheet and declares them there, and the lockdown's manifest
   makes the family the editor's default (`configurationDefaults`), so a
-  reader's own `editor.fontFamily` still wins. ⭐ Ligatures are on by default
-  too (`editor.fontLigatures`): the page leaves `font-variant-ligatures` at
-  `normal`, so its `!=` and `->` are drawn joined, measured on a built page. The licence ships beside them.
+  reader's own `editor.fontFamily` still wins. ⛔ Ligatures are off by default
+  (`editor.fontLigatures`), as on the page: `!=` drawn as one not-equal sign
+  reads as a different operator in code the reader must type, so the page sets
+  `font-variant-ligatures: none` on code and the editor draws `!=` and `->` as
+  the characters they are, measured in a browser. The licence ships beside them.
   ⚠️ The workbench draws in the reader's browser, so a face held on disk would
   never reach it, and its content policy allows fonts from its own origin
   only.
@@ -369,7 +371,7 @@ the workbench provides — no build step, no dependencies, and nothing fetched.
   workbench accepts the keys a study server writes, and treats a change to that
   section as the one signal that the practice moved. ⭐ Its manifest also
   carries the editor's defaults (`configurationDefaults`): the page's code
-  face and its ligatures, and the extensions' call-homes switched off (both
+  face with its ligatures off, and the extensions' call-homes switched off (both
   above). They are defaults, so a setting of the reader's wins.
 - ⚠️ **It is not a security boundary.** code-server is an IDE with a shell;
   this removes the ways *in*, not the possibility. The boundary is the

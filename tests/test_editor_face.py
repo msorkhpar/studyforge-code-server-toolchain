@@ -128,10 +128,10 @@ class TheFaceIsPinnedAndDeclared(unittest.TestCase):
         family = MANIFEST["contributes"]["configurationDefaults"]["editor.fontFamily"]
         self.assertTrue(family.startswith(f"'{face.FAMILY}'"), family)
 
-    def test_the_editor_draws_ligatures_by_default_as_the_page_does(self):
-        """The page leaves `font-variant-ligatures` at `normal`, so JetBrains Mono's
-        contextual ligatures (`!=`, `->`) are drawn there; measured on a built page."""
-        self.assertIs(MANIFEST["contributes"]["configurationDefaults"]["editor.fontLigatures"], True)
+    def test_the_editor_draws_no_ligature_by_default_as_the_page_does(self):
+        """The page sets `font-variant-ligatures: none` on code, because `!=` joined into
+        a not-equal sign misleads in code; the editor matches it."""
+        self.assertIs(MANIFEST["contributes"]["configurationDefaults"]["editor.fontLigatures"], False)
 
 
 @unittest.skipUnless(os.environ.get("TC_DOCKER") == "1", "set TC_DOCKER=1 to build images and run containers")
@@ -193,18 +193,18 @@ class TheEditorDrawsThePageFace(unittest.TestCase):
         self.assertEqual(drawn["twice"], ([REGULAR], "400"), drawn)
         for keyword in ("public", "class", "return"):
             self.assertEqual(drawn[keyword], ([BOLD], "700"), drawn)
-        self.assertTrue(drawn[LIGATURES], "`!=` drew the same with its ligatures off: none was drawn")
+        self.assertFalse(drawn[LIGATURES], f"`!=` drew differently with its ligatures off: one was drawn: {drawn}")
 
     def test_the_declaration_planted_out_draws_another_face(self):
         drawn = self._drawn(self._plant(f"RUN sed -i '/studyforge: the page.s code face/,$d' {WORKBENCH}/workbench.css"))
         self.assertNotIn(REGULAR, drawn["value"][0], f"the plant still drew the page face, so this is blind: {drawn}")
 
-    def test_the_ligature_default_planted_out_draws_none(self):
+    def test_the_ligature_default_planted_on_draws_one(self):
         drawn = self._drawn(self._plant(
-            "RUN sed -i 's/\"editor.fontLigatures\"/\"notEditor.fontLigatures\"/' "
+            "RUN sed -i 's/\"editor.fontLigatures\": false/\"editor.fontLigatures\": true/' "
             "/opt/code-server/extensions/studyforge.practice-focus-*/package.json"))
         self.assertEqual(drawn["value"], ([REGULAR], "400"), f"the plant changed the face as well: {drawn}")
-        self.assertFalse(drawn[LIGATURES], f"the plant still drew a ligature, so this is blind: {drawn}")
+        self.assertTrue(drawn[LIGATURES], f"the plant drew no ligature, so this reading is blind: {drawn}")
 
     def test_the_default_planted_out_draws_another_face(self):
         drawn = self._drawn(self._plant(
