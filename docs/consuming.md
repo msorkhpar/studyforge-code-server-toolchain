@@ -197,6 +197,13 @@ image, so docker would create it root-owned and no build could write `.gradle/`,
 `.kotlin/` or `build/` into it. A named volume there is root-owned for the same
 reason. The source binds sit inside the tmpfs.
 
+⭐ **Every bind source is the project's own directory, written relative to the
+compose file** (`./sources`), and everything else is a named volume or a
+`tmpfs`. ⛔ Never a host temporary directory and never an absolute host path
+written at build time: the register's direction is that the compose file runs on
+any engine, Docker Desktop (which shares no host `/tmp`) and Windows (which has
+none) included, and a relative bind is the one form Compose resolves on both.
+
 ### 3. Run as the repository owner's uid:gid
 
 `editor.runs_as.compose_value` goes under `editor.runs_as.compose_key`. The

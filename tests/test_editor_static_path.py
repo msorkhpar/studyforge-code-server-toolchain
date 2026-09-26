@@ -35,7 +35,6 @@ import re
 import socket
 import subprocess
 import sys
-import tempfile
 import time
 import unittest
 import uuid
@@ -163,40 +162,30 @@ class ABrowserRunsTheImageItIsServed(unittest.TestCase):
     def _one_browser(self, first: str, then: str) -> tuple[dict, dict]:
         """Load `first`, replace its container by `then` on the SAME port, and load again in the same tab."""
         port, debug, readings, name = free_port(), free_port(), [], None
-        with tempfile.TemporaryDirectory(prefix="static-path-") as scratch:
-            sources = Path(scratch) / "sources"
-            sources.mkdir()
-            (sources / probe.MAIN).write_text(probe.MAIN_TEXT, encoding="utf-8")
-            Path(scratch).chmod(0o755)
-            browser = subprocess.Popen(
-                [activation.browser(), *activation.BROWSER_FLAGS, f"--remote-debugging-port={debug}",
-                 f"--user-data-dir={Path(scratch) / 'profile'}", "about:blank"],
-                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            try:
-                page = cdp.wait_for_target(debug, "about:blank")
-                with cdp.Session(page["webSocketDebuggerUrl"]) as session:
-                    session.call("Page.enable")
-                    session.call("Runtime.enable")
-                    for image in (first, then):
-                        name = f"static-path-{uuid.uuid4().hex[:12]}"
-                        run(["docker", "run", "-d", "--name", name, "--init", "--user", f"{os.getuid()}:{os.getgid()}",
-                             "-p", f"127.0.0.1:{port}:8080", "--tmpfs", "/home/coder/repo",
-                             "-v", f"{sources}:{activation.SOURCES}", image, *activation.command_of(image)], check=True)
-                        activation.wait_for_health(port)
-                        # ⚠️ Through a blank page, so the reading below can never be the previous document's.
-                        session.call("Page.navigate", {"url": "about:blank"})
-                        time.sleep(1.0)
-                        session.call("Page.navigate", {"url": activation.workbench_url(port, name=probe.MAIN)})
-                        time.sleep(2.0)
-                        probe.wait_for_editor(session)
-                        readings.append(cdp.evaluate(session, READ))
-                        run(["docker", "rm", "-f", name])
-                        name = None
-            finally:
-                browser.terminate()
-                browser.wait(timeout=20)
-                if name:
+        volume = f"static-path-{uuid.uuid4().hex[:12]}"
+        browser = activation.Browser(activation.browser(), f"--remote-debugging-port={debug}", "about:blank")
+        try:
+            activation.seed(first, volume, {probe.MAIN: probe.MAIN_TEXT})
+            page = cdp.wait_for_target(debug, "about:blank")
+            with cdp.Session(page["webSocketDebuggerUrl"]) as session:
+                session.call("Page.enable")
+                session.call("Runtime.enable")
+                for image in (first, then):
+                    name = f"static-path-{uuid.uuid4().hex[:12]}"
+                    activation.start(image, name, volume, port=port)
+                    activation.wait_for_health(port)
+                    # ⚠️ Through a blank page, so the reading below can never be the previous document's.
+                    session.call("Page.navigate", {"url": "about:blank"})
+                    time.sleep(1.0)
+                    session.call("Page.navigate", {"url": activation.workbench_url(port, name=probe.MAIN)})
+                    time.sleep(2.0)
+                    probe.wait_for_editor(session)
+                    readings.append(cdp.evaluate(session, READ))
                     run(["docker", "rm", "-f", name])
+                    name = None
+        finally:
+            browser.close()
+            activation.remove(name, volume)
         return readings[0], readings[1]
 
     def test_a_then_b_runs_bs_files_fetched_over_the_network(self):

@@ -1,8 +1,9 @@
 """One Java practice window in an editor image, for the tests that read a live workbench.
 
 Not a test module. `container(image, kind)` starts a container of `image`
-with the image's own command line (`activation.start`) and bind-mounts a folder
-holding one Java file and the workspace settings a study page writes for it;
+with the image's own command line (`activation.start`) and mounts a named volume
+(`activation.seed`, never a host temporary directory) holding one Java file and
+the workspace settings a study page writes for it;
 `browser(...)` opens a headless browser at `about:blank` with its debugger on
 and yields an `Opened`, whose `url` is the workbench URL a study page builds
 for that file; `opened(image, kind)` is both. Each removes what it started,
@@ -68,47 +69,34 @@ def run(command: list[str], **kwargs) -> subprocess.CompletedProcess:
 
 @contextlib.contextmanager
 def container(image: str, kind: str):
-    """One container of `image` serving the Java practice folder: yields (name, port, scratch)."""
+    """One container of `image` serving the Java practice folder: yields (name, port)."""
     name = f"{kind}-probe-{uuid.uuid4().hex[:12]}"
-    with tempfile.TemporaryDirectory(prefix=f"{kind}-probe-") as scratch:
-        sources = Path(scratch) / "sources"
-        (sources / ".vscode").mkdir(parents=True)
-        (sources / MAIN).write_text(SOURCE, encoding="utf-8")
-        (sources / ".vscode" / "settings.json").write_text(json.dumps(SETTINGS), encoding="utf-8")
-        for path in (Path(scratch), sources, sources / ".vscode"):
-            path.chmod(0o755)
-        try:
-            activation.start(image, name, sources)
-            port = activation.published_port(name)
-            activation.wait_for_health(port)
-            yield name, port, Path(scratch)
-        finally:
-            run(["docker", "rm", "-f", name])
+    try:
+        activation.seed(image, name, {MAIN: SOURCE, ".vscode/settings.json": json.dumps(SETTINGS)})
+        activation.start(image, name, name)
+        port = activation.published_port(name)
+        activation.wait_for_health(port)
+        yield name, port
+    finally:
+        activation.remove(name, name)
 
 
 @contextlib.contextmanager
-def browser(name: str, port: int, profile: Path):
+def browser(name: str, port: int):
     """A headless browser at `about:blank`, its debugger on; yields an `Opened`."""
     debug = probe.free_port()
-    session = subprocess.Popen(
-        [activation.browser(), *activation.BROWSER_FLAGS, f"--remote-debugging-port={debug}",
-         f"--user-data-dir={profile}", "about:blank"],
-        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    try:
-        yield Opened(name, port, debug, cdp.wait_for_target(debug, "about:blank"), session)
-    finally:
-        if session.poll() is None:
-            session.terminate()
-            try:
-                session.wait(timeout=20)
-            except subprocess.TimeoutExpired:
-                session.kill()
+    with activation.Browser(activation.browser(), f"--remote-debugging-port={debug}", "about:blank") as session:
+        try:
+            page = cdp.wait_for_target(debug, "about:blank")
+        except cdp.CdpError as refusal:
+            raise cdp.CdpError(f"{refusal}\nthe browser's last lines:\n{session.tail()}") from refusal
+        yield Opened(name, port, debug, page, session.process)
 
 
 @contextlib.contextmanager
 def opened(image: str, kind: str):
     """One container and one browser in it: the common case."""
-    with container(image, kind) as (name, port, scratch), browser(name, port, scratch / "profile") as page:
+    with container(image, kind) as (name, port), browser(name, port) as page:
         yield page
 
 

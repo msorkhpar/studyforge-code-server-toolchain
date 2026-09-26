@@ -149,48 +149,40 @@ class NoSessionForksAnAgentHost(unittest.TestCase):
         found = activation.browser()
         name = f"agent-host-probe-{uuid.uuid4().hex[:12]}"
         seen = {"forks": set(), "agent": [], "console": [], "log": ""}
-        with tempfile.TemporaryDirectory(prefix="agent-host-probe-") as scratch:
-            sources = Path(scratch) / "sources"
-            sources.mkdir()
-            (sources / confinement.MAIN).write_text(confinement.MAIN_TEXT, encoding="utf-8")
-            Path(scratch).chmod(0o755)
-            debug = confinement.free_port()
-            browser = None
-            try:
-                activation.start(image, name, sources)
-                port = activation.published_port(name)
-                activation.wait_for_health(port)
-                browser = subprocess.Popen(
-                    [found, *activation.BROWSER_FLAGS, f"--remote-debugging-port={debug}",
-                     f"--user-data-dir={Path(scratch) / 'profile'}", "about:blank"],
-                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                page = cdp.wait_for_target(debug, "about:blank")
-                with cdp.Session(page["webSocketDebuggerUrl"]) as session:
-                    session.call("Page.enable")
-                    session.call("Runtime.enable")
-                    session.call("Page.addScriptToEvaluateOnNewDocument", {"source": CONSOLE})
-                    session.call("Page.navigate", {"url": activation.workbench_url(port, name=confinement.MAIN)})
-                    deadline = time.monotonic() + WATCH + activation.HEALTH_TIMEOUT
-                    watched = None
-                    while watched is None or time.monotonic() < watched + WATCH:
-                        self.assertLess(time.monotonic(), deadline, "the workbench never painted")
-                        if watched is None and cdp.evaluate(session, "!!document.querySelector('.monaco-workbench')"):
-                            watched = time.monotonic()
-                        listing = run(["docker", "exec", name, "ps", "-eo", "args", "--width", "400"]).stdout
-                        for line in listing.splitlines():
-                            if "--type=" in line:
-                                seen["forks"].add(line.split("--type=", 1)[1].split()[0])
-                            if "agentHost" in line or "copilot" in line:
-                                seen["agent"].append(line)
-                        time.sleep(1)
-                    seen["console"] = list(cdp.evaluate(session, "window.__console") or [])
-                logs = run(["docker", "logs", name])
-                seen["log"] = logs.stdout + logs.stderr
-            finally:
-                if browser is not None:
-                    browser.terminate()
-                    browser.wait(timeout=20)
-                run(["docker", "rm", "-f", name])
+        debug = confinement.free_port()
+        browser = None
+        try:
+            activation.seed(image, name, {confinement.MAIN: confinement.MAIN_TEXT})
+            activation.start(image, name, name)
+            port = activation.published_port(name)
+            activation.wait_for_health(port)
+            browser = activation.Browser(found, f"--remote-debugging-port={debug}", "about:blank")
+            page = cdp.wait_for_target(debug, "about:blank")
+            with cdp.Session(page["webSocketDebuggerUrl"]) as session:
+                session.call("Page.enable")
+                session.call("Runtime.enable")
+                session.call("Page.addScriptToEvaluateOnNewDocument", {"source": CONSOLE})
+                session.call("Page.navigate", {"url": activation.workbench_url(port, name=confinement.MAIN)})
+                deadline = time.monotonic() + WATCH + activation.HEALTH_TIMEOUT
+                watched = None
+                while watched is None or time.monotonic() < watched + WATCH:
+                    self.assertLess(time.monotonic(), deadline, "the workbench never painted")
+                    if watched is None and cdp.evaluate(session, "!!document.querySelector('.monaco-workbench')"):
+                        watched = time.monotonic()
+                    listing = run(["docker", "exec", name, "ps", "-eo", "args", "--width", "400"]).stdout
+                    for line in listing.splitlines():
+                        if "--type=" in line:
+                            seen["forks"].add(line.split("--type=", 1)[1].split()[0])
+                        if "agentHost" in line or "copilot" in line:
+                            seen["agent"].append(line)
+                    time.sleep(1)
+                seen["console"] = list(cdp.evaluate(session, "window.__console") or [])
+            logs = run(["docker", "logs", name])
+            seen["log"] = logs.stdout + logs.stderr
+        finally:
+            if browser is not None:
+                browser.close()
+            activation.remove(name, name)
         return seen
 
     def test_the_tagged_image_carries_no_copilot_module(self):

@@ -1,8 +1,10 @@
 """One practice-shaped session in an editor image: a container, a folder and a browser at its workbench.
 
 **What it does.** `session(image, kind)` starts a container from `image` with
-the image's own command line, bind-mounts a folder shaped like a practice (the
-file the URL opens, and a second file to be tempted by), waits for the server's
+the image's own command line, mounts a folder shaped like a practice (the file
+the URL opens, and a second file to be tempted by) as a named volume seeded
+through the Docker CLI -- never a host temporary directory, so it runs on any
+engine, Windows included -- waits for the server's
 health, and opens a headless browser with its debugger at the workbench URL a
 study page builds. It yields `(container, port, debugger port)` and removes the
 container afterwards, whatever happened. `wait_for_editor(session)` answers
@@ -15,7 +17,8 @@ split out of `confinement.py` when that file reached the 400-line bound,
 with no change to what either does: the names below are re-exported there.
 
 **Depends on.** The standard library, `activation.py` (container, browser and
-the workbench URL) and `cdp.py`. ⛔ A missing browser REFUSES rather than skips,
+the workbench URL, through `engine.py`) and `cdp.py`. ⛔ A probe that fails
+quotes the browser's own last lines, which are never discarded. ⛔ A missing browser REFUSES rather than skips,
 through `activation.browser()`; no Docker socket is mounted: it runs `docker`
 from outside, like everything else here.
 """
@@ -24,9 +27,7 @@ from __future__ import annotations
 
 import contextlib
 import socket
-import subprocess
 import sys
-import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -64,42 +65,37 @@ def session(image: str, kind: str):
     """
     found = activation.browser()
     name = f"{kind}-probe-{uuid.uuid4().hex[:12]}"
-    with tempfile.TemporaryDirectory(prefix=f"{kind}-probe-") as scratch:
-        sources = Path(scratch) / "sources"
-        sources.mkdir()
-        (sources / MAIN).write_text(MAIN_TEXT, encoding="utf-8")
-        (sources / OTHER).write_text(OTHER_TEXT, encoding="utf-8")
-        Path(scratch).chmod(0o755)
-        try:
-            activation.start(image, name, sources)
-            port = activation.published_port(name)
-            activation.wait_for_health(port)
-            with _browser(found, port, Path(scratch) / "profile") as debug:
-                yield name, port, debug
-        finally:
-            subprocess.run(["docker", "rm", "-f", name], stdin=subprocess.DEVNULL, capture_output=True)
+    try:
+        activation.seed(image, name, {MAIN: MAIN_TEXT, OTHER: OTHER_TEXT})
+        activation.start(image, name, name)
+        port = activation.published_port(name)
+        activation.wait_for_health(port)
+        with _browser(found, port) as debug:
+            yield name, port, debug
+    finally:
+        activation.remove(name, name)
 
 
 class _browser:
-    """The headless browser, with its debugger open, for as long as the probe needs it."""
+    """The headless browser, with its debugger open, for as long as the probe needs it.
 
-    def __init__(self, found: str, port: int, profile: Path):
+    ⛔ A refusal raised while it is open carries the browser's last lines.
+    """
+
+    def __init__(self, found: str, port: int):
         self.debug = free_port()
         url = activation.workbench_url(port, name=MAIN)
-        self.session = subprocess.Popen(
-            [found, *activation.BROWSER_FLAGS, f"--remote-debugging-port={self.debug}",
-             f"--user-data-dir={profile}", url],
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.session = activation.Browser(found, f"--remote-debugging-port={self.debug}", url)
 
     def __enter__(self) -> int:
         return self.debug
 
-    def __exit__(self, *_) -> None:
-        self.session.terminate()
-        try:
-            self.session.wait(timeout=20)
-        except subprocess.TimeoutExpired:
-            self.session.kill()
+    def __exit__(self, kind, error, _trace) -> None:
+        said = self.session.tail()
+        self.session.close()
+        if isinstance(error, (Refused, cdp.CdpError)) and said and not getattr(error, "browser", None):
+            error.browser = said
+            error.args = (f"{error.args[0] if error.args else error}\nthe browser's last lines:\n{said}",)
 
 
 _EDITOR_BOX = """(() => {

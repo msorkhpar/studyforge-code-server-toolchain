@@ -137,38 +137,30 @@ class TheSideBarIsNeverPainted(unittest.TestCase):
         """
         found = activation.browser()
         name = f"layout-probe-{uuid.uuid4().hex[:12]}"
-        with tempfile.TemporaryDirectory(prefix="layout-probe-") as scratch:
-            sources = Path(scratch) / "sources"
-            sources.mkdir()
-            (sources / confinement.MAIN).write_text(confinement.MAIN_TEXT, encoding="utf-8")
-            Path(scratch).chmod(0o755)
-            debug = confinement.free_port()
-            browser = None
-            try:
-                activation.start(image, name, sources)
-                port = activation.published_port(name)
-                activation.wait_for_health(port)
-                browser = subprocess.Popen(
-                    [found, *activation.BROWSER_FLAGS, f"--remote-debugging-port={debug}",
-                     f"--user-data-dir={Path(scratch) / 'profile'}", "about:blank"],
-                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                page = cdp.wait_for_target(debug, "about:blank")
-                with cdp.Session(page["webSocketDebuggerUrl"]) as session:
-                    session.call("Page.enable")
-                    session.call("Runtime.enable")
-                    session.call("Page.addScriptToEvaluateOnNewDocument", {"source": PAINTED})
-                    session.call("Page.navigate", {"url": activation.workbench_url(port, name=confinement.MAIN)})
-                    deadline = time.monotonic() + activation.HEALTH_TIMEOUT
-                    while not cdp.evaluate(session, "!!(window.__sidebar && window.__sidebar.workbench)"):
-                        self.assertLess(time.monotonic(), deadline, "the workbench never painted")
-                        time.sleep(0.25)
-                    time.sleep(WATCH)
-                    return dict(cdp.evaluate(session, "window.__sidebar"))
-            finally:
-                if browser is not None:
-                    browser.terminate()
-                    browser.wait(timeout=20)
-                run(["docker", "rm", "-f", name])
+        debug = confinement.free_port()
+        browser = None
+        try:
+            activation.seed(image, name, {confinement.MAIN: confinement.MAIN_TEXT})
+            activation.start(image, name, name)
+            port = activation.published_port(name)
+            activation.wait_for_health(port)
+            browser = activation.Browser(found, f"--remote-debugging-port={debug}", "about:blank")
+            page = cdp.wait_for_target(debug, "about:blank")
+            with cdp.Session(page["webSocketDebuggerUrl"]) as session:
+                session.call("Page.enable")
+                session.call("Runtime.enable")
+                session.call("Page.addScriptToEvaluateOnNewDocument", {"source": PAINTED})
+                session.call("Page.navigate", {"url": activation.workbench_url(port, name=confinement.MAIN)})
+                deadline = time.monotonic() + activation.HEALTH_TIMEOUT
+                while not cdp.evaluate(session, "!!(window.__sidebar && window.__sidebar.workbench)"):
+                    self.assertLess(time.monotonic(), deadline, "the workbench never painted")
+                    time.sleep(0.25)
+                time.sleep(WATCH)
+                return dict(cdp.evaluate(session, "window.__sidebar"))
+        finally:
+            if browser is not None:
+                browser.close()
+            activation.remove(name, name)
 
     def test_the_tagged_image_paints_no_side_bar_from_its_first_frame(self):
         seen = self._watch(self.tag)

@@ -25,7 +25,12 @@ tag's. It also runs standalone against any image reference:
     python3 docker/editor/activation.py code-server-toolchain/editor:<tag>
 
 **Depends on.** The standard library, a Docker CLI, and a Chromium-family
-browser on the host. ⛔ **A missing browser REFUSES rather than skips**: a gate
+browser on the host. ⭐ **Any engine, Windows included**: the probe folder is a
+NAMED VOLUME seeded through the Docker CLI's stdin, never a bind of a host
+temporary directory, so an engine that shares no host `/tmp` (Docker Desktop)
+or a host that has none (Windows) runs it unchanged. ⭐ `docker` is the plain
+CLI, so `DOCKER_CONTEXT` (or the current context) picks the engine; nothing
+here switches a context. ⛔ **A missing browser REFUSES rather than skips**: a gate
 that can be absent is not a gate, and this one exists because the previous one
 passed while the product was broken. ⛔ It mounts no Docker socket: it runs
 `docker` from outside, like everything else here, because a socket inside a
@@ -39,7 +44,6 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -53,9 +57,14 @@ COMPONENT = HERE.parents[1]
 sys.path.insert(0, str(COMPONENT / "lockdown"))
 import lockdown as lockdown_extension  # noqa: E402
 
-
-class Refused(Exception):
-    """A probe that could not be run, or an image that did not pass it."""
+if str(HERE) not in sys.path:
+    sys.path.append(str(HERE))  # appended: `build` must stay the runner's for `build.py`
+# ⭐ What a probe asks of the engine and of the host's browser lives in
+# `engine.py`, split out at the 400-line bound; the names are re-exported here.
+from engine import (  # noqa: E402, F401
+    BROWSER_FLAGS, BROWSER_TAIL, DEFAULT_USER, SHORT_BASE, SOURCES, Browser, Refused, command_of, docker_cli,
+    host_user, remove, seed, short_base, start,
+)
 
 
 #: The browsers this looks for, in order. ⭐ `STUDYFORGE_BROWSER` overrides the
@@ -63,14 +72,6 @@ class Refused(Exception):
 #: patching this file.
 BROWSERS = ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome")
 BROWSER_ENV = "STUDYFORGE_BROWSER"
-#: Headless, its own throwaway profile, and nothing of the host's: this must
-#: never touch a person's browser while it runs on their machine.
-BROWSER_FLAGS = ("--headless=new", "--disable-gpu", "--disable-dev-shm-usage", "--no-first-run",
-                 "--no-default-browser-check", "--disable-extensions", "--mute-audio")
-#: Where the consuming contract binds a corpus's sources. The folder is a BIND
-#: MOUNT the workbench has never been told to trust, which is exactly the
-#: condition the lockdown has to survive.
-SOURCES = "/home/coder/repo/sources"
 #: Where the image installs its extensions, which is the image's own `CMD`'s
 #: `--extensions-dir`. Named here so a test can read the installed list of an
 #: image this module refused.
@@ -94,6 +95,10 @@ class Proof:
     banner: str | None
     #: What the extension host logged, for a refusal to quote rather than summarise.
     log: str
+    #: The browser's own last lines, quoted by a refusal. ⛔ Never discarded: a
+    #: browser that died is otherwise indistinguishable from a lockdown that did
+    #: not run.
+    browser: str = ""
 
     @property
     def ok(self) -> bool:
@@ -105,7 +110,8 @@ class Proof:
             missing.append("the extension host activated it in no session")
         if not self.banner:
             missing.append("the extension printed no banner, so it activated and did not run")
-        return f"{self.image}: the lockdown did not run -- {'; '.join(missing)}"
+        said = f"\nthe browser's last lines:\n{self.browser}" if self.browser.strip() else ""
+        return f"{self.image}: the lockdown did not run -- {'; '.join(missing)}{said}"
 
 
 def browser(env=None) -> str:
@@ -137,50 +143,21 @@ def workbench_url(port: int, folder: str = SOURCES, name: str = PROBE_FILE) -> s
     return f"http://127.0.0.1:{port}/?{query}"
 
 
-def command_of(image: str) -> list[str]:
-    """The image's OWN command line, with authentication turned off for the probe.
-
-    ⛔ The probe runs what the image SHIPS -- the defect this gate exists for was a flag the contract
-    carried and the image's `CMD` did not, so a probe that invented its own
-    command line would have proved nothing. ⭐ Only `--auth` is added: a
-    password would have to be generated, held and then kept out of a log, and
-    the probe has no business owning a secret.
-    """
-    inspected = docker_cli("image", "inspect", "--format", "{{json .Config.Cmd}}", image)
-    cmd = json.loads(inspected.stdout.strip() or "null")
-    if not cmd:
-        raise Refused(f"{image} declares no CMD, so there is no shipped command line to prove")
-    return list(cmd) + ["--auth=none"]
-
-
 def prove(image: str, lock=None, keep: bool = False) -> Proof:
     """Run `image`, open a workbench in it, and read what the extension host did."""
     lock = lock or lockdown_extension.identity(COMPONENT / "lockdown")
     found = browser()
     name = f"lockdown-probe-{uuid.uuid4().hex[:12]}"
-    with tempfile.TemporaryDirectory(prefix="lockdown-probe-") as scratch:
-        sources = Path(scratch) / "sources"
-        sources.mkdir()
-        (sources / PROBE_FILE).write_text(PROBE_TEXT, encoding="utf-8")
-        os.chmod(scratch, 0o755)
-        try:
-            start(image, name, sources)
-            port = published_port(name)
-            wait_for_health(port)
-            proof = _drive(found, image, name, port, lock, Path(scratch) / "profile")
-        finally:
-            if not keep:
-                subprocess.run(["docker", "rm", "-f", name], stdin=subprocess.DEVNULL, capture_output=True)
+    try:
+        seed(image, name, {PROBE_FILE: PROBE_TEXT})
+        start(image, name, name)
+        port = published_port(name)
+        wait_for_health(port)
+        proof = _drive(found, image, name, port, lock)
+    finally:
+        if not keep:
+            remove(name, name)
     return proof
-
-
-def start(image: str, name: str, sources: Path) -> None:
-    docker_cli("run", "-d", "--name", name, "--init",
-            "--user", f"{os.getuid()}:{os.getgid()}",
-            "-p", "127.0.0.1::8080",
-            "--tmpfs", "/home/coder/repo",
-            "-v", f"{sources}:{SOURCES}",
-            image, *command_of(image))
 
 
 def published_port(name: str) -> int:
@@ -203,27 +180,28 @@ def wait_for_health(port: int) -> None:
     raise Refused(f"the editor never answered /healthz on 127.0.0.1:{port} within {HEALTH_TIMEOUT:.0f}s")
 
 
-def _drive(found: str, image: str, name: str, port: int, lock, profile: Path) -> Proof:
-    """Open the workbench and poll the container's extension-host log until both lines are there."""
+def _drive(found: str, image: str, name: str, port: int, lock) -> Proof:
+    """Open the workbench and poll the container's extension-host log until both lines are there.
+
+    ⛔ A browser that exits ends the wait at once, and every refusal carries its
+    last lines: a dead browser is otherwise "activated in no session".
+    """
     activation = f"_doActivateExtension {lock.id}"
-    session = subprocess.Popen(
-        [found, *BROWSER_FLAGS, f"--user-data-dir={profile}", workbench_url(port)],
-        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    try:
+    with Browser(found, workbench_url(port)) as session:
         deadline, log = time.monotonic() + ACTIVATION_TIMEOUT, ""
         while time.monotonic() < deadline:
             log = exthost_log(name, lock)
             proof = _read(image, log, activation, lock.banner)
             if proof.ok:
                 return proof
+            if session.exited():
+                break
             time.sleep(POLL)
-        return _read(image, log, activation, lock.banner)
-    finally:
-        session.terminate()
-        try:
-            session.wait(timeout=20)
-        except subprocess.TimeoutExpired:
-            session.kill()
+        proof = _read(image, log, activation, lock.banner)
+        if proof.ok:
+            return proof
+        said = session.tail() or f"(the browser printed nothing; it {'exited' if session.exited() else 'was still running'})"
+        return Proof(proof.image, proof.activated, proof.banner, proof.log, said)
 
 
 def _read(image: str, log: str, activation: str, banner: str) -> Proof:
@@ -248,13 +226,6 @@ def exthost_log(name: str, lock) -> str:
          f"cat {LOGS}/*/exthost*/remoteexthost.log {LOGS}/*/exthost*/{lock.id}/{lock.record} 2>/dev/null"],
         stdin=subprocess.DEVNULL, capture_output=True, text=True)
     return read.stdout
-
-
-def docker_cli(*args: str) -> subprocess.CompletedProcess:
-    done = subprocess.run(["docker", *args], stdin=subprocess.DEVNULL, capture_output=True, text=True)
-    if done.returncode != 0:
-        raise Refused(f"docker {' '.join(args[:2])} failed: {done.stderr.strip() or done.stdout.strip()}")
-    return done
 
 
 def main(argv: list[str]) -> int:
