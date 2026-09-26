@@ -130,7 +130,7 @@ class ASessionIsReleasedAndReconnects(unittest.TestCase):
             self.assertLess(time.monotonic(), deadline, "the session never started its extension host")
             time.sleep(3)
 
-    def _killed_sessions(self, count: int, name: str, port: int, scratch: Path) -> dict[int, float]:
+    def _killed_sessions(self, count: int, name: str, port: int) -> dict[int, float]:
         """`count` sessions, one after another, each ended by killing its browser outright.
 
         Returns {extension host: when its browser was killed}. ⭐ Each host is
@@ -139,7 +139,7 @@ class ASessionIsReleasedAndReconnects(unittest.TestCase):
         """
         killed: dict[int, float] = {}
         for number in range(count):
-            with java_session.browser(name, port, scratch / f"profile-{number}") as page:
+            with java_session.browser(name, port) as page:
                 with cdp.Session(page.page["webSocketDebuggerUrl"]) as s:
                     s.call("Page.navigate", {"url": page.url})
                     host = self._running(name, set(killed))
@@ -165,8 +165,8 @@ class ASessionIsReleasedAndReconnects(unittest.TestCase):
         return gone
 
     def test_closed_sessions_are_released_within_the_grace(self):
-        with java_session.container(self.tag, "idle") as (name, port, scratch):
-            killed = self._killed_sessions(SESSIONS, name, port, scratch)
+        with java_session.container(self.tag, "idle") as (name, port):
+            killed = self._killed_sessions(SESSIONS, name, port)
             gone = self._released(name, killed, grace() + MARGIN)
             time.sleep(10)
             servers = java_session.language_servers(name)
@@ -176,8 +176,8 @@ class ASessionIsReleasedAndReconnects(unittest.TestCase):
 
     def test_the_upstream_grace_planted_back_still_holds_a_closed_session(self):
         image = self._plant("")
-        with java_session.container(image, "idle-plant") as (name, port, scratch):
-            killed = self._killed_sessions(1, name, port, scratch)
+        with java_session.container(image, "idle-plant") as (name, port):
+            killed = self._killed_sessions(1, name, port)
             gone = self._released(name, killed, grace() + MARGIN)
         self.assertEqual(list(gone.values()), [None], f"the plant released the session, so this is blind: {gone}")
 
