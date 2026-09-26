@@ -206,7 +206,7 @@ class TheEditorImage(unittest.TestCase):
                                            + [LOCKDOWN.expected]))
 
     def test_the_bundled_chat_is_absent_from_the_product_not_merely_hidden(self):
-        """⛔ The chat is a BUILT-IN, so `--list-extensions` never named it (user report, 2026-09-22).
+        """⛔ The chat is a BUILT-IN, so `--list-extensions` never named it (defect report, 2026-09-22).
 
         ⚠️ The test that came closest, `test_the_installed_extensions_are_exactly_the_pins`,
         passed against every image that shipped it: it reads the installed

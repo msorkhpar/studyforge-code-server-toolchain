@@ -1,6 +1,6 @@
 """The editor shows no chat, agent or AI surface, on a fresh and on an existing user-data volume.
 
-⛔ **The reading this module started from** (user report): inside a practice
+⛔ **The reading this module started from** (a defect report): inside a practice
 workspace the editor showed a "Build with Agent" side bar with a chat input,
 "AI responses may be inaccurate" and "Generate Agent Instructions". The chat
 EXTENSION and the Copilot modules were already deleted; Code 1.137's workbench

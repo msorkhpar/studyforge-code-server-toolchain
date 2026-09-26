@@ -1,8 +1,8 @@
 """The practice frame never paints the Explorer — measured from the first frame.
 
-⛔ **The reading this row started from** (user, 2026-09-23): *"the left explore
-panel of the code-server remains open till the page is fully loaded and then it
-gets closed."* ⚠️ Measured on code-server 4.137.0 in a real browser: every
+⛔ **The defect this row started from** (reported 2026-09-23): the Explorer side
+bar of the code-server frame stayed open until the page had fully loaded, and
+only then closed. ⚠️ Measured on code-server 4.137.0 in a real browser: every
 frame painted the primary side bar from the workbench's first frame for up to
 seven seconds, until the lockdown's `closeSidebar` passes won. ⭐ The image now
 starts the side bar CLOSED (`docker/editor/Dockerfile`, the side bar step), and this
