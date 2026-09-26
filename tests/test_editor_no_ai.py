@@ -311,43 +311,34 @@ class NoAiSurfaceInASession(unittest.TestCase):
         """Open one practice-shaped window in `image`, wait for the probe, and read the screen."""
         found = activation.browser()
         name = f"no-ai-probe-{uuid.uuid4().hex[:12]}"
-        with tempfile.TemporaryDirectory(prefix="no-ai-probe-") as scratch:
-            sources = Path(scratch) / "sources"
-            sources.mkdir()
-            (sources / probe.MAIN).write_text(probe.MAIN_TEXT, encoding="utf-8")
-            Path(scratch).chmod(0o755)
-            mounts = ["-v", f"{volume}:{LOCAL}"] if volume else []
-            browser = None
-            try:
-                run(["docker", "run", "-d", "--name", name, "--init", "--user", f"{os.getuid()}:{os.getgid()}",
-                     "-p", "127.0.0.1::8080", "--tmpfs", "/home/coder/repo", "-v", f"{sources}:{activation.SOURCES}",
-                     *mounts, image, *activation.command_of(image)], check=True)
-                port = activation.published_port(name)
-                activation.wait_for_health(port)
-                debug = probe.free_port()
-                browser = subprocess.Popen(
-                    [found, *activation.BROWSER_FLAGS, "--window-size=1400,900", f"--remote-debugging-port={debug}",
-                     f"--user-data-dir={Path(scratch) / 'profile'}", activation.workbench_url(port, name=probe.MAIN)],
-                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                page = cdp.wait_for_target(debug, f":{port}/")
-                with cdp.Session(page["webSocketDebuggerUrl"]) as session:
-                    session.call("Runtime.enable")
-                    probe.wait_for_editor(session)
-                    seen = self._probe_report(name)
-                    time.sleep(3.0)  # let a chat the probe opened lay itself out
-                    seen["surface"] = cdp.evaluate(session, SURFACE)
-                    shot = session.call("Page.captureScreenshot", {"format": "png"}, timeout=60)
-                keep = os.environ.get("TC_SCREENSHOTS")
-                if keep:
-                    Path(keep).mkdir(parents=True, exist_ok=True)
-                    Path(keep, f"{label}.png").write_bytes(base64.b64decode(shot["data"]))
-                seen["log"] = run(["docker", "logs", name]).stdout
-                return seen
-            finally:
-                if browser is not None:
-                    browser.terminate()
-                    browser.wait(timeout=20)
-                run(["docker", "rm", "-f", name])
+        mounts = ["-v", f"{volume}:{LOCAL}"] if volume else []
+        browser = None
+        try:
+            activation.seed(image, name, {probe.MAIN: probe.MAIN_TEXT})
+            activation.start(image, name, name, *mounts)
+            port = activation.published_port(name)
+            activation.wait_for_health(port)
+            debug = probe.free_port()
+            browser = activation.Browser(found, "--window-size=1400,900", f"--remote-debugging-port={debug}",
+                                         activation.workbench_url(port, name=probe.MAIN))
+            page = cdp.wait_for_target(debug, f":{port}/")
+            with cdp.Session(page["webSocketDebuggerUrl"]) as session:
+                session.call("Runtime.enable")
+                probe.wait_for_editor(session)
+                seen = self._probe_report(name)
+                time.sleep(3.0)  # let a chat the probe opened lay itself out
+                seen["surface"] = cdp.evaluate(session, SURFACE)
+                shot = session.call("Page.captureScreenshot", {"format": "png"}, timeout=60)
+            keep = os.environ.get("TC_SCREENSHOTS")
+            if keep:
+                Path(keep).mkdir(parents=True, exist_ok=True)
+                Path(keep, f"{label}.png").write_bytes(base64.b64decode(shot["data"]))
+            seen["log"] = run(["docker", "logs", name]).stdout
+            return seen
+        finally:
+            if browser is not None:
+                browser.close()
+            activation.remove(name, name)
 
     def _probe_report(self, name: str) -> dict:
         """The fixture's `commands.json`, from THIS session's log directory (a volume keeps older ones)."""

@@ -305,11 +305,19 @@ the workbench provides — no build step, no dependencies, and nothing fetched.
   check that used to carry this guarantee passed in every one of those rounds.
   ⭐ **So the build now writes an image ID rather than a tag, opens a REAL
   workbench session in that image with a headless browser against an
-  UNTRUSTED bind-mounted folder — the shape every consumer serves — and applies
+  UNTRUSTED mounted folder — the shape every consumer serves — and applies
   the tag only once the extension host's log shows the extension activating
   AND the extension's own banner shows it ran.** ⛔ **A host with no browser
   refuses the build; it does not skip the proof.** The browsers it looks for,
   and the `STUDYFORGE_BROWSER` override, are that module's.
+- ⭐ **The proof runs on any engine, Docker Desktop and Windows included** (a
+  register direction). Its folder is a named volume seeded through the Docker
+  CLI's stdin (`docker/editor/engine.py`), never a bind of a host temporary
+  directory: Docker Desktop shares no host `/tmp` and refuses one, and Windows
+  has none. The browser's profile and `TMPDIR` are one short host directory,
+  and a failed proof quotes the browser's own last lines. ⭐ Every script runs
+  the plain `docker` CLI, so `DOCKER_CONTEXT` (or the current context) picks
+  the engine, and nothing here switches a context.
 - ⛔ **`--disable-workspace-trust` is part of the image's own `CMD`, and it is
   load-bearing.** ⚠️ The contract carried it in `consuming.json`'s
   `editor.command` while the image's `CMD` did not, so every consumer that
