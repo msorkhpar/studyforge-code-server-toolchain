@@ -98,7 +98,7 @@ class TheContract(unittest.TestCase):
             "no health check": (planted(healthcheck={}), "ordering is enforced by a health check"),
             # ⚠️ BOTH keys are planted deliberately. The plant used to set `default`
             # alone and relied on environment.0 being a required entry; when the
-            # PASSWORD entry was removed (user ruling 2026-09-22) environment.0
+            # PASSWORD entry was removed (register ruling 2026-09-22) environment.0
             # became a NOT-required one and the plant would have gone on passing
             # while planting nothing at all.
             "required and defaulted": (planted(**{"environment.0.required": True,

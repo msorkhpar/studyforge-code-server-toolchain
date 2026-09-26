@@ -190,7 +190,7 @@ class TheComposeContract(unittest.TestCase):
         self.assertEqual(found.stdout, "written on the host\n")
 
     def test_it_starts_unauthenticated_and_that_rests_on_the_loopback_bind(self):
-        """⛔ User ruling 2026-09-22: `--auth=none`, safe ONLY because the port is loopback.
+        """⛔ Register ruling 2026-09-22: `--auth=none`, safe ONLY because the port is loopback.
 
         ⚠️ This clause once said the opposite and was never read RED,
         because the class skipped on every host whose reader's editor held the

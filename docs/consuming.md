@@ -52,7 +52,7 @@ seed settings, the entrypoint — comes from the image.
 `GRADLE_USER_HOME`, and it has a default; the reference compose writes it
 explicitly so the seeded cache and the tool agree on one path. ⚠️ **It used to
 carry a second, `PASSWORD`, which you did have to supply** — that is gone with
-the auth mode (user ruling 2026-09-22).
+the auth mode (register ruling 2026-09-22).
 
 **The runtimes** are chosen when the image is BUILT, not when it is run:
 `editor.runtimes.declared_by` is `--runtimes`, `editor.runtimes.default_set` is
@@ -302,7 +302,7 @@ docker compose up -d --wait
 ```
 
 The editor is then at `http://127.0.0.1:8443/` — that literal host, and no
-other. ⛔ **It asks for no password** (`editor.command_notes.auth`, user ruling
+other. ⛔ **It asks for no password** (`editor.command_notes.auth`, register ruling
 2026-09-22): loopback is the whole of its access control, so publishing this
 port anywhere but `127.0.0.1` puts an unauthenticated shell on the network. `docker compose down -v` removes the containers and the volumes with
 them.
