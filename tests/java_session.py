@@ -68,12 +68,14 @@ def run(command: list[str], **kwargs) -> subprocess.CompletedProcess:
 
 
 @contextlib.contextmanager
-def container(image: str, kind: str):
-    """One container of `image` serving the Java practice folder: yields (name, port)."""
+def container(image: str, kind: str, *mounts: str):
+    """One container of `image` serving the Java practice folder: yields (name, port).
+
+    `mounts` are further `docker run` arguments, such as a user-data volume."""
     name = f"{kind}-probe-{uuid.uuid4().hex[:12]}"
     try:
         activation.seed(image, name, {MAIN: SOURCE, ".vscode/settings.json": json.dumps(SETTINGS)})
-        activation.start(image, name, name)
+        activation.start(image, name, name, *mounts)
         port = activation.published_port(name)
         activation.wait_for_health(port)
         yield name, port

@@ -15,13 +15,17 @@ const vscode = require('vscode');
 const fs = require('fs');
 const path = require('path');
 
-/** The ways into the chat: the view, the panel's own id, its toggle and Quick Chat.
- *  ⚠️ In this order, measured: with the toggle first, the plant left no view open. */
+/** The ways into the chat: Quick Chat, the toggle, the panel's own id and the view.
+ *  ⚠️ In this order, measured. The secondary side bar starts HIDDEN (the
+ *  Dockerfile step "THE SECONDARY SIDE BAR NEVER OPENS"), and with the view
+ *  asked for first, the toggle and the panel's id after it closed that bar
+ *  again, so the plant left only Quick Chat on screen and no chat view. The
+ *  view is asked for LAST so a plant is left looking at it. */
 const OPENERS = [
-    'workbench.action.chat.open',
-    'workbench.panel.chat',
-    'workbench.action.chat.toggle',
     'workbench.action.openQuickChat',
+    'workbench.action.chat.toggle',
+    'workbench.panel.chat',
+    'workbench.action.chat.open',
 ];
 const AFTER_THE_LOCKDOWN = 20000;
 
