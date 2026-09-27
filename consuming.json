@@ -1,10 +1,21 @@
 {
   "consuming_api": 1,
-  "provides": 4,
+  "provides": 5,
   "component": "code-server-toolchain",
   "not_yet_declared": [],
   "why_nothing_is_undeclared": "this component builds two images and both are declared here: the editor with the compose file a consumer renders, the runner with the run and exec lines a consumer issues, and each with what its tag promises. A hole found later is a finding against this file, and it is named in this list rather than left to a reader to discover",
   "releases": [
+    {
+      "provides": 5,
+      "summary": "every image this component builds is printed as the docker build it is (consuming/builds.py), and a course layer (docker/prime/Dockerfile) warms one consumer's prime on an unprimed runner or editor, so consumers of one declared set share both bases and each carries only its own caches",
+      "moves_every_tag": false,
+      "measured": "the editor's and the runner's inputs digests are unchanged from the release this follows: docker/prime and consuming/ are under neither block's image.tag.build_inputs, and builds.py prints the tags build.py --print-tag prints",
+      "re_verify": [
+        "nothing in a running container: this release adds keys, a script and a Dockerfile and changes no build input, so every tag you already pinned is still the tag this checkout computes",
+        "a compose build: render args, target and additional_contexts from builds.py, never from a Dockerfile, and read builds_api first",
+        "an editor you publish from a compose build: run the two commands in its proved_by against the built image before anybody pulls it"
+      ]
+    },
     {
       "provides": 4,
       "summary": "the runner's run shape from any shell: runner.runs_as declares a compose_key and compose_value, the editor's own, and a powershell_run_value, so a consumer on Windows renders a run line and a compose service with no POSIX substitution in either",
@@ -435,5 +446,67 @@
     "why_no_docker_socket": "spec 8.3: the Docker socket is never mounted into a serving process, not behind a flag and not only locally. A socket here would hand a graded run - which is a reader's unreviewed code - the host's daemon",
     "restart": "no",
     "why_restart_no": "the reader starts this container for a session of study and removes it after; a restart policy would bring a stranger's sources back up on every boot"
+  },
+  "builds": {
+    "what_it_is": "each image this component builds, printed as the docker build its own build runs: the Dockerfile, the target, every ARG, the named contexts, the images it starts FROM, which of those this component builds itself, the tag and the input roots its context carries",
+    "printed_by": [
+      "python3",
+      "consuming/builds.py",
+      "<runner|editor|runner-prime|editor-prime>",
+      "--runtimes",
+      "<the declared set>",
+      "--prime",
+      "<a prime directory, for a course layer>"
+    ],
+    "builds_api": 1,
+    "keys": [
+      "builds_api",
+      "image",
+      "context",
+      "dockerfile",
+      "target",
+      "platform",
+      "tag",
+      "args",
+      "from",
+      "built_here",
+      "contexts",
+      "inputs",
+      "proved_by"
+    ],
+    "why": "a consumer that builds with compose writes args, target and additional_contexts into its own file; copied from a Dockerfile they are a fork that drifts in silence, and read from here they are the plans' own values, so the image compose builds is the image build.py builds",
+    "no_host_path": "the context is this component's root, printed as a dot, and the prime is the named context consumer-prime, which the consumer supplies; nothing printed names a directory of the host that ran it",
+    "not_proved_by_a_compose_build": "the editor's two session proofs run in docker/editor/build.py between the build and the tag, with a browser; a compose build cannot run them, so proved_by names them and a consumer that publishes such an editor runs both against the built image"
+  },
+  "course_layer": {
+    "what_it_is": "one consumer's prime warmed on top of an unprimed runner or editor this component built for the same declared set, so every consumer of that set shares one base of each and carries only its own caches",
+    "dockerfile": "docker/prime/Dockerfile",
+    "targets": {
+      "runner": "runner-prime",
+      "editor": "editor-prime"
+    },
+    "base": "the unprimed tag builds.py prints for runner or editor on the same set, named by the ARG BASE_IMAGE",
+    "prime_roots": {
+      "runner": "/opt/prime",
+      "editor": "/opt/code-server/prime"
+    },
+    "tag": {
+      "scheme": "{base}-prime-{inputs}",
+      "parts": {
+        "base": "the unprimed base's own tag",
+        "inputs": "the leading twelve characters of a hash over docker/prime, prime/ and the prime's own digest"
+      },
+      "computed_by": [
+        "python3",
+        "consuming/builds.py",
+        "<runner-prime|editor-prime>",
+        "--runtimes",
+        "<the declared set>",
+        "--prime",
+        "<dir>"
+      ]
+    },
+    "same_as_a_primed_build": "the warm and the proof are the primed builds' own steps with the same warmers and the same seed roots, and the runner layer sets GRADLE_USER_HOME and MAVEN_ARGS from the same plan; what a layer holds is what a primed image holds",
+    "adds_nothing_else": "the layer adds caches only: the lockdown, the extensions and the settings seed are the base's, proved running on the base before it was tagged"
   }
 }
