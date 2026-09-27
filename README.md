@@ -368,7 +368,12 @@ the workbench provides — no build step, no dependencies, and nothing fetched.
   miss every existing volume, whose `settings.json` the entrypoint never
   touches; these edits hold on a fresh volume and on an existing one, even one
   whose settings turn the switch back off. Each edit must find exactly one
-  anchor, or the build fails naming it.
+  anchor, or the build fails naming it. ⭐ The secondary side bar, where the
+  chat's hidden container still lives, is hidden at EVERY start by the
+  layout's own override, before the first layout: it never paints, not even
+  for the second or so a Java frame spends opening its projects, on a first
+  start or a reload (`tests/test_editor_layout.py` and
+  `tests/test_editor_no_ai.py` read every frame).
 - ⛔ **A changed editor is never run from a browser's cache.** ⚠️ The
   workbench is served under `/stable-<commit>/static/` for a year, and that
   commit was code-server's own, the same for every image on one release: a
@@ -517,7 +522,7 @@ IDE with a shell on a port, and a socket there is root on the host.
 python3 -m unittest discover -s tests -v                   # the plans, pins and static checks
 TC_DOCKER=1 python3 -m unittest tests.test_image -v        # builds and runs the runner
 TC_DOCKER=1 python3 -m unittest tests.test_editor_image -v # builds and runs the editor
-TC_DOCKER=1 python3 -m unittest tests.test_editor_layout -v # the side bar is never painted
+TC_DOCKER=1 python3 -m unittest tests.test_editor_layout -v # neither side bar is ever painted
 TC_DOCKER=1 python3 -m unittest tests.test_editor_agent_host -v # no agent host, no Copilot CLI
 TC_DOCKER=1 python3 -m unittest tests.test_editor_no_ai -v # no chat, agent or AI surface
 TC_DOCKER=1 python3 -m unittest tests.test_editor_static_path -v # a changed editor is fetched, an unchanged one is not

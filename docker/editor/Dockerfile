@@ -279,6 +279,38 @@ RUN set -eu; \
         || { echo "$bundle: the side bar default was not replaced" >&2; exit 1; }; \
     done
 
+# ⛔ THE SECONDARY SIDE BAR NEVER OPENS, NOT EVEN WHILE THE WORKBENCH STARTS.
+# ⚠️ Measured on code-server 4.137.0 in a real browser, with every chat step
+# above in place: a Java practice frame painted the secondary side bar, headed
+# "Chat" (its active container `workbench.panel.chat`), for about 100 frames
+# after the workbench's first paint -- on a first start and again on a reload
+# -- and then it went away. The chat view container is still REGISTERED in
+# the product (its view is hidden, not unregistered), so the workbench never
+# learns the bar is empty, and upstream's default for a folder window,
+# `workbench.secondarySideBar.defaultVisibility: visibleInWorkspace`, opens it.
+# ⭐ WHY NOT A SETTING: the layout state that says whether the bar is open is
+# kept in the BROWSER's storage per workspace, and a stored "open" overrides
+# every default; a seeded setting would also miss every existing volume. So the
+# layout's own override runs first, on every start, before the first layout:
+# `applyOverrides` begins by hiding the bar, as upstream does for its agent
+# sessions welcome page. Nothing in a practice frame belongs in that bar.
+# ⛔ Exactly one `applyOverrides` per bundle before and one override after, or
+# the build fails. `tests/test_editor_layout.py` and `tests/test_editor_no_ai.py`
+# read every frame from before the workbench's first script, first start and
+# reload, and plant this edit back out.
+RUN set -eu; \
+    for bundle in /usr/lib/code-server/lib/vscode/out/vs/code/browser/workbench/workbench.js \
+                  /usr/lib/code-server/lib/vscode/out/vs/workbench/workbench.web.main.internal.js; do \
+      found="$(grep -o 'applyOverrides([a-zA-Z_$]*){if(this\.isNew\[1\])' "$bundle" | wc -l)"; \
+      [ "$found" = 1 ] \
+        || { echo "$bundle holds $found layout overrides; this step patches exactly one" >&2; exit 1; }; \
+      [ "$(grep -o 'applyAuxiliaryBarHiddenOverride([a-zA-Z_$]*){' "$bundle" | wc -l)" = 1 ] \
+        || { echo "$bundle: the secondary side bar's hidden override is not there to call" >&2; exit 1; }; \
+      sed -i 's/applyOverrides(\([a-zA-Z_$]*\)){if(this\.isNew\[1\])/applyOverrides(\1){this.applyAuxiliaryBarHiddenOverride(!0);if(this.isNew[1])/' "$bundle"; \
+      [ "$(grep -o 'applyOverrides([a-zA-Z_$]*){this\.applyAuxiliaryBarHiddenOverride(!0);' "$bundle" | wc -l)" = 1 ] \
+        || { echo "$bundle: the secondary side bar was not closed at start" >&2; exit 1; }; \
+    done
+
 # ⭐ THE EDITOR DRAWS CODE IN THE PAGE'S FACE. The workbench runs in the
 # READER's browser, so the face is SERVED beside the workbench's stylesheet
 # (its content policy allows fonts from its own origin only) and declared at

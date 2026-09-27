@@ -18,6 +18,13 @@ the way a reader meets it:
 - **the AI switch's default** as the workbench hands it to an extension host:
   on. ⚠️ Nothing on screen tells it apart from the hidden entitlement in a
   practice frame, so this is the reading that sees the first edit.
+- **every frame from before the workbench's first script until it settles**,
+  on a first start in a fresh browser profile and on a reload, in a Java
+  practice window (`workbench_frames.watch`): no chat view and no secondary
+  side bar in ANY frame. ⚠️ Every reading above is taken once the lockdown
+  has settled, and a Java frame painted the secondary side bar headed "Chat"
+  for about a second and a half while its Java projects opened, which none of
+  them could see.
 
 It reads that on a FRESH volume and on an EXISTING one whose settings.json the
 entrypoint leaves alone, and whose settings turn the workbench's AI switch
@@ -34,7 +41,9 @@ screenshot there.
 ⭐ **Positive control, planted on the tagged image:** the same image with the
 four edits taken back out (one derived layer, so the plant is provably the only
 difference) must show the chat view and register the AI commands, or this
-module is blind.
+module is blind. ⭐ And the same image with the secondary side bar's start
+override taken back out (the Dockerfile step "THE SECONDARY SIDE BAR NEVER
+OPENS") must paint the chat container in some frame.
 """
 
 from __future__ import annotations
@@ -55,10 +64,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "docker" / "editor"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import activation  # noqa: E402
 import cdp  # noqa: E402
+import java_session  # noqa: E402
 import probe  # noqa: E402
+import workbench_frames  # noqa: E402
 
 BUILD = ROOT / "docker" / "editor" / "build.py"
 SET = "java,maven"
@@ -80,9 +92,11 @@ AI_ID = re.compile(r"chat|copilot|codex|agent|mcp|languagemodel|^lm\.|aiedits|ai
                    r"|voice|prompt|skill|instructions|toolset", re.I)
 #: The server's own log channel, which says "agent" and is not AI.
 NOT_AI = re.compile(r"remoteagent", re.I)
+#: What the secondary side bar step inserts at the head of the layout's overrides.
+AUX_HIDDEN = "this.applyAuxiliaryBarHiddenOverride(!0);"
 #: The fixture's ways into the chat, as `extension.js` names them.
-OPENERS = ("workbench.action.chat.open", "workbench.panel.chat", "workbench.action.chat.toggle",
-           "workbench.action.openQuickChat")
+OPENERS = ("workbench.action.openQuickChat", "workbench.action.chat.toggle", "workbench.panel.chat",
+           "workbench.action.chat.open")
 
 #: What a bundle's four anchors look like, in the minified shape of Code 1.137.
 BUNDLE_TEXT = (
@@ -370,13 +384,38 @@ class NoAiSurfaceInASession(unittest.TestCase):
         self.assertIs(seen["aiSwitch"]["globalValue"], False, "the settings file did not turn the switch back off")
         self._assert_no_ai(seen)
 
+    def _assert_no_chat_in_any_frame(self, logs: list[dict]) -> None:
+        for start, seen in zip(("first start", "reload"), logs):
+            with self.subTest(start=start):
+                self.assertGreater(seen["frames"], 100, f"too few frames were watched to say anything: {seen}")
+                self.assertEqual((seen["chat"], seen["auxiliary"]), (0, 0),
+                                 f"a chat view or the secondary side bar was painted: {seen}")
+
+    def test_no_frame_of_a_fresh_start_or_a_reload_paints_a_chat(self):
+        self._assert_no_chat_in_any_frame(workbench_frames.watch(self.tag, "no-ai-frames"))
+
+    def test_no_frame_on_an_existing_settings_file_that_turns_ai_back_on_paints_a_chat_either(self):
+        volume = self._existing_volume()
+        self._assert_no_chat_in_any_frame(workbench_frames.watch(self.tag, "no-ai-frames", "-v", f"{volume}:{LOCAL}"))
+
+    def test_the_start_override_planted_back_out_paints_the_chat_container(self):
+        undo = " && ".join(f"grep -qF '{AUX_HIDDEN}' {b} && sed -i 's/{AUX_HIDDEN}//' {b}" for b in BUNDLES)
+        planted = java_session.derived(self.tag, "no-ai-aux-plant", f"RUN {undo}")
+        self.made.append(planted)
+        first, _ = workbench_frames.watch(planted, "no-ai-aux-plant")
+        self.assertGreater(first["chat"], 0, f"the plant painted no chat container, so this module is blind: {first}")
+        self.assertIn("workbench.panel.chat", first["seen"], first)
+
     def test_the_edits_planted_back_out_show_the_chat_again(self):
         planted = self._derive(self._derive(self.tag, "planted"), "probed")
         seen = self._session(planted, "planted")
         self.assertGreater(len(ai_ids(seen["commands"])), 100, "the plant registered no AI command: this is blind")
         self.assertEqual(seen["opened"]["workbench.action.chat.open"], "ran", seen["opened"])
         surface = seen["surface"]
-        self.assertTrue(surface["auxiliary"] and surface["chat"] and "Build with Agent" in surface["words"],
+        # ⚠️ The view's welcome depends on the mode it opened in: "Build with Agent"
+        # in agent mode, "Ask about your code" in ask mode; both say the next two.
+        self.assertTrue(surface["auxiliary"] and surface["chat"]
+                        and {"AI responses may be inaccurate", "Generate Agent Instructions"} <= set(surface["words"]),
                         f"the plant showed no chat view, so this module is blind: {surface}")
 
 
