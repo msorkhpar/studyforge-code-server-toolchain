@@ -59,7 +59,7 @@ RUN --network=none --mount=type=bind,from=consumer-prime,target=/tmp/prime \
     if [ "${WITH_MAVEN_PRIME}" = yes ]; then \
       HOME=/root sh /tmp/warmers/warm-maven.sh prove /tmp/prime/maven /opt/prime/maven-repo; \
     fi; \
-    rm -rf /root/.m2 /root/.gradle /root/.local/share/kotlin /tmp/kotlin-daemon* /tmp/* /tmp/.[!.]*
+    rm -rf /root/.m2 /root/.gradle /root/.local/share/kotlin /tmp/kotlin-daemon*
 
 # ⭐ Where each tool looks for its cache, so a graded run needs no flag of its
 # own: the primed runner's two ENV lines, from the same plan.
