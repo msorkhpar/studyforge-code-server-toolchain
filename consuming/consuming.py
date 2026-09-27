@@ -10,6 +10,7 @@ and renders a complete, working compose file from it and nothing else.
     python3 consuming/consuming.py --render          # the reference fragment, to stdout
     python3 consuming/consuming.py --write docs/compose.reference.yaml
     python3 consuming/consuming.py --run-line        # the runner's documented run line
+    python3 consuming/consuming.py --run-line --powershell   # the same, for PowerShell
 
 `load(root)` reads the file; `findings(contract)` returns what is wrong with it,
 empty when nothing is; `render(contract, ...)` returns the compose file's text
@@ -290,6 +291,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--write", default=None, help="write it to this path instead")
     parser.add_argument("--run-line", action="store_true",
                         help="write the runner's documented `docker run` line to stdout")
+    parser.add_argument("--powershell", action="store_true",
+                        help="with --run-line: the line for PowerShell on Windows")
     args = parser.parse_args(argv)
 
     root = Path(args.root).resolve()
@@ -300,7 +303,8 @@ def main(argv: list[str]) -> int:
     if broken:
         return 2
     if args.run_line:
-        print(runner.run_line(contract[runner.BLOCK]))
+        shell = runner.POWERSHELL if args.powershell else runner.POSIX
+        print(runner.run_line(contract[runner.BLOCK], shell=shell))
         return 0
     if args.check and not (args.render or args.write):
         print(f"{CONSUMING}: no findings")

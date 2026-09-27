@@ -59,17 +59,22 @@ def resolve(contract: dict, path: str):
     return cursor
 
 
-def documented(keyword: str) -> str:
-    """The README's line starting with `keyword`, shell continuations joined."""
+def documented(keyword: str, text: str = README, continuation: str = "\\") -> str:
+    """The first line of `text` starting with `keyword`, continuations joined."""
     joined, current = [], ""
-    for line in README.splitlines():
-        if line.rstrip().endswith("\\"):
+    for line in text.splitlines():
+        if line.rstrip().endswith(continuation):
             current += line.rstrip()[:-1] + " "
             continue
         joined.append(current + line)
         current = ""
     line = next(one for one in joined if one.lstrip().startswith(keyword))
     return " ".join(line.split())
+
+
+def fenced(text: str, language: str) -> str:
+    """Every fenced block of `language` in `text`, one after another."""
+    return "\n".join(re.findall(rf"^```{language}\n(.*?)^```", text, flags=re.MULTILINE | re.DOTALL))
 
 
 class TheBlock(unittest.TestCase):
@@ -114,6 +119,14 @@ class TheBlock(unittest.TestCase):
             "no user value": (planted(**{"runs_as.run_value": ""}), "nothing to write after --user"),
             "the user is optional": (planted(**{"runs_as.required": False}),
                                      "a run without the flag is root"),
+            "no user for PowerShell": (planted(**{"runs_as.powershell_run_value": ""}),
+                                       "a consumer on Windows has nothing to write"),
+            "a PowerShell user of root": (planted(**{"runs_as.powershell_run_value": "0:0"}),
+                                          "is a substitution or root"),
+            "a PowerShell substitution": (planted(**{"runs_as.powershell_run_value": "$(id -u)"}),
+                                          "is a substitution or root"),
+            "no compose value": (planted(**{"runs_as.compose_value": ""}),
+                                 "compose cannot evaluate"),
             "the workspace is a tmpfs": (planted(**{"workspace.kind": "tmpfs"}),
                                          "the workspace is not a bind"),
             "a second bind": (planted(mounts=[*RUNNER["mounts"], {"container_path": "/home",
@@ -146,6 +159,18 @@ class TheRenderedLines(unittest.TestCase):
     def test_the_documented_run_line_is_what_the_block_renders(self):
         self.assertEqual(documented("docker run"), runner.run_line(RUNNER),
                          "regenerate the README's line: python3 consuming/consuming.py --run-line")
+
+    def test_the_documented_powershell_run_line_is_what_the_block_renders(self):
+        """⭐ PowerShell has no `id`, and a Windows user no uid: its line substitutes nothing."""
+        for text in (README, (ROOT / "docs" / "consuming.md").read_text(encoding="utf-8")):
+            line = documented("docker run", fenced(text, "powershell"), continuation="`")
+            self.assertEqual(line, runner.run_line(RUNNER, shell=runner.POWERSHELL))
+            for posix in ("$(", "id -u", "\\"):
+                self.assertNotIn(posix, line)
+
+    def test_a_shell_this_renderer_does_not_know_is_refused(self):
+        with self.assertRaises(runner.Refused):
+            runner.run_line(RUNNER, shell="cmd")
 
     def test_the_documented_exec_line_is_what_the_block_renders(self):
         self.assertEqual(documented("docker exec"), runner.exec_line(RUNNER))
@@ -194,6 +219,9 @@ class TheRenderedLines(unittest.TestCase):
         printed = cli("--run-line")
         self.assertEqual(printed.returncode, 0, printed.stderr)
         self.assertEqual(printed.stdout.strip(), runner.run_line(RUNNER))
+        windows = cli("--run-line", "--powershell")
+        self.assertEqual(windows.returncode, 0, windows.stderr)
+        self.assertEqual(windows.stdout.strip(), runner.run_line(RUNNER, shell=runner.POWERSHELL))
 
 
 class TheBlockAgreesWithTheImage(unittest.TestCase):

@@ -10,6 +10,7 @@ block against the rulings a consumer inherits, and renders from it the
 
     python3 consuming/consuming.py --check      # every block, this one included
     python3 consuming/consuming.py --run-line   # the run line, from the contract
+    python3 consuming/consuming.py --run-line --powershell   # the same, for PowerShell
 
 `findings(runner)` returns what is wrong with the block, empty when nothing is;
 `run_line(runner, ...)` and `exec_line(runner, ...)` return the two documented
@@ -43,6 +44,10 @@ instruction a reader follows.
 from __future__ import annotations
 
 BLOCK = "runner"
+#: The two shells a run line is rendered for: a POSIX shell, and PowerShell.
+POSIX, POWERSHELL = "posix", "powershell"
+#: What makes a value one POSIX shell's: a substitution or a variable.
+SUBSTITUTES = ("$(", "`", "${")
 #: The one thing a consumer's shell must not evaluate away: the uid:gid
 #: substitution is written in double quotes, never single ones.
 QUOTED = '"{}"'
@@ -103,6 +108,15 @@ def _user_findings(runner: dict) -> list[str]:
         found.append("runs_as names no run flag and value, so a consumer has nothing to write after --user")
     elif runs_as.get("required") is not True:
         found.append("runs_as is not required: this image declares no USER, so a run without the flag is root")
+    windows = runs_as.get("powershell_run_value")
+    if any(mark in str(runs_as.get("run_value", "")) for mark in SUBSTITUTES) and not windows:
+        found.append("runs_as's run_value is a POSIX substitution and no powershell_run_value is declared, "
+                     "so a consumer on Windows has nothing to write after --user")
+    if windows and (any(mark in str(windows) for mark in SUBSTITUTES) or str(windows).split(":")[0] == "0"):
+        found.append("runs_as's powershell_run_value is a substitution or root: it is written as it stands")
+    if not runs_as.get("compose_key") or not runs_as.get("compose_value"):
+        found.append("runs_as names no compose key and value, so a consumer rendering a compose service "
+                     "has only a shell substitution compose cannot evaluate")
     return found
 
 
@@ -160,14 +174,20 @@ def _environment_findings(runner: dict) -> list[str]:
 
 # ------------------------------------------------------------- the rendering
 def run_line(runner: dict, *, name: str | None = None, source_root: str | None = None,
-             tag: str | None = None, user: str | None = None) -> str:
+             tag: str | None = None, user: str | None = None, shell: str = POSIX) -> str:
     """The `docker run` line this block describes, or `Refused` naming the ruling it breaks.
 
     With no argument it renders the DOCUMENTED line, placeholders and all, which
     is what the README carries. With arguments it renders a real invocation.
+    ⭐ `shell=POWERSHELL` writes `runs_as.powershell_run_value` where a POSIX shell
+    would substitute the uid: every other word is the same in both shells.
     """
     _or_refuse(runner)
+    if shell not in (POSIX, POWERSHELL):
+        raise Refused(f"a run line is rendered for {POSIX} or {POWERSHELL}, not {shell!r}")
     run, runs_as = runner["run"], runner["runs_as"]
+    if shell == POWERSHELL:
+        runs_as = {**runs_as, "run_value": runs_as["powershell_run_value"]}
     parts = ["docker", "run"]
     if run["detached"]:
         parts.append(run["detach_flag"])
@@ -206,5 +226,8 @@ def _or_refuse(runner: dict) -> None:
 
 
 def _quoted(value: str, quote: bool | None) -> str:
-    """Double quotes, so `$(id -u)` is still substituted by the consumer's shell."""
+    """Double quotes, so `$(id -u)` is still substituted by a POSIX shell.
+
+    ⭐ PowerShell reads double quotes the same way, and its value substitutes nothing.
+    """
     return QUOTED.format(value) if quote else value

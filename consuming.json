@@ -1,10 +1,21 @@
 {
   "consuming_api": 1,
-  "provides": 3,
+  "provides": 4,
   "component": "code-server-toolchain",
   "not_yet_declared": [],
   "why_nothing_is_undeclared": "this component builds two images and both are declared here: the editor with the compose file a consumer renders, the runner with the run and exec lines a consumer issues, and each with what its tag promises. A hole found later is a finding against this file, and it is named in this list rather than left to a reader to discover",
   "releases": [
+    {
+      "provides": 4,
+      "summary": "the runner's run shape from any shell: runner.runs_as declares a compose_key and compose_value, the editor's own, and a powershell_run_value, so a consumer on Windows renders a run line and a compose service with no POSIX substitution in either",
+      "moves_every_tag": false,
+      "measured": "the editor's and the runner's inputs digests are unchanged from the release this follows: this release adds keys and their tests and touches no file under either block's image.tag.build_inputs",
+      "re_verify": [
+        "nothing in a running container: this release adds keys and changes no build input, so both tags you already pinned are still the tags this checkout computes",
+        "your runner service, if you render one: take runner.runs_as.compose_key and compose_value rather than the editor's, which says the same today",
+        "your run line on Windows: python3 consuming/consuming.py --run-line --powershell prints the PowerShell form"
+      ]
+    },
     {
       "provides": 3,
       "summary": "the editor's prime declared as the runner's is: editor.prime names the flag its build takes, the root and seeds it warms, and that the prime is folded into its tag",
@@ -345,6 +356,11 @@
       "run_flag": "--user",
       "run_value": "$(id -u):$(id -g)",
       "quote_in_shell": true,
+      "powershell_run_value": "1000:1000",
+      "why_powershell_differs": "run_value is a POSIX shell substitution: PowerShell on Windows has no id and a Windows user has no uid. Docker Desktop hands the files a container writes into a Windows bind to the Windows user whatever uid wrote them, so an ordinary user that is not root is the whole requirement there",
+      "compose_key": "user",
+      "compose_value": "${HOST_UID:-1000}:${HOST_GID:-1000}",
+      "why_compose_value": "the same value the editor block's runs_as renders, which compose interpolates on every host and every shell: HOST_UID and HOST_GID are set by the consumer where the host has a uid, and the default is an ordinary user where it has none",
       "set_to": "the uid:gid that owns the mounted source root on the host",
       "why": "this image declares no USER, so without the flag a graded run writes root-owned build output into the reader's own sources and the reader can then never edit their own repository",
       "how": "there is no fixuid here and none is needed: nothing under HOME is seeded, HOME is a world-writable path outside the mount, and the only directory a run writes is the bind"

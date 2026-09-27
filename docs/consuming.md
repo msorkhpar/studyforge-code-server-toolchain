@@ -145,6 +145,13 @@ export EDITOR_IMAGE="$(python3 docker/editor/build.py --runtimes java,maven --pr
 export EDITOR_IMAGE="$(python3 docker/editor/build.py --runtimes gradle,java --print-tag)"
 ```
 
+The same in PowerShell on Windows:
+
+```powershell
+$env:EDITOR_IMAGE = (python docker/editor/build.py --runtimes java,maven --print-tag)
+$env:EDITOR_IMAGE = (python docker/editor/build.py --runtimes gradle,java --print-tag)
+```
+
 ### Upgrading
 
 `editor.image.tag.upgrade.how`: re-run `editor.image.tag.computed_by` in the new
@@ -308,6 +315,16 @@ export HOST_UID="$(id -u)" HOST_GID="$(id -g)"
 docker compose up -d --wait
 ```
 
+In PowerShell on Windows, where a user has no uid, `HOST_UID` and `HOST_GID` are
+left unset and the compose value's default, an ordinary user, runs the editor;
+Docker Desktop hands the files it writes into `sources` to the Windows user:
+
+```powershell
+New-Item -ItemType Directory -Force sources | Out-Null   # ruling 4
+$env:EDITOR_IMAGE = (python docker/editor/build.py --runtimes java,maven --print-tag)
+docker compose up -d --wait
+```
+
 The editor is then at `http://127.0.0.1:8443/` — that literal host, and no
 other. ⛔ **It asks for no password** (`editor.command_notes.auth`, register ruling
 2026-09-22): loopback is the whole of its access control, so publishing this
@@ -336,6 +353,17 @@ python3 consuming/consuming.py --run-line   # exactly the line below
 docker run -d --name studyforge-runner-<source> --init --network none \
   --user "$(id -u):$(id -g)" -v "<source root>:/work" <tag>
 ```
+
+In PowerShell (`--run-line --powershell`), from `runner.runs_as.powershell_run_value`:
+
+```powershell
+docker run -d --name studyforge-runner-<source> --init --network none `
+  --user "1000:1000" -v "<source root>:/work" <tag>
+```
+
+⭐ A consumer rendering the runner as a compose service takes
+`runner.runs_as.compose_key` and `compose_value`, which compose interpolates on
+every host, and never the shell's `run_value`.
 
 ⭐ **That line is GENERATED from the block and a test asserts the one in
 [`../README.md`](../README.md) is what it renders** (`runner.run.why_rendered`),

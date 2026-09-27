@@ -1,0 +1,7 @@
+# Every text file is checked out with LF line ends, on every host.
+#
+# Git for Windows converts LF to CRLF on checkout by default. A shell script or
+# a Dockerfile copied into a Linux image then carries a carriage return on every
+# line and fails there, and every file hashed into an image tag hashes to other
+# bytes than on Linux. `text=auto` leaves binary files alone.
+* text=auto eol=lf

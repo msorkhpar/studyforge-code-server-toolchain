@@ -145,8 +145,24 @@ docker run -d --name studyforge-runner-<source> --init --network none \
   --user "$(id -u):$(id -g)" -v "<source root>:/work" <tag>
 ```
 
+In PowerShell on Windows, which has no `id` and whose users have no uid, the
+same line takes `runner.runs_as.powershell_run_value` and continues with a
+backtick (`python3 consuming/consuming.py --run-line --powershell`):
+
+```powershell
+docker run -d --name studyforge-runner-<source> --init --network none `
+  --user "1000:1000" -v "<source root>:/work" <tag>
+```
+
+⭐ Every command in this README runs on Windows as on Linux and macOS (a register
+direction: a course publishes and runs from Windows, on Docker Desktop). Where a
+POSIX shell and PowerShell spell one differently, both are shown; elsewhere,
+`python3` is `python` or `py -3` on Windows.
+
 - `--network none`: nothing a build does inside it reaches off the machine.
-- `--user`: files the build writes are owned by the reader, not by root.
+- `--user`: files the build writes are owned by the reader, not by root. On
+  Docker Desktop for Windows they belong to the Windows user whatever the uid,
+  so any ordinary user serves.
 - `--init`: the idle process is reaped, so a stop is prompt.
 - No `-p`: nothing listens.
 
