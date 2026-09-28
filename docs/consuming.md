@@ -449,3 +449,29 @@ editor's do, and `runner.image.tag.upgrade.re_verify` is the runner's own
 checklist: the set off the label, `provides` in this file, a `docker exec` of a
 practice's command that exits zero with no network, and a file the run wrote into
 your source root that belongs to you.
+
+## Building with compose, and one course layer per consumer
+
+⭐ **`python3 consuming/builds.py <image> --runtimes <set>` prints a build as
+data** (`builds.printed_by`, shaped by `builds.keys` and versioned by
+`builds.builds_api`): the Dockerfile, the target, every ARG, the named contexts,
+the images it starts FROM, which of those this component builds itself, the tag
+and the input roots the context must carry. ⛔ A consumer that writes a compose
+`build:` block renders it from this and never from a Dockerfile, which is the
+rule this document opened with: the ARGs are the plans' own, so a compose build
+makes the image `build.py` makes, under the tag `--print-tag` prints.
+
+⚠️ **What a compose build does not do** is the editor's two session proofs,
+which `docker/editor/build.py` runs between the build and the tag with a
+browser. `builds.not_proved_by_a_compose_build` says so, and the editor's
+document names both commands in its `proved_by`: a consumer that PUBLISHES an
+editor it built with compose runs both against that image first.
+
+⭐ **A course layer** (`course_layer.dockerfile`, `docker/prime/Dockerfile`)
+warms one consumer's prime on top of the UNPRIMED runner or editor for its
+declared set, where a primed build (`--prime`) makes a whole image per
+consumer. So every consumer of one set shares one runner and one editor, and
+each carries only its own caches. `course_layer.same_as_a_primed_build` holds it
+to the primed images' own warm, proof and seed roots
+(`course_layer.prime_roots`); its tag is `course_layer.tag.scheme`, the base's
+tag with the layer's own digest after it.
