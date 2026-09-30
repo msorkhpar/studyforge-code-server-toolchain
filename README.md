@@ -1,9 +1,17 @@
-# code-server-toolchain
+# studyforge-code-server-toolchain
 
 The toolchain images the studyforge framework runs a corpus's code in. It is a
-sibling repository of the framework, pinned by commit in the framework's
-`workspace.json`. Images are built from a checkout; publishing one to a registry is
-optional (*Publishing an image*, below).
+sibling repository of the framework (the `studyforge` repository), pinned by
+commit in the framework's `workspace.json`. Images are built from a checkout;
+publishing one to a registry is optional (*Publishing an image*, below).
+
+Get it, next to the framework's checkout:
+
+```sh
+git clone https://github.com/msorkhpar/studyforge-code-server-toolchain.git
+```
+
+The framework itself is at `https://github.com/msorkhpar/studyforge.git`.
 
 It holds two images: the **runner** (`docker/minimal/`), where a reader's code
 is built and graded, and the browser **editor** (`docker/editor/`), which copies
