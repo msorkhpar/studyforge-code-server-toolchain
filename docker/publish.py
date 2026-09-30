@@ -2,7 +2,8 @@
 
 **What it does.** Plans the runner's or the editor's build exactly as their own
 `build.py` does, takes the tag that plan computes, and names the image
-`<namespace>/<image>:<that tag>`. It then runs the build, `docker tag`, and,
+`<namespace>/<published name>:<that tag>`, where the published name is
+`studyforge-code-toolchain-runner` or `studyforge-code-toolchain-editor`. It then runs the build, `docker tag`, and,
 with `--push`, `docker push`. ⭐ The tag is never written by hand: it is the
 plan's, so the name a registry holds says which inputs built it.
 
@@ -52,6 +53,10 @@ NAMESPACE = re.compile(r"^[a-z0-9]+(?:[._:-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z
 #: The image each name builds, and the build script that builds it.
 BUILDS = {"runner": HERE / "minimal" / "build.py", "editor": HERE / "editor" / "build.py"}
 
+#: The name a registry sees for each image. It is not the local repository's last part: the local build
+#: names stay as they are, and only the published name is prefixed so that it says what the image belongs to.
+PUBLISHED = {"runner": "studyforge-code-toolchain-runner", "editor": "studyforge-code-toolchain-editor"}
+
 
 class Refused(ValueError):
     """A publish that will not start, and why."""
@@ -82,10 +87,10 @@ def editor_build_planned(root: Path, platform: str, names, prime: Path | None) -
     return editor_plan.plan(pins, editor_plan.load(root), runner_built, editor_plan.inputs_digest(root), read).tag
 
 
-def reference(local: str, space: str) -> str:
-    """`<namespace>/<image>:<tag>` for a local tag `<repository>/<image>:<tag>`."""
-    repository, tag = local.rsplit(":", 1)
-    return f"{space}/{repository.rsplit('/', 1)[-1]}:{tag}"
+def reference(local: str, space: str, image: str) -> str:
+    """`<namespace>/<published name>:<tag>` for a local tag `<repository>/<image>:<tag>`."""
+    tag = local.rsplit(":", 1)[1]
+    return f"{space}/{PUBLISHED[image]}:{tag}"
 
 
 def commands(image: str, local: str, remote: str, names, platform: str | None, prime: Path | None,
@@ -116,7 +121,7 @@ def main(argv: list[str], env=None, run=subprocess.run, out=sys.stdout) -> int:
     except (Refused, runner_build.planning.Refused, editor_plan.Refused) as refusal:
         print(f"refused: {refusal}", file=sys.stderr)
         return 2
-    remote = reference(local, space)
+    remote = reference(local, space, args.image)
     steps = commands(args.image, local, remote, names, args.platform, prime, args.push)
     for step in steps:
         print(shlex.join(step), file=out)

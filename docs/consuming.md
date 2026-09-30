@@ -73,7 +73,9 @@ the tag that primed command prints.
 build prints, or pull one that its publisher pushed. `editor.image.registry`
 names the second path by variable: the namespace is read from
 `TOOLCHAIN_NAMESPACE`, never written in this repository, and the reference is
-`${TOOLCHAIN_NAMESPACE}/editor:<tag>`. The publisher runs
+`${TOOLCHAIN_NAMESPACE}/studyforge-code-toolchain-editor:<tag>` (the editor's published name is
+`editor.image.registry.published_name`; the runner's is `studyforge-code-toolchain-runner`; the local repository
+names are unchanged). The publisher runs
 `python3 docker/publish.py editor --runtimes <the declared set> --dry-run` to
 see the exact commands, then the same line with `--push` after logging in
 themselves; the script never logs in and pushes only with that flag. ⭐ **A
