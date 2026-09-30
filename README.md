@@ -86,7 +86,9 @@ Architectures: `linux/amd64` and `linux/arm64`. Any other is refused by name.
 
 ## Publishing an image
 
-`docker/publish.py` names an image `<namespace>/<image>:<tag>`, where the tag is
+`docker/publish.py` names an image `<namespace>/<published name>:<tag>`, where the published name is
+`studyforge-code-toolchain-runner` or `studyforge-code-toolchain-editor` (the local build names stay
+`code-server-toolchain/runner` and `code-server-toolchain/editor`) and the tag is
 the one the build computes for this checkout, never a hand-written one. ⛔ **The
 namespace is read from the `TOOLCHAIN_NAMESPACE` environment variable and from
 nowhere else**: the script refuses to run when it is unset, and no namespace is
@@ -101,7 +103,7 @@ python3 docker/publish.py runner --runtimes java,maven --push      # and pushes
 ```
 
 `editor` takes the same flags. ⭐ Pin a pulled image by the digest `docker push`
-prints (`<namespace>/runner@sha256:<digest>`), not by its tag: a digest names
+prints (`<namespace>/studyforge-code-toolchain-runner@sha256:<digest>`), not by its tag: a digest names
 one image for good. `tests/test_publish.py` holds all of this.
 
 ## Building

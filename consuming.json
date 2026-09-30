@@ -67,7 +67,8 @@
       "repository": "code-server-toolchain/editor",
       "registry": {
         "namespace_env_var": "TOOLCHAIN_NAMESPACE",
-        "reference": "${TOOLCHAIN_NAMESPACE}/editor:<tag>",
+        "published_name": "studyforge-code-toolchain-editor",
+        "reference": "${TOOLCHAIN_NAMESPACE}/studyforge-code-toolchain-editor:<tag>",
         "published_by": ["python3", "docker/publish.py", "editor", "--runtimes", "<the declared set>", "--push"],
         "preview_by": ["python3", "docker/publish.py", "editor", "--runtimes", "<the declared set>", "--dry-run"],
         "pin_by": "digest",
@@ -300,7 +301,8 @@
       "repository": "code-server-toolchain/runner",
       "registry": {
         "namespace_env_var": "TOOLCHAIN_NAMESPACE",
-        "reference": "${TOOLCHAIN_NAMESPACE}/runner:<tag>",
+        "published_name": "studyforge-code-toolchain-runner",
+        "reference": "${TOOLCHAIN_NAMESPACE}/studyforge-code-toolchain-runner:<tag>",
         "published_by": ["python3", "docker/publish.py", "runner", "--runtimes", "<the declared set>", "--push"],
         "preview_by": ["python3", "docker/publish.py", "runner", "--runtimes", "<the declared set>", "--dry-run"],
         "pin_by": "digest",

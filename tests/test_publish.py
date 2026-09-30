@@ -80,21 +80,48 @@ class DryRun(unittest.TestCase):
                 self.assertEqual(ran, [], "a dry run started a process")
                 self.assertEqual(printed.splitlines(), [
                     f"python3 {script} --runtimes java,maven",
-                    f"docker tag code-server-toolchain/{image}:{tag} {PLACEHOLDER}/{image}:{tag}"])
+                    f"docker tag code-server-toolchain/{image}:{tag} {PLACEHOLDER}/{publish.PUBLISHED[image]}:{tag}"])
 
     def test_push_is_printed_only_when_asked(self):
         env = {VARIABLE: PLACEHOLDER}
         plain = publish_main(["runner", *SET, "--dry-run"], env)[1]
         pushed = publish_main(["runner", *SET, "--dry-run", "--push"], env)[1]
         self.assertNotIn("docker push", plain)
-        self.assertEqual(pushed.splitlines()[-1], f"docker push {PLACEHOLDER}/runner:{tag_of('docker/minimal/build.py')}")
+        self.assertEqual(pushed.splitlines()[-1], f"docker push {PLACEHOLDER}/studyforge-code-toolchain-runner:{tag_of('docker/minimal/build.py')}")
 
     def test_a_dry_run_from_the_command_line_needs_no_docker_on_the_path(self):
         done = subprocess.run([sys.executable, str(ROOT / "docker" / "publish.py"), "runner", *SET, "--dry-run"],
                               capture_output=True, text=True, cwd=ROOT,
                               env={"PATH": "/nonexistent", VARIABLE: PLACEHOLDER})
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertIn(f"{PLACEHOLDER}/runner:", done.stdout)
+        self.assertIn(f"{PLACEHOLDER}/studyforge-code-toolchain-runner:", done.stdout)
+        self.assertNotIn(f"{PLACEHOLDER}/runner:", done.stdout)
+
+
+class PublishedNames(unittest.TestCase):
+    """A registry sees `studyforge-code-toolchain-<image>`; the local build names are not touched."""
+
+    NAMES = {"runner": "studyforge-code-toolchain-runner", "editor": "studyforge-code-toolchain-editor"}
+
+    def test_the_published_names_are_the_prefixed_ones(self):
+        self.assertEqual(publish.PUBLISHED, self.NAMES)
+
+    def test_a_dry_run_publishes_under_the_prefixed_name_and_keeps_the_local_one(self):
+        for image, name in self.NAMES.items():
+            with self.subTest(image=image):
+                printed = publish_main([image, *SET, "--dry-run", "--push"], {VARIABLE: PLACEHOLDER})[1].splitlines()
+                tag_line = printed[1].split()
+                self.assertTrue(tag_line[2].startswith(f"code-server-toolchain/{image}:"), tag_line)
+                self.assertTrue(tag_line[3].startswith(f"{PLACEHOLDER}/{name}:"), tag_line)
+                self.assertTrue(printed[2].startswith(f"docker push {PLACEHOLDER}/{name}:"), printed[2])
+
+    def test_the_contract_states_the_published_names(self):
+        import json
+        contract = json.loads((ROOT / "consuming.json").read_text(encoding="utf-8"))
+        for image, name in self.NAMES.items():
+            registry = contract[image]["image"]["registry"]
+            self.assertEqual(registry["published_name"], name)
+            self.assertEqual(registry["reference"], "${TOOLCHAIN_NAMESPACE}/" + name + ":<tag>")
 
 
 class RealRun(unittest.TestCase):
