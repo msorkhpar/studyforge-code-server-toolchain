@@ -8,7 +8,7 @@ one YAML scalar.
 **Why it is a module of its own.** `consuming.py` reached the 400-line bound
 for a source file, and this is its seam: that module decides WHETHER a contract may be
 rendered (`findings`, `render`'s refusal), this one only writes the text of a
-contract already accepted. ⛔ Nothing here checks a ruling, so it is only ever
+contract already accepted. ⛔ Nothing here checks a rule, so it is only ever
 called through `consuming.render`.
 
 **Depends on.** The standard library only.
@@ -36,8 +36,8 @@ HEADER = (
 def service(editor: dict) -> list[str]:
     at = "    "
     lines = [
-        *_comment("The image a consumer PINS. It has no registry: build it from this component's "
-                  "checkout and pin the tag the build prints:", at),
+        *_comment("The image a consumer PINS. Build it from this component's "
+                  "checkout and pin the tag the build prints, or pull a published one by digest:", at),
         f"{at}#   {' '.join(editor['image']['tag_from'])}",
         *_comment(editor["image"]["tag"]["how_to_pin"], at),
         scalar("image", editor["image"]["compose_value"], at),

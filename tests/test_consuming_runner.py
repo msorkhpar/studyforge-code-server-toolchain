@@ -78,7 +78,7 @@ def fenced(text: str, language: str) -> str:
 
 
 class TheBlock(unittest.TestCase):
-    def test_the_real_block_breaks_no_ruling(self):
+    def test_the_real_block_breaks_no_rule(self):
         self.assertEqual(runner.findings(RUNNER), [])
 
     def test_the_whole_contract_still_breaks_none_and_reports_this_block_by_name(self):
@@ -229,7 +229,7 @@ class TheBlockAgreesWithTheImage(unittest.TestCase):
 
     def test_the_repository_and_the_build_command_are_the_runners_own(self):
         self.assertEqual(RUNNER["image"]["repository"], runner_plan.REPOSITORY)
-        self.assertIsNone(RUNNER["image"]["registry"])
+        self.assertEqual(RUNNER["image"]["registry"]["namespace_env_var"], "TOOLCHAIN_NAMESPACE")
         for command in (RUNNER["image"]["built_by"], RUNNER["image"]["tag_from"]):
             self.assertTrue((ROOT / command[1]).is_file(), command)
             self.assertIn("--runtimes", command)

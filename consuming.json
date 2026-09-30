@@ -39,7 +39,7 @@
     },
     {
       "provides": 2,
-      "summary": "both images declared and both tags explained: the runner's run shape as data beside the editor's compose contract, and, for each, what its tag encodes, what moves it, what it promises and what a consumer re-verifies after re-pinning; plus the writable-filesystem ruling the editor inherits",
+      "summary": "both images declared and both tags explained: the runner's run shape as data beside the editor's compose contract, and, for each, what its tag encodes, what moves it, what it promises and what a consumer re-verifies after re-pinning; plus the writable-filesystem rule the editor inherits",
       "moves_every_tag": false,
       "measured": "the runner's inputs digest and the editor's are unchanged from the release this follows: both halves of this release add declarations and tests and touch no file under either block's image.tag.build_inputs",
       "re_verify": [
@@ -51,7 +51,7 @@
     },
     {
       "provides": 1,
-      "summary": "the compose and mount contract, the four rulings it refuses to render against, and the entrypoint that repairs the container's uid before it seeds anything",
+      "summary": "the compose and mount contract, the four rules it refuses to render against, and the entrypoint that repairs the container's uid before it seeds anything",
       "moves_every_tag": true,
       "measured": "the editor's inputs digest moved at this release, because docker/editor/entrypoint.sh is one of its build inputs; the runner's did not move, because nothing under its own inputs changed",
       "re_verify": [
@@ -65,8 +65,14 @@
     "what_it_is": "code-server with the runtimes a corpus declares, served to a browser on loopback",
     "image": {
       "repository": "code-server-toolchain/editor",
-      "registry": null,
-      "why_no_registry": "this component has no remote and is never pushed; a consumer builds the image from this checkout and pins the tag the build prints",
+      "registry": {
+        "namespace_env_var": "TOOLCHAIN_NAMESPACE",
+        "reference": "${TOOLCHAIN_NAMESPACE}/editor:<tag>",
+        "published_by": ["python3", "docker/publish.py", "editor", "--runtimes", "<the declared set>", "--push"],
+        "preview_by": ["python3", "docker/publish.py", "editor", "--runtimes", "<the declared set>", "--dry-run"],
+        "pin_by": "digest",
+        "why_optional": "publishing is optional: a consumer can build the image from this checkout and pin the tag the build prints; a consumer who pulls a published image pins its digest, which names one image for good, and the namespace is read from the named variable and is written nowhere in this repository"
+      },
       "built_by": ["python3", "docker/editor/build.py", "--runtimes", "<the declared set>"],
       "tag_from": ["python3", "docker/editor/build.py", "--runtimes", "<the declared set>", "--print-tag"],
       "env_var": "EDITOR_IMAGE",
@@ -239,7 +245,7 @@
       "/home/coder/repo"
     ],
     "command_notes": {
-      "auth": "--auth=none is EXPLICIT AND LOAD-BEARING, and the explicitness IS the decision: code-server's default when --auth is absent is password, so an omitted flag is a different setting, not this one. Register ruling 2026-09-22, replacing the earlier ruling that the editor always required a password. THE BOUNDARY IS THE PORT, NOT THE PASSWORD: ports[0].host_bind is 127.0.0.1, so the only clients that can reach this IDE are processes on this host -- the same trust boundary the study site already publishes on unauthenticated, and any process inside it could read PASSWORD out of the container's own environment anyway. The password stopped no reader it was meant to stop and cost a login form inside every practice iframe. THE CONDITION IS THEREFORE THE BIND: if host_bind is ever widened past loopback, or publish_on_all_interfaces is ever set true, this flag goes back to --auth=password IN THE SAME EDIT. tests/test_consuming.py asserts the two together for exactly that reason.",
+      "auth": "--auth=none is EXPLICIT AND LOAD-BEARING, and the explicitness IS the decision: code-server's default when --auth is absent is password, so an omitted flag is a different setting, not this one. This replaces an earlier setting that always required a password. THE BOUNDARY IS THE PORT, NOT THE PASSWORD: ports[0].host_bind is 127.0.0.1, so the only clients that can reach this IDE are processes on this host -- the same trust boundary the study site already publishes on unauthenticated, and any process inside it could read PASSWORD out of the container's own environment anyway. The password stopped no reader it was meant to stop and cost a login form inside every practice iframe. THE CONDITION IS THEREFORE THE BIND: if host_bind is ever widened past loopback, or publish_on_all_interfaces is ever set true, this flag goes back to --auth=password IN THE SAME EDIT. tests/test_consuming.py asserts the two together for exactly that reason.",
       "bind_addr": "0.0.0.0 INSIDE the container only, which is the container's own interface; the loopback restriction is the ports entry's host_bind",
       "replaces_cmd": "a compose command: replaces the image's CMD outright, and the image re-declares ENTRYPOINT and CMD so nothing the base bakes is appended to it",
       "extensions_dir": "the extensions are installed into the image, not onto a volume, so an image upgrade carries them",
@@ -292,8 +298,14 @@
     "started_by": "the reader, never the framework: the runner only probes that it is up and execs into it, and runs on the host when it is not",
     "image": {
       "repository": "code-server-toolchain/runner",
-      "registry": null,
-      "why_no_registry": "this component has no remote and is never pushed; a consumer builds the image from this checkout and pins the tag the build prints",
+      "registry": {
+        "namespace_env_var": "TOOLCHAIN_NAMESPACE",
+        "reference": "${TOOLCHAIN_NAMESPACE}/runner:<tag>",
+        "published_by": ["python3", "docker/publish.py", "runner", "--runtimes", "<the declared set>", "--push"],
+        "preview_by": ["python3", "docker/publish.py", "runner", "--runtimes", "<the declared set>", "--dry-run"],
+        "pin_by": "digest",
+        "why_optional": "publishing is optional: a consumer can build the image from this checkout and pin the tag the build prints; a consumer who pulls a published image pins its digest, which names one image for good, and the namespace is read from the named variable and is written nowhere in this repository"
+      },
       "built_by": ["python3", "docker/minimal/build.py", "--runtimes", "<the declared set>"],
       "tag_from": ["python3", "docker/minimal/build.py", "--runtimes", "<the declared set>", "--print-tag"],
       "env_var": "STUDYFORGE_RUNNER_IMAGE",

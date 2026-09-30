@@ -24,10 +24,10 @@ second declared set and brings it up beside the first, in its own compose
 project and on its own port: two consumers holding two tags, both healthy at
 once, each container wearing its own set's label. Another runs the image with a
 read-only root filesystem and measures that it never starts, which is the
-failure ruling 5 is made of.
+failure rule 5 is made of.
 
 Every image, container and volume it creates is removed afterwards — both editor
-images too, unless `TC_KEEP_IMAGES=1`. The planted half of the bind-source ruling
+images too, unless `TC_KEEP_IMAGES=1`. The planted half of the bind-source rule
 leaves a root-owned directory behind on purpose; it is removed from inside a
 container, since the host user cannot.
 """
@@ -190,7 +190,7 @@ class TheComposeContract(unittest.TestCase):
         self.assertEqual(found.stdout, "written on the host\n")
 
     def test_it_starts_unauthenticated_and_that_rests_on_the_loopback_bind(self):
-        """⛔ Register ruling 2026-09-22: `--auth=none`, safe ONLY because the port is loopback.
+        """⛔ `--auth=none`, safe ONLY because the port is loopback.
 
         ⚠️ This clause once said the opposite and was never read RED,
         because the class skipped on every host whose reader's editor held the
@@ -199,11 +199,11 @@ class TheComposeContract(unittest.TestCase):
         """
         status, where = self.fetch("/")
         self.assertEqual(status, 200)
-        self.assertNotIn("/login", where, "the editor asked for a password the ruling removed")
+        self.assertNotIn("/login", where, "the editor asked for a password the rule removed")
         self.assertIn("--auth=none", EDITOR["command"])
         self.assertIn(BIND, consuming.LOOPBACK)
 
-    # -------------------------------------- ruling 1: loopback only, never 0.0.0.0
+    # -------------------------------------- rule 1: loopback only, never 0.0.0.0
     def test_the_published_port_is_bound_to_loopback_and_to_nothing_else(self):
         published = self.inspect(self.container)["HostConfig"]["PortBindings"]
         declared = f"{EDITOR['ports'][0]['container']}/{EDITOR['ports'][0]['protocol']}"
@@ -212,13 +212,13 @@ class TheComposeContract(unittest.TestCase):
             self.assertIn(binding["HostIp"], consuming.LOOPBACK)
             self.assertEqual(binding["HostPort"], str(self.port))
 
-    def test_a_fragment_rendered_without_that_ruling_is_refused_before_compose_sees_it(self):
+    def test_a_fragment_rendered_without_that_rule_is_refused_before_compose_sees_it(self):
         broken = json.loads(json.dumps(CONTRACT))
         broken["editor"]["ports"][0]["host_bind"] = "0.0.0.0"
         with self.assertRaises(consuming.Refused):
             consuming.render(broken)
 
-    # ------------------------------ ruling 2: only the sources, not the repository
+    # ------------------------------ rule 2: only the sources, not the repository
     def test_the_only_host_directory_it_can_reach_is_the_sources(self):
         bound = [mount for mount in self.inspect(self.container)["Mounts"] if mount["Type"] == "bind"]
         self.assertEqual([mount["Destination"] for mount in bound],
@@ -231,7 +231,7 @@ class TheComposeContract(unittest.TestCase):
         wrote = self.exec(self.container, "sh", "-c", f"touch {root}/a-build-artifact")
         self.assertEqual(wrote.returncode, 0, wrote.stderr)
 
-    # ------------------------------------ ruling 3: the repository owner's uid:gid
+    # ------------------------------------ rule 3: the repository owner's uid:gid
     def test_a_file_the_container_creates_in_the_sources_belongs_to_the_host_user(self):
         made = f"{EDITOR['mounts'][0]['container_path']}/made-in-container.txt"
         wrote = self.exec(self.container, "sh", "-c", f"echo written inside > {made}")
@@ -276,7 +276,7 @@ class TheComposeContract(unittest.TestCase):
             time.sleep(1)
         return False
 
-    # ---------------------- ruling 4: a bind source must exist before the start
+    # ---------------------- rule 4: a bind source must exist before the start
     def test_a_missing_bind_source_is_created_root_owned_and_the_reader_cannot_write_it(self):
         project, directory = self.consumer("no-sources", sources=False, port=free_port())
         brought = self.compose(project, directory, "up", "-d")
@@ -295,7 +295,7 @@ class TheComposeContract(unittest.TestCase):
         for mount in binds:
             self.assertIs(mount["must_exist_before_start"], True, mount["container_path"])
 
-    # ------------------- ruling 5: the root filesystem stays writable
+    # ------------------- rule 5: the root filesystem stays writable
     def test_a_read_only_root_filesystem_never_starts_and_the_declared_one_does(self):
         """The entrypoint repairs the passwd record at every start; /etc is written."""
         self.assertIs(EDITOR["filesystem"]["read_only_root"], False)

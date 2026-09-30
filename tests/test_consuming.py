@@ -65,7 +65,7 @@ def resolve(contract: dict, path: str):
 
 
 class TheContract(unittest.TestCase):
-    def test_the_real_contract_breaks_no_ruling(self):
+    def test_the_real_contract_breaks_no_rule(self):
         self.assertEqual(consuming.findings(CONTRACT), [])
 
     def test_it_carries_the_two_versions_and_names_its_own_holes(self):
@@ -98,7 +98,7 @@ class TheContract(unittest.TestCase):
             "no health check": (planted(healthcheck={}), "ordering is enforced by a health check"),
             # ⚠️ BOTH keys are planted deliberately. The plant used to set `default`
             # alone and relied on environment.0 being a required entry; when the
-            # PASSWORD entry was removed (register ruling 2026-09-22) environment.0
+            # PASSWORD entry was removed, environment.0
             # became a NOT-required one and the plant would have gone on passing
             # while planting nothing at all.
             "required and defaulted": (planted(**{"environment.0.required": True,
@@ -415,7 +415,7 @@ class TheContractAgreesWithTheImage(unittest.TestCase):
 
     def test_the_repository_and_the_build_command_are_the_editors_own(self):
         self.assertEqual(EDITOR["image"]["repository"], editor_plan.REPOSITORY)
-        self.assertIsNone(EDITOR["image"]["registry"])
+        self.assertEqual(EDITOR["image"]["registry"]["namespace_env_var"], "TOOLCHAIN_NAMESPACE")
         for command in (EDITOR["image"]["built_by"], EDITOR["image"]["tag_from"]):
             self.assertTrue((ROOT / command[1]).is_file(), command)
             self.assertIn("--runtimes", command)
@@ -494,7 +494,7 @@ class TheContractAgreesWithTheImage(unittest.TestCase):
         self.assertEqual(EDITOR["extensions"]["settings_a_study_server_writes"], contributed)
 
     def test_the_entrypoint_repairs_the_uid_before_it_seeds_anything(self):
-        """The uid ruling's mechanism: without this ordering a uid but 1000 has HOME=/ here."""
+        """The uid rule's mechanism: without this ordering a uid but 1000 has HOME=/ here."""
         self.assertIn('eval "$(fixuid -q)"', ENTRYPOINT)
         self.assertLess(ENTRYPOINT.index('eval "$(fixuid -q)"'), ENTRYPOINT.index('seed_tree "$SEED_GRADLE"'))
         self.assertIn("fixuid", EDITOR["runs_as"]["how"])
@@ -525,15 +525,15 @@ class TheDocument(unittest.TestCase):
             with self.subTest(section=section):
                 self.assertIn(f"editor.{section}", DOCUMENT)
 
-    def test_it_states_each_of_the_five_rulings_with_its_failure(self):
-        rulings = ("Loopback-only port binding", "Mount only the sources",
+    def test_it_states_each_of_the_five_rules_with_its_failure(self):
+        rules = ("Loopback-only port binding", "Mount only the sources",
                    "Run as the repository owner's uid:gid",
                    "A bind source must exist on the host before the container starts",
                    "The root filesystem stays writable")
-        for ruling in rulings:
-            with self.subTest(ruling=ruling):
-                section = DOCUMENT.split(ruling, 1)
-                self.assertEqual(len(section), 2, "the ruling is not stated")
+        for rule in rules:
+            with self.subTest(rule=rule):
+                section = DOCUMENT.split(rule, 1)
+                self.assertEqual(len(section), 2, "the rule is not stated")
                 self.assertIn("The failure", section[1].split("\n### ", 1)[0])
 
     def test_it_states_the_tagging_scheme_with_a_worked_example(self):

@@ -123,7 +123,7 @@ class TheImageIsTaggedOnlyOnceItsLockdownRan(unittest.TestCase):
         # untrusted-workspace declaration, in an image whose command line does
         # not disable workspace trust, against a bind-mounted (untrusted)
         # folder. The extension is still INSTALLED, still listed and still in
-        # `extensions.json` -- which is precisely the state the register
+        # `extensions.json` -- which is precisely the state a reader
         # measured and reported as fixed. The gate must refuse it.
         strip = (f"USER root\nRUN /usr/lib/code-server/lib/node -e \"const f=require('fs'),"
                  f"p='{self._installed}/package.json',m=JSON.parse(f.readFileSync(p,'utf8'));"
