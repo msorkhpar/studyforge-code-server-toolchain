@@ -1,12 +1,12 @@
 """The consuming contract: read `consuming.json`, refuse what breaks it, render a compose file.
 
 **What it does.** Reads this component's `consuming.json` — the machine-readable
-half of `docs/consuming.md` — checks it against the rulings a consumer inherits,
+half of `docs/consuming.md` — checks it against the rules a consumer inherits,
 and renders a complete, working compose file from it and nothing else.
 
 **How you use it.** From the component root:
 
-    python3 consuming/consuming.py --check           # the rulings, on the real contract
+    python3 consuming/consuming.py --check           # the rules, on the real contract
     python3 consuming/consuming.py --render          # the reference fragment, to stdout
     python3 consuming/consuming.py --write docs/compose.reference.yaml
     python3 consuming/consuming.py --run-line        # the runner's documented run line
@@ -15,7 +15,7 @@ and renders a complete, working compose file from it and nothing else.
 `load(root)` reads the file; `findings(contract)` returns what is wrong with it,
 empty when nothing is; `render(contract, ...)` returns the compose file's text
 and **refuses** a contract with a finding rather than emitting one that breaks a
-ruling.
+rule.
 
 ⭐ The contract has one block per image this component builds. The EDITOR is
 rendered into a compose file here; the RUNNER has no compose file — a reader
@@ -42,7 +42,7 @@ be complete, and a consumer still adapts every part that must differ.
 ## ⛔ What the rendered file may never say
 
 The non-negotiable: no Docker socket reaches a serving process. The five
-rulings `docs/consuming.md` gives a consumer are the rest — loopback-only publishing, the sources
+rules `docs/consuming.md` gives a consumer are the rest — loopback-only publishing, the sources
 and nothing else, the repository owner's uid:gid, a bind source that exists
 before the container starts, and a writable root filesystem. `findings` asserts
 each of them against the data, so a contract edited into breaking one stops here
@@ -50,8 +50,8 @@ instead of in somebody's browser.
 
 ## ⭐ What a tag promises, and what `provides` does
 
-Neither image has a registry, so a consumer builds each from a pinned checkout
-and pins the tag the build prints. That tag is a **function of the build's
+A consumer builds each image from a pinned checkout and pins the tag the build
+prints, or pulls a published one by digest (`image.registry`). That tag is a **function of the build's
 inputs**, which is the whole of its promise: the same inputs compute it,
 different inputs compute another one, and no later build can take a pinned name
 away. The two images read DIFFERENT inputs — the editor folds the runner's
@@ -83,20 +83,20 @@ LOOPBACK = ("127.0.0.1", "::1", "localhost")
 #: A named part of the tag scheme, which `image.tag.parts` must describe.
 _PLACEHOLDER = re.compile(r"\{([a-z_]+)\}")
 class Refused(ValueError):
-    """A contract that will not be rendered, and which ruling it breaks."""
+    """A contract that will not be rendered, and which rule it breaks."""
 
 
 def load(root: Path = COMPONENT) -> dict:
     return json.loads((Path(root) / CONSUMING).read_text(encoding="utf-8"))
 
 
-# --------------------------------------------------------------- the rulings
+# --------------------------------------------------------------- the rules
 def findings(contract: dict) -> list[str]:
     """What is wrong with the contract, empty when nothing is.
 
-    ⭐ One call per BLOCK, not per ruling: the editor publishes a
+    ⭐ One call per BLOCK, not per rule: the editor publishes a
     port, mounts named volumes and answers a health check, and the runner does
-    none of the three, so `runner.findings` states the rulings they share in
+    none of the three, so `runner.findings` states the rules they share in
     the runner's own terms rather than threading exceptions through these.
 
     ⭐ `_tag_findings` is the exception that proves it, and it runs on BOTH
@@ -269,7 +269,7 @@ def _release_findings(contract: dict) -> list[str]:
 
 # ------------------------------------------------------------- the rendering
 def render(contract: dict, *, project: str = "studyforge-editor", service: str = "editor") -> str:
-    """The compose file this contract describes, or `Refused` naming the ruling it breaks."""
+    """The compose file this contract describes, or `Refused` naming the rule it breaks."""
     broken = findings(contract)
     if broken:
         raise Refused("; ".join(broken))
@@ -286,7 +286,7 @@ def render(contract: dict, *, project: str = "studyforge-editor", service: str =
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", default=str(COMPONENT))
-    parser.add_argument("--check", action="store_true", help="report what breaks a ruling and stop")
+    parser.add_argument("--check", action="store_true", help="report what breaks a rule and stop")
     parser.add_argument("--render", action="store_true", help="write the reference fragment to stdout")
     parser.add_argument("--write", default=None, help="write it to this path instead")
     parser.add_argument("--run-line", action="store_true",

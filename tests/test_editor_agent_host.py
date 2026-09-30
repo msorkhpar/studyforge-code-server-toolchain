@@ -1,6 +1,6 @@
 """The editor carries no Copilot CLI, and no session forks an agent host.
 
-⛔ **The reading this started from** (2026-09-23): the
+⛔ **The reading this started from**: the
 chat extension was deleted, and the SERVER half stayed. The first workbench to
 connect made the server fork `bootstrap-fork --type=agentHost`, and that
 process started the bundled Copilot CLI,

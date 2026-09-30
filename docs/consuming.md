@@ -2,7 +2,7 @@
 
 This is what a project must provide to serve the editor image
 (`editor.what_it_is`) and to run the runner image (`runner.what_it_is`),
-and the rulings it must not break. ⭐ **The editor has a compose file and
+and the rules it must not break. ⭐ **The editor has a compose file and
 the runner does not** — a reader starts one runner container by hand — so
 everything up to [The runner image](#the-runner-image) is the editor's, and
 that last section is the runner's whole half. ⛔ **It is the
@@ -30,7 +30,7 @@ today. So an edit to this component's contract moves the template; an edit to
 the template moves nothing and is a finding: the next render writes over it.
 
 ```sh
-python3 consuming/consuming.py --check                        # the rulings, on the real contract
+python3 consuming/consuming.py --check                        # the rules, on the real contract
 python3 consuming/consuming.py --write docs/compose.reference.yaml
 ```
 
@@ -52,7 +52,7 @@ seed settings, the entrypoint — comes from the image.
 `GRADLE_USER_HOME`, and it has a default; the reference compose writes it
 explicitly so the seeded cache and the tool agree on one path. ⚠️ **It used to
 carry a second, `PASSWORD`, which you did have to supply** — that is gone with
-the auth mode (register ruling 2026-09-22).
+the auth mode.
 
 **The runtimes** are chosen when the image is BUILT, not when it is run:
 `editor.runtimes.declared_by` is `--runtimes`, `editor.runtimes.default_set` is
@@ -69,10 +69,17 @@ primed editor's tag names the prime it was warmed with. Hand the editor's build
 and its `editor.image.tag_from` the same prime you hand the runner's, and record
 the tag that primed command prints.
 
-**The image has no registry** (`editor.image.registry` is `null`): this
-component has no remote and is never pushed, so a consumer builds the image from
-its checkout and pins the tag the build prints. What that tag promises is the
-next section.
+**Two ways to get the image.** Build it from a checkout and pin the tag the
+build prints, or pull one that its publisher pushed. `editor.image.registry`
+names the second path by variable: the namespace is read from
+`TOOLCHAIN_NAMESPACE`, never written in this repository, and the reference is
+`${TOOLCHAIN_NAMESPACE}/editor:<tag>`. The publisher runs
+`python3 docker/publish.py editor --runtimes <the declared set> --dry-run` to
+see the exact commands, then the same line with `--push` after logging in
+themselves; the script never logs in and pushes only with that flag. ⭐ **A
+consumer that pulls pins the DIGEST** that `docker push` prints, because a tag
+in a registry can be moved and a digest cannot. What a tag promises is the next
+section.
 
 ## Versioning and pinning — what a tag promises
 
@@ -168,7 +175,7 @@ the image and a change to this contract are different events and a consumer acts
 on them differently. `consuming/consuming.py` refuses a `provides` bump that
 arrives with no entry.
 
-## The five rulings a consumer inherits
+## The five rules a consumer inherits
 
 Each of these was paid for once. The failure is written beside it so nobody
 re-derives it, and `consuming/consuming.py`'s `findings()` refuses a contract
@@ -207,7 +214,7 @@ reason. The source binds sit inside the tmpfs.
 ⭐ **Every bind source is the project's own directory, written relative to the
 compose file** (`./sources`), and everything else is a named volume or a
 `tmpfs`. ⛔ Never a host temporary directory and never an absolute host path
-written at build time: the register's direction is that the compose file runs on
+written at build time: the compose file must run on
 any engine, Docker Desktop (which shares no host `/tmp`) and Windows (which has
 none) included, and a relative bind is the one form Compose resolves on both.
 
@@ -259,7 +266,7 @@ read-only root filesystem either never starts or fails every graded run in it.
 `editor.filesystem.why` is the line, and `findings()` reports a contract that
 declares the root read-only and a mount that makes one of those paths read-only.
 
-⚠️ **This is not an argument for mounting anything else.** Ruling 2 still holds:
+⚠️ **This is not an argument for mounting anything else.** Rule 2 still holds:
 writable does not mean shared. `editor.filesystem.what_is_discarded_with_the_container`
 says what happens to those writes — everything outside `editor.mounts` goes with
 the container.
@@ -283,7 +290,7 @@ a set without `python` has no `python3`, and a set without `node` has none on
 ## ⛔ No Docker socket. Anywhere.
 
 `editor.docker_socket` is `false` and `editor.why_no_docker_socket` is the
-ruling: never, not behind a flag and not "only locally". A socket inside a
+rule: never, not behind a flag and not "only locally". A socket inside a
 process that listens on a port is root-equivalent access to the host, and this
 process is an IDE with a shell. `findings()` refuses a contract that says
 otherwise and refuses a mount that names the socket.
@@ -309,7 +316,7 @@ otherwise and refuses a mount that names the socket.
 From the directory holding your copy of the template:
 
 ```sh
-mkdir -p sources                              # ruling 4: before the container starts
+mkdir -p sources                              # rule 4: before the container starts
 export EDITOR_IMAGE="$(python3 docker/editor/build.py --runtimes java,maven --print-tag)"
 export HOST_UID="$(id -u)" HOST_GID="$(id -g)"
 docker compose up -d --wait
@@ -320,14 +327,13 @@ left unset and the compose value's default, an ordinary user, runs the editor;
 Docker Desktop hands the files it writes into `sources` to the Windows user:
 
 ```powershell
-New-Item -ItemType Directory -Force sources | Out-Null   # ruling 4
+New-Item -ItemType Directory -Force sources | Out-Null   # rule 4
 $env:EDITOR_IMAGE = (python docker/editor/build.py --runtimes java,maven --print-tag)
 docker compose up -d --wait
 ```
 
 The editor is then at `http://127.0.0.1:8443/` — that literal host, and no
-other. ⛔ **It asks for no password** (`editor.command_notes.auth`, register ruling
-2026-09-22): loopback is the whole of its access control, so publishing this
+other. ⛔ **It asks for no password** (`editor.command_notes.auth`): loopback is the whole of its access control, so publishing this
 port anywhere but `127.0.0.1` puts an unauthenticated shell on the network. `docker compose down -v` removes the containers and the volumes with
 them.
 
@@ -375,7 +381,7 @@ apart. A command then runs inside it from outside, from
 
 - **The image**, built from this checkout and pinned by the tag the build
   prints (`runner.image.tag_from`, `runner.image.repository`, and
-  `runner.image.registry`, which is `null` for the same reason the editor's is).
+  `runner.image.registry`, the same two paths as the editor's).
   The framework's own tests name it in `runner.image.env_var`. The set a corpus
   declares comes from `runner.runtimes.selectable`; there is no default set and
   `runner.runtimes.why_no_default` says why.
@@ -396,7 +402,7 @@ apart. A command then runs inside it from outside, from
   command on the run line would replace that and exit before the first exec
   arrived.
 
-### The rulings this block carries
+### The rules this block carries
 
 - ⛔ **Offline.** `runner.network.mode` is `none`
   (`runner.network.why`): a practice must not pass because the reader happened
@@ -406,9 +412,9 @@ apart. A command then runs inside it from outside, from
 - ⛔ **Nothing listens.** `runner.ports` is empty and `runner.why_no_ports` is
   why; `runner.healthcheck` is `null` and `runner.why_no_healthcheck` says what
   a consumer does instead of waiting on one.
-- ⛔ **The owner's uid:gid**, above — the editor's ruling 3, in an image with no
+- ⛔ **The owner's uid:gid**, above — the editor's rule 3, in an image with no
   `fixuid` and none needed (`runner.runs_as.how`).
-- ⛔ **A bind source that exists first**, above — the editor's ruling 4, and
+- ⛔ **A bind source that exists first**, above — the editor's rule 4, and
   docker creates a missing one root-owned here exactly as it does there.
 - ⛔ **No Docker socket.** `runner.docker_socket` is `false` and
   `runner.why_no_docker_socket` is the reason, which is sharper here than for

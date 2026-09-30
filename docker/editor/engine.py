@@ -8,7 +8,7 @@ is kept, so a refusal can quote it (`tail()`).
 
 **Why it exists.** ⛔ **No probe hands the engine a host temporary directory.**
 Docker Desktop shares no host `/tmp` and refuses such a bind, and Windows has
-no `/tmp` at all: the register's direction is that every docker step runs on
+no `/tmp` at all: every docker step runs on
 any engine, Windows included. ⭐ So the files cross as a tar stream on the
 Docker CLI's stdin, into a volume the engine owns, and nothing on the host is
 mounted. ⛔ **And no browser output is discarded**: with its `TMPDIR` too long,

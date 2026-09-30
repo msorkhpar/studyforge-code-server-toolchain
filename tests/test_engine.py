@@ -4,7 +4,7 @@ Run from the component root: `python3 -m unittest tests.test_engine -v`. No
 Docker and no browser: a recording `docker` and a scripted browser stand in on
 `PATH`, so each reading is of what the probe ASKS for.
 
-⛔ **The register's direction is that every docker step runs on any engine,
+⛔ **Every docker step runs on any engine,
 Windows included.** Docker Desktop refuses a bind of a host `/tmp` directory,
 and Windows has none, so the probe folder crosses as a tar stream into a named
 volume. ⛔ `DOCKER_CONTEXT` is the caller's: it must reach every `docker` the

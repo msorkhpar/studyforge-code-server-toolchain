@@ -3,7 +3,7 @@
 **What it does.** The runner image has no compose file — a reader starts one
 container by hand and the framework execs into it — so this module is the
 runner's half of what `consuming.py` is for the editor: it checks the `runner`
-block against the rulings a consumer inherits, and renders from it the
+block against the rules a consumer inherits, and renders from it the
 `docker run` and `docker exec` lines that the README documents.
 
 **How you use it.** From the component root:
@@ -15,19 +15,19 @@ block against the rulings a consumer inherits, and renders from it the
 `findings(runner)` returns what is wrong with the block, empty when nothing is;
 `run_line(runner, ...)` and `exec_line(runner, ...)` return the two documented
 lines, and **refuse** a block with a finding rather than printing one that
-breaks a ruling.
+breaks a rule.
 
 **Depends on.** The standard library only. ⛔ It reads no Dockerfile, starts no
 container and mounts no socket.
 
 ## ⛔ Why this is a module of its own and not more branches in `consuming.py`
 
-The split is at the BLOCK, not at the ruling, because three of
+The split is at the BLOCK, not at the rule, because three of
 the editor's five finding groups — the published port, the named volumes, the
 health check — do not apply to an image that listens on nothing, mounts one
 bind and answers no request. Folding "unless it is the runner" into each of
 them would have made every editor check read as a pair of exceptions. So the
-rulings the two blocks SHARE (no Docker socket, the owner's uid:gid, a bind that exists
+rules the two blocks SHARE (no Docker socket, the owner's uid:gid, a bind that exists
 first) are asserted here in the runner's own terms, and `consuming.findings`
 calls one function per block.
 
@@ -54,10 +54,10 @@ QUOTED = '"{}"'
 
 
 class Refused(ValueError):
-    """A runner block that will not be rendered, and which ruling it breaks."""
+    """A runner block that will not be rendered, and which rule it breaks."""
 
 
-# --------------------------------------------------------------- the rulings
+# --------------------------------------------------------------- the rules
 def findings(runner: dict) -> list[str]:
     """What is wrong with the runner block, empty when nothing is."""
     if not runner:
@@ -175,7 +175,7 @@ def _environment_findings(runner: dict) -> list[str]:
 # ------------------------------------------------------------- the rendering
 def run_line(runner: dict, *, name: str | None = None, source_root: str | None = None,
              tag: str | None = None, user: str | None = None, shell: str = POSIX) -> str:
-    """The `docker run` line this block describes, or `Refused` naming the ruling it breaks.
+    """The `docker run` line this block describes, or `Refused` naming the rule it breaks.
 
     With no argument it renders the DOCUMENTED line, placeholders and all, which
     is what the README carries. With arguments it renders a real invocation.

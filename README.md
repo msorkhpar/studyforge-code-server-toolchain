@@ -2,7 +2,8 @@
 
 The toolchain images the studyforge framework runs a corpus's code in. It is a
 sibling repository of the framework, pinned by commit in the framework's
-`workspace.json`. ⛔ It has no remote and is never pushed.
+`workspace.json`. Images are built from a checkout; publishing one to a registry is
+optional (*Publishing an image*, below).
 
 It holds two images: the **runner** (`docker/minimal/`), where a reader's code
 is built and graded, and the browser **editor** (`docker/editor/`), which copies
@@ -21,7 +22,7 @@ Read in this order; nothing outside this repository is needed.
    the Dockerfiles.** `provides` versions the promise; `not_yet_declared` lists
    anything still owed, and is empty.
 3. **[`docs/consuming.md`](docs/consuming.md)**: the same contract in prose, with
-   the five rulings a consumer inherits and the failure behind each.
+   the five rules a consumer inherits and the failure behind each.
 4. **[`docs/compose.reference.yaml`](docs/compose.reference.yaml)**: a working
    compose file for the editor, generated from `consuming.json`.
 5. **[`pins.json`](pins.json)** and **[`editor-pins.json`](editor-pins.json)**:
@@ -74,6 +75,26 @@ a *corpus's* practice dependencies are `--prime`'s, below, and land in a tree
 of their own, so this one keeps saying exactly what `pins.json` says.
 
 Architectures: `linux/amd64` and `linux/arm64`. Any other is refused by name.
+
+## Publishing an image
+
+`docker/publish.py` names an image `<namespace>/<image>:<tag>`, where the tag is
+the one the build computes for this checkout, never a hand-written one. ⛔ **The
+namespace is read from the `TOOLCHAIN_NAMESPACE` environment variable and from
+nowhere else**: the script refuses to run when it is unset, and no namespace is
+written in this repository. Log in to your registry yourself first; the script
+never logs in.
+
+```sh
+export TOOLCHAIN_NAMESPACE=<your registry namespace>
+python3 docker/publish.py runner --runtimes java,maven --dry-run   # prints the commands, runs none
+python3 docker/publish.py runner --runtimes java,maven             # builds and tags locally
+python3 docker/publish.py runner --runtimes java,maven --push      # and pushes
+```
+
+`editor` takes the same flags. ⭐ Pin a pulled image by the digest `docker push`
+prints (`<namespace>/runner@sha256:<digest>`), not by its tag: a digest names
+one image for good. `tests/test_publish.py` holds all of this.
 
 ## Building
 
@@ -154,8 +175,7 @@ docker run -d --name studyforge-runner-<source> --init --network none `
   --user "1000:1000" -v "<source root>:/work" <tag>
 ```
 
-⭐ Every command in this README runs on Windows as on Linux and macOS (a register
-direction: a course publishes and runs from Windows, on Docker Desktop). Where a
+⭐ Every command in this README runs on Windows as on Linux and macOS (a course publishes and runs from Windows, on Docker Desktop). Where a
 POSIX shell and PowerShell spell one differently, both are shown; elsewhere,
 `python3` is `python` or `py -3` on Windows.
 
@@ -326,8 +346,7 @@ the workbench provides — no build step, no dependencies, and nothing fetched.
   AND the extension's own banner shows it ran.** ⛔ **A host with no browser
   refuses the build; it does not skip the proof.** The browsers it looks for,
   and the `STUDYFORGE_BROWSER` override, are that module's.
-- ⭐ **The proof runs on any engine, Docker Desktop and Windows included** (a
-  register direction). Its folder is a named volume seeded through the Docker
+- ⭐ **The proof runs on any engine, Docker Desktop and Windows included.** Its folder is a named volume seeded through the Docker
   CLI's stdin (`docker/editor/engine.py`), never a bind of a host temporary
   directory: Docker Desktop shares no host `/tmp` and refuses one, and Windows
   has none. The browser's profile and `TMPDIR` are one short host directory,
@@ -488,7 +507,7 @@ of the tag.
 ### The compose and mount contract — how a consumer SERVES the editor
 
 The image is shared; the compose file and its mounts are not. What a consuming
-project must provide, and the rulings it must not break, are in
+project must provide, and the rules it must not break, are in
 [`docs/consuming.md`](docs/consuming.md) for a person and in
 [`consuming.json`](consuming.json) for a generator — ⛔ **a consumer reads those
 and never this repository's `Dockerfile`.**
@@ -500,13 +519,13 @@ the mount list is exactly the part that must differ per project. It is
 template cannot drift.
 
 ```sh
-python3 consuming/consuming.py --check    # the rulings, on the real contract
+python3 consuming/consuming.py --check    # the rules, on the real contract
 python3 consuming/consuming.py --write docs/compose.reference.yaml
 ```
 
 [`consuming.json`](consuming.json) carries one block per image this component
 builds — `editor` and `runner` — and `not_yet_declared` is now empty: both run
-shapes and both tag promises are stated. The five rulings a consumer inherits,
+shapes and both tag promises are stated. The five rules a consumer inherits,
 each with the failure that bought it, are
 loopback-only publishing, the sources and nothing else, the repository owner's
 uid:gid, a bind source that exists on the host before the container starts, and
@@ -547,13 +566,14 @@ when `TC_DOCKER` is unset, never because a browser is absent.
 `tests/test_consuming.py` needs none either: it reads every value
 `consuming.json` states about the image back out of the build's own plan, the
 Dockerfile and the lockdown manifest, resolves every key `docs/consuming.md`
-names, and plants a violation of each ruling to see it refused. It also plants a
+names, and plants a violation of each rule to see it refused. It also plants a
 version bump in a temporary copy of the build inputs and measures that the tag
 moves, and that an EDITOR-only bump moves the editor's tag and not the runner's.
-`tests/test_consuming_runner.py` is the runner block's own: the rulings it
+`tests/test_consuming_runner.py` is the runner block's own: the rules it
 carries, and the documented `docker run` and `docker exec` lines read back out
 of the block that renders them.
-`tests/test_pull.py` holds `--pull never` to every image both Dockerfiles start
+`tests/test_publish.py` holds the publish step to its namespace variable, its dry run and its
+explicit push. `tests/test_pull.py` holds `--pull never` to every image both Dockerfiles start
 FROM, with Docker stood in for. `tests/test_no_citations.py` reads every
 tracked file, and a test module's docstrings and comments, and refuses a rule
 id, a spec section or a work item's id: this repository is read on its own, so

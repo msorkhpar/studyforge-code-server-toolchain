@@ -1,6 +1,6 @@
 """The practice frame never paints the Explorer or the secondary side bar — measured from the first frame.
 
-⛔ **The defect this row started from** (reported 2026-09-23): the Explorer side
+⛔ **The defect this test started from** (reported once): the Explorer side
 bar of the code-server frame stayed open until the page had fully loaded, and
 only then closed. ⚠️ Measured on code-server 4.137.0 in a real browser: every
 frame painted the primary side bar from the workbench's first frame for up to

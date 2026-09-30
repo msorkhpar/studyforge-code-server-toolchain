@@ -1,4 +1,5 @@
-"""No tracked file cites a rule, a spec section, a work item or a commit: each states its reason.
+"""No tracked file cites a rule, a spec section, a work item or a commit, or speaks in the build process's
+phrasing: each states its reason.
 
 Run from the component root: `python3 -m unittest tests.test_no_citations -v`.
 
@@ -50,8 +51,17 @@ SECTION = re.compile(r"§\s?[0-9]")
 #: hash (`…-amd64-0123456789ab`) and a digest (`sha256:…`) are joined to their name, so neither is one.
 COMMIT = re.compile(r"(?<![\w./:@=-])(?=[0-9a-f]*[a-f])(?=[0-9a-f]*[0-9])[0-9a-f]{7,40}(?![\w-])")
 
+#: How the process that built this component talks about it: a ruling, a direction, a round, a role, a
+#: dated decision. A reader of this repository has none of those, so a file states its reason instead.
+PROCESS = re.compile(
+    r"\bregister(?:'s)?\s+(?:ruling|direction|rule)\b|\brulings?\b|\bruled\b|\bround\s+[0-9]{1,3}\b"
+    r"|\b(?:the|an?)\s+(?:PO|CTO|owner)(?:'s)?\s+(?:ruling|direction|call|decision)\b|\bthe (?:PO|CTO)\b"
+    r"|\b20[0-9]{2}-[01][0-9]-[0-3][0-9]\b|\bthe user (?:said|asked|wants|ruled|decided)\b"
+)
+
 #: What each pattern is, as a finding names it.
-PATTERNS = (("a work item", ROADMAP), ("a rule id", RULE_ID), ("a spec section", SECTION), ("a commit", COMMIT))
+PATTERNS = (("a work item", ROADMAP), ("a rule id", RULE_ID), ("a spec section", SECTION), ("a commit", COMMIT),
+            ("process phrasing", PROCESS))
 
 #: Files this sweep does not read, each with its reason.
 NOT_READ = {
@@ -128,14 +138,16 @@ class TheSweepCanFire(unittest.TestCase):
 
     def test_each_citation_is_seen(self):
         for line in ("a finding (R19)", "spec §8.3 says so", "as `W465` found", "`REL-13/3`", "in M9",
-                     "the reading `c535074` took", "fixed at 326f591e"):
+                     "the reading `c535074` took", "fixed at 326f591e", "a register direction",
+                     "the rulings", "reported 2026-09-23", "in round 12", "the PO decided"):
             with self.subTest(line=line):
                 self.assertTrue(citations("x", line), line)
 
     def test_a_reason_and_a_version_string_are_not_citations(self):
         for line in ("no Docker socket reaches a serving process", "maven 3.9.11", "the runner's R&D",
                      "Ruby 3", "sha256 R2D2", "runner:java-maven-amd64-0123456789ab", "a face",
-                     "sha256:97014c4b396021f9ddb7d592a7dbedb0c4e4215c29e03dc01c393558aefb71c2", "1234567"):
+                     "sha256:97014c4b396021f9ddb7d592a7dbedb0c4e4215c29e03dc01c393558aefb71c2", "1234567",
+                     "the command registry registers every id", "the repository owner's uid:gid", "a rule the contract states"):
             with self.subTest(line=line):
                 self.assertEqual(citations("x", line), [], line)
 
