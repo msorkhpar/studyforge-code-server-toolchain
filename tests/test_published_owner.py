@@ -37,6 +37,8 @@ def owners(root: Path) -> dict[str, list[str]]:
     """Each tracked file that gives one of these repositories a real-looking owner."""
     found: dict[str, list[str]] = {}
     for name in tracked(root):
+        if name == "README.md":
+            continue  # the root README may name its owner
         try:
             text = (root / name).read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
@@ -67,7 +69,7 @@ class PublishedOwner(unittest.TestCase):
     def test_a_planted_real_looking_owner_is_read_in_every_form(self):
         host = "github" + ".com"
         planted = {
-            "README.md": f"git clone https://{host}/someone/studyforge.git\n",
+            "NOTICE.md": f"git clone https://{host}/someone/studyforge.git\n",
             "docs/a.md": f"see https://{host}/someone/studyforge-narrate-service\n",
             "src/mod.py": f'URL = "git@{host}:someone/studyforge-code-server-toolchain.git"\n',
         }
@@ -81,6 +83,12 @@ class PublishedOwner(unittest.TestCase):
             "README.md": f"git clone https://{host}/<owner>/studyforge.git\n",
             "docs/a.md": f"a font from https://{host}/silnrsi/font-charis\n",
         }
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(owners(scratch(directory, planted)), {})
+
+    def test_the_root_readme_may_name_its_owner(self):
+        host = "github" + ".com"
+        planted = {"README.md": f"git clone https://{host}/someone/studyforge.git\n"}
         with tempfile.TemporaryDirectory() as directory:
             self.assertEqual(owners(scratch(directory, planted)), {})
 
