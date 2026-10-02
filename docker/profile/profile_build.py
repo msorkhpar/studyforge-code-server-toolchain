@@ -9,7 +9,8 @@ Run from the component root:
 
 `--print-tag` prints the tag and `--print-plan` the whole plan as JSON; neither touches Docker.
 A build needs `--base-digest`, so it starts FROM the base by tag and digest, and it is refused
-while any of the profile's entries still reads TO-BE-PINNED.
+while any of the profile's entries still reads TO-BE-PINNED, and a `project` entry whose directory
+or verification-metadata checksum does not match its pin is refused by name before Docker starts.
 """
 
 from __future__ import annotations
@@ -48,6 +49,9 @@ def docker_command(root: Path, built: profile_plan.Plan, base_digest: str) -> li
                "-f", str(Path(root) / profile_plan.DOCKERFILE), "-t", built.tag]
     for key in sorted(args):
         command += ["--build-arg", f"{key}={args[key]}"]
+    # The projects a profile warms and the warmers that warm them arrive as named contexts, read-only.
+    command += ["--build-context", f"profile-projects={Path(root) / profile_plan.PROFILES_DIR / built.profile}",
+                "--build-context", f"warmers={Path(root) / profile_plan.WARMERS}"]
     return command + [str(empty_context(root))]
 
 
@@ -75,6 +79,7 @@ def main(argv: list[str]) -> int:
         waiting = profile_plan.unpinned(profile_plan.load(root, args.profile))
         if waiting:
             raise profile_plan.Refused(f"{waiting} still read {profile_plan.PLACEHOLDER}; pin them before a build")
+        profile_plan.check_projects(root, args.profile, profile_plan.load(root, args.profile))
         command = docker_command(root, built, args.base_digest)
     except profile_plan.Refused as refusal:
         print(f"refused: {refusal}", file=sys.stderr)

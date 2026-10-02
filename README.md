@@ -120,6 +120,22 @@ It layers on `gradle,java,kotlin`. Its entries are placeholders until their coor
 checksums are pinned; its tag is computed today, and its dependencies are not yet fetched or warmed.
 A new runtime that needs its own image is added the same way, as its own profile file.
 
+**The `project` entry kind.** An entry `{"kind": "project", "id", "path", "sha256"}` names a Gradle
+multi-project directory `profiles/<name>/<path>/` (one subproject per distinct dependency set) and
+the sha256 of its `gradle/verification-metadata.xml`. The directory's bytes, and the warmers in
+`prime/` that warm it, are folded into that profile's tag (and into no other profile's or base's);
+`dependency` entries and the `TO-BE-PINNED` rule are unchanged. Before Docker starts, a build
+refuses by entry and file name a directory or checksum file that is missing or does not match the
+pin. The recipe then warms each project with `prime/warm-gradle.sh warm` (the course layer's own
+warm step, network on, every file checked against the project's metadata), keeps the warmed
+`modules-2` as a read-only cache at `/opt/profile/gradle-ro-cache` named by `GRADLE_RO_DEP_CACHE`
+(the image sets no `GRADLE_USER_HOME`, so a course prime layered on it keeps its own), and proves
+with `--network=none` that a fresh copy of each project builds in an EMPTY Gradle user home that
+has only that cache. The named contexts `profile-projects` and `warmers` carry the project and the
+warmers. `profiles/fixture-libs.json` is a small fixture (a Kotlin module, JUnit, Gson,
+commons-lang3 and kotlinx-coroutines, no framework) that exercises the kind end to end; it is not a
+course's profile.
+
 ## Publishing an image
 
 `docker/publish.py` names an image `<namespace>/<published name>:<tag>`, where the published name is
