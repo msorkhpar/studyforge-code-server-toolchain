@@ -458,6 +458,17 @@ checklist: the set off the label, `provides` in this file, a `docker exec` of a
 practice's command that exits zero with no network, and a file the run wrote into
 your source root that belongs to you.
 
+## Profile images
+
+A profile is an image layered on a shared base, named `studyforge-code-toolchain-runner-<profile>` or
+`studyforge-code-toolchain-editor-<profile>` (today: `jvm-frameworks`). Its tag is
+`<set>-<arch>-<12 hex>` under the profile's repository, and the 12 hex fold in the base's own tag, so
+a consumer that pins a base's tag keeps it whatever a profile adds, and a profile's tag moves when
+its base's does. A course that does not name a profile uses the shared bases and their tags, which
+no profile changes. `python3 docker/profile/profile_build.py --profile <name> --image <image>
+--print-tag` prints the tag, and `--print-plan` the plan as JSON. The README's *Profile images*
+section describes the pins and the recipe.
+
 ## Building with compose, and one course layer per consumer
 
 ⭐ **`python3 consuming/builds.py <image> --runtimes <set>` prints a build as

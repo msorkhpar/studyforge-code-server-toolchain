@@ -84,6 +84,42 @@ of their own, so this one keeps saying exactly what `pins.json` says.
 
 Architectures: `linux/amd64` and `linux/arm64`. Any other is refused by name.
 
+## Profile images — adding a pinned input without moving a base tag
+
+Every runtime set's tag ends in one shared suffix per image: the digest over `pins.json` and
+`docker/minimal/` (the runner), and over those plus `docker/editor/`, `prime/` and `lockdown/` (the
+editor). One byte changed in any of them moves **every** tag, including every published base's. So
+an input that not every course needs does not enter them. It enters a **profile**: an image layered
+on a shared base for a declared set, with its own pins and its own tag.
+
+* **The pins** are `profiles/<name>.json`: `layers_on` (the runtimes the base set must contain),
+  `images` (`runner`, `editor`) and `adds` (each entry: `kind`, `id`, `coordinates`, `sha256`).
+  Nothing under `profiles/` or `docker/profile/` is an input of a base.
+* **The recipe** is `docker/profile/Dockerfile`: `FROM ${BASE_IMAGE}`, with no ARG default. A build
+  names the base by tag **and** image digest (`--base-digest sha256:<64 hex>`) and pulls nothing.
+* **The tag** is `<repository>-<profile>:<set>-<arch>-<12 hex>`, for example
+  `code-server-toolchain/runner-jvm-frameworks:gradle-java-kotlin-amd64-<12 hex>`. The 12 hex are a
+  digest of the profile's name, **the base's own tag**, the profile's file and `docker/profile/`.
+  So editing or adding a profile entry, or adding a whole new profile, moves no base tag and no
+  other profile's tag; a change to the base moves the profile's tag, because the base's tag is in it.
+* **Published names** are the base's published name plus the profile:
+  `studyforge-code-toolchain-runner-jvm-frameworks` and `studyforge-code-toolchain-editor-jvm-frameworks`.
+
+```sh
+python3 docker/profile/profile_build.py --profile jvm-frameworks --image runner --print-tag
+python3 docker/profile/profile_build.py --profile jvm-frameworks --image editor --print-plan   # JSON
+python3 docker/profile/profile_build.py --profile jvm-frameworks --image runner --base-digest sha256:<base digest>
+```
+
+`--runtimes` is the base's declared set and defaults to what the profile layers on. A build is
+refused while any entry still reads `TO-BE-PINNED`.
+
+**The `jvm-frameworks` profile** carries a JVM course's framework modules' libraries (Spring Boot,
+Spring Data with an embedded H2 database, Spring Security and Ktor), so no shared base carries them.
+It layers on `gradle,java,kotlin`. Its entries are placeholders until their coordinates and
+checksums are pinned; its tag is computed today, and its dependencies are not yet fetched or warmed.
+A new runtime that needs its own image is added the same way, as its own profile file.
+
 ## Publishing an image
 
 `docker/publish.py` names an image `<namespace>/<published name>:<tag>`, where the published name is
