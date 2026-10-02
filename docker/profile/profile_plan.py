@@ -21,6 +21,17 @@ are in no base's inputs, and its tag is computed from them plus the BASE'S OWN T
 `Plan` (the tag, the base tag, the build arguments) or raises `Refused`;
 `unpinned(profile)` lists the entries still reading `TO-BE-PINNED`, which a build refuses.
 
+## Entry kinds
+* `dependency` (and any other kind that carries `coordinates` and `sha256`): read as before.
+* `project`: `{"kind": "project", "id": ..., "path": ..., "sha256": ...}`. `path` is a directory
+  under `profiles/<name>/` holding a Gradle multi-project (one subproject per distinct dependency
+  set); `sha256` is the checksum of its `gradle/verification-metadata.xml`. The directory's bytes,
+  and the warmers in `prime/` that warm it, are folded into the profile's tag, and
+  `check_projects(root, name, profile)` refuses, naming the entry and the file, a directory or
+  checksum file that is missing or does not match, before Docker starts. The recipe warms each
+  project with `prime/warm-gradle.sh` and exposes what it warmed as a read-only cache
+  (`GRADLE_RO_DEP_CACHE`).
+
 **Depends on.** The editor's and the runner's plans, read-only.
 """
 
@@ -45,6 +56,11 @@ DOCKERFILE = "docker/profile/Dockerfile"
 #: What a profile's tag is a digest of: its own file and this directory. ⛔ Never `pins.json`,
 #: `docker/minimal` or any base input: the base's tag, folded in separately, stands for those.
 RECIPE = "docker/profile"
+#: The warmers a `project` entry is warmed with: read-only here, folded into the tag of a profile
+#: that has a project entry (and of no other), so a profile's tag moves when they change.
+WARMERS = "prime"
+PROJECT = "project"
+VERIFICATION = "gradle/verification-metadata.xml"
 IMAGES = ("runner", "editor")
 PLACEHOLDER = "TO-BE-PINNED"
 #: The name a registry sees for each image of a profile: the base's published name plus the profile.
@@ -64,6 +80,7 @@ class Plan:
     base_tag: str
     published: str
     build_args: dict[str, str]
+    projects: tuple[str, ...] = ()
 
 
 def profile_path(root: Path, name: str) -> Path:
@@ -83,7 +100,45 @@ def load(root: Path, name: str) -> dict:
 def unpinned(profile: dict) -> list[str]:
     """The ids of the entries a build still may not use: a placeholder, or a sha256 that is not one."""
     return [entry["id"] for entry in profile["adds"]
-            if PLACEHOLDER in entry["coordinates"] or not _SHA256.match(entry.get("sha256", ""))]
+            if PLACEHOLDER in entry.get("coordinates", "") or PLACEHOLDER in entry.get("path", "")
+            or not _SHA256.match(entry.get("sha256", ""))]
+
+
+def projects(profile: dict) -> list[dict]:
+    """The profile's `project` entries, in file order."""
+    return [entry for entry in profile["adds"] if entry.get("kind") == PROJECT]
+
+
+def project_dir(root: Path, name: str, entry: dict) -> Path:
+    """The entry's directory, which must be a plain relative path under `profiles/<name>/`."""
+    where = entry.get("path", "")
+    parts = Path(where).parts
+    if not where or Path(where).is_absolute() or ".." in parts or "\\" in where:
+        raise Refused(f"profile {name!r} project {entry['id']!r}: path {where!r} is not a relative directory under profiles/{name}/")
+    return Path(root) / PROFILES_DIR / name / where
+
+
+def check_projects(root: Path, name: str, profile: dict) -> None:
+    """Refuse, by entry and file name, a `project` whose directory or checksum file does not match its pin."""
+    for entry in projects(profile):
+        directory = project_dir(root, name, entry)
+        label = f"profile {name!r} project {entry['id']!r}"
+        if not directory.is_dir():
+            raise Refused(f"{label}: {directory.relative_to(root).as_posix()} is not a directory")
+        metadata = directory / VERIFICATION
+        if not metadata.is_file():
+            raise Refused(f"{label}: {metadata.relative_to(root).as_posix()} is missing; the project must carry its verification metadata")
+        actual = hashlib.sha256(metadata.read_bytes()).hexdigest()
+        if actual != entry.get("sha256"):
+            raise Refused(f"{label}: {metadata.relative_to(root).as_posix()} has sha256 {actual}, "
+                          f"but the profile pins {entry.get('sha256')}")
+
+
+def _fold(digest, root: Path, files) -> None:
+    for file in sorted(files, key=lambda p: p.relative_to(root).as_posix()):
+        if "__pycache__" in file.parts:
+            continue
+        digest.update(file.relative_to(root).as_posix().encode() + b"\0" + file.read_bytes() + b"\0")
 
 
 def inputs_digest(root: Path, name: str) -> str:
@@ -92,10 +147,14 @@ def inputs_digest(root: Path, name: str) -> str:
     path = profile_path(root, name)
     files = [path] + sorted(p for p in (root / RECIPE).rglob("*") if p.is_file())
     digest = hashlib.sha256()
-    for file in sorted(files, key=lambda p: p.relative_to(root).as_posix()):
-        if "__pycache__" in file.parts:
-            continue
-        digest.update(file.relative_to(root).as_posix().encode() + b"\0" + file.read_bytes() + b"\0")
+    _fold(digest, root, files)
+    entries = projects(load(root, name))
+    if entries:
+        # A project's directory and the warmers that warm it are inputs of this profile only.
+        extra = [p for p in (root / WARMERS).rglob("*") if p.is_file()]
+        for entry in entries:
+            extra += [p for p in project_dir(root, name, entry).rglob("*") if p.is_file()]
+        _fold(digest, root, extra)
     return digest.hexdigest()
 
 
@@ -128,11 +187,15 @@ def plan(root: Path, name: str, image: str, names, platform: str) -> Plan:
     if missing:
         raise Refused(f"profile {name!r} layers on {profile['layers_on']}; declare {missing} as well")
     base = base_plan(root, image, names, platform)
-    adds = "\n".join(f"{e['id']}|{e['coordinates']}|{e['sha256']}" for e in profile["adds"])
+    adds = "\n".join(f"{e['id']}|{e['coordinates'] if 'coordinates' in e else PROJECT + ':' + e['path']}|{e['sha256']}"
+                     for e in profile["adds"])
+    paths = tuple(e["path"] for e in projects(profile))
+    for e in projects(profile):
+        project_dir(root, name, e)
     tag = tag_for(image, name, base.tag, base.names, base.arch, inputs_digest(root, name))
-    args = {"PROFILE_NAME": name, "PROFILE_ADDS": adds, "BASE_IMAGE": base.tag}
+    args = {"PROFILE_NAME": name, "PROFILE_ADDS": adds, "BASE_IMAGE": base.tag, "PROFILE_PROJECTS": " ".join(paths)}
     published = f"{PUBLISHED[image]}-{name}"
-    return Plan(name, image, base.names, base.arch, base.platform, tag, base.tag, published, args)
+    return Plan(name, image, base.names, base.arch, base.platform, tag, base.tag, published, args, paths)
 
 
 def base_reference(built: Plan, base_digest: str) -> str:
