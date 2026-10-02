@@ -1,0 +1,29 @@
+{
+  "profiles_api": 1,
+  "name": "claude-sdks",
+  "about": "The Claude SDKs profile: the Python wheels, npm packages and JVM jars a Claude course's examples and practices need, offline, layered on the shared base so no shared base carries them. This file is a STUB. Every pin below is a placeholder marked TO-BE-PINNED; the profile plans and computes its tag from it, and refuses to build until each one is pinned. The Agent SDK's bundled Claude Code binaries are omitted by design (the Python one is removed by a recipe step after the hashed install, the npm one is an optional dependency that is skipped).",
+  "layers_on": ["python", "node", "java", "gradle", "kotlin"],
+  "images": ["runner", "editor"],
+  "adds": [
+    {
+      "kind": "python-wheels",
+      "id": "python-sdks",
+      "coordinates": "TO-BE-PINNED",
+      "sha256": "TO-BE-PINNED",
+      "remove_bundled_binary": true
+    },
+    {
+      "kind": "npm-packages",
+      "id": "node-sdks",
+      "coordinates": "TO-BE-PINNED",
+      "sha256": "TO-BE-PINNED",
+      "omit_optional": true
+    },
+    {
+      "kind": "project",
+      "id": "jvm-sdks",
+      "path": "TO-BE-PINNED",
+      "sha256": "TO-BE-PINNED"
+    }
+  ]
+}
