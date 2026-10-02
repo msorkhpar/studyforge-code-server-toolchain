@@ -1,0 +1,57 @@
+{
+  "profiles_api": 1,
+  "name": "kotlin-editor",
+  "about": "The Kotlin editor profile: the Kotlin language server the editor's Kotlin extension would otherwise download on first use, a JDK 21 to run it on (the server's embedded compiler cannot read the runner's JDK 25 version string), and two exact-string patches that let the pinned extension activate on this code-server. All of it is installed into the editor image only and pointed at by the editor's settings seed, so a learner offline gets diagnostics and completion in a .kt file. Nothing is added to the runner image, and the shared editor base is unchanged.",
+  "layers_on": [
+    "gradle",
+    "java",
+    "kotlin"
+  ],
+  "images": [
+    "editor"
+  ],
+  "adds": [
+    {
+      "kind": "editor-extension",
+      "id": "kotlin-language-server",
+      "url": "https://github.com/fwcd/kotlin-language-server/releases/download/1.3.13/server.zip",
+      "sha256": "4fe7d71d087b307c7869036171bd9d8c6a4284cd7c25b89098b0a24eb2d9b6d2",
+      "images": [
+        "editor"
+      ],
+      "settings": {
+        "kotlin.languageServer.path": "/opt/profile/editor-extensions/kotlin-language-server/server/bin/kotlin-language-server",
+        "kotlin.java.home": "/opt/profile/editor-extensions/kotlin-jdk",
+        "kotlin.debugAdapter.enabled": false
+      },
+      "patches": [
+        {
+          "file": "/opt/code-server/extensions/fwcd.kotlin-0.2.36/dist/extension.js",
+          "sha256": "e8bd1f597b25d851f6700ec34b7d7c29834f01a7ab2daa9795a0790bf0e8f5e1",
+          "after": "036d35dc05cbcbfb1a09f1230d455801e294e3fac44d50dbfa2575bbbaeab750",
+          "replace": [
+            [
+              "typeof navigator",
+              "typeof void 0"
+            ],
+            [
+              "if(!g.getConfig().initialized){",
+              "if(!1){"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "editor-extension",
+      "id": "kotlin-jdk",
+      "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.9%2B10/OpenJDK21U-jdk_x64_linux_hotspot_21.0.9_10.tar.gz",
+      "sha256": "810d3773df7e0d6c4394e4e244b264c8b30e0b05a0acf542d065fd78a6b65c2f",
+      "images": [
+        "editor"
+      ],
+      "platform": "linux/amd64",
+      "strip": 1
+    }
+  ]
+}

@@ -50,8 +50,11 @@ def docker_command(root: Path, built: profile_plan.Plan, base_digest: str) -> li
     for key in sorted(args):
         command += ["--build-arg", f"{key}={args[key]}"]
     # The projects a profile warms and the warmers that warm them arrive as named contexts, read-only.
-    command += ["--build-context", f"profile-projects={Path(root) / profile_plan.PROFILES_DIR / built.profile}",
-                "--build-context", f"warmers={Path(root) / profile_plan.WARMERS}"]
+    # A profile with no project directory (an extension-only profile) hands the empty context instead.
+    projects = Path(root) / profile_plan.PROFILES_DIR / built.profile
+    command += ["--build-context", f"profile-projects={projects if projects.is_dir() else empty_context(root)}",
+                "--build-context", f"warmers={Path(root) / profile_plan.WARMERS}",
+                "--build-context", f"profile-recipe={Path(root) / profile_plan.RECIPE}"]
     return command + [str(empty_context(root))]
 
 
@@ -80,6 +83,7 @@ def main(argv: list[str]) -> int:
         if waiting:
             raise profile_plan.Refused(f"{waiting} still read {profile_plan.PLACEHOLDER}; pin them before a build")
         profile_plan.check_projects(root, args.profile, profile_plan.load(root, args.profile))
+        profile_plan.check_extensions(args.profile, profile_plan.load(root, args.profile), built.platform)
         command = docker_command(root, built, args.base_digest)
     except profile_plan.Refused as refusal:
         print(f"refused: {refusal}", file=sys.stderr)

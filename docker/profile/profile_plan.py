@@ -31,6 +31,21 @@ are in no base's inputs, and its tag is computed from them plus the BASE'S OWN T
   checksum file that is missing or does not match, before Docker starts. The recipe warms each
   project with `prime/warm-gradle.sh` and exposes what it warmed as a read-only cache
   (`GRADLE_RO_DEP_CACHE`).
+* `editor-extension`: `{"kind": "editor-extension", "id": ..., "url": ..., "sha256": ...,
+  "images": ["editor"], "settings": {...}}`. A zip or `.tar.gz` archive an editor extension needs
+  and would otherwise download from the network at first use (the Kotlin language server is the
+  first). `url` is an exact, versioned address and `sha256` the checksum of the archive, checked
+  in the recipe's fetch stage (`fetch_extension.py`), which refuses a wrong archive naming the
+  entry. The archive is unpacked to `/opt/profile/editor-extensions/<id>/`, without its first
+  `strip` path components, in the images the entry NAMES
+  (`images`, a subset of the profile's) and in no other. `platform` (optional, `linux/amd64`) names
+  the only platform an archive of machine code is for: a build for another is refused by name.
+  `patches` (optional) are exact-string edits of a file the extension installed in the base image,
+  each `{"file", "sha256" (before), "after" (sha256 after), "replace": [[old, new], ...]}`,
+  applied by `apply_patches.pl`, which refuses by name a file that is not the one pinned. `settings` are written as one
+  `// @runtime kotlin` block into the editor's settings SEED, so a set without the profile has
+  neither the archive nor the setting. The editor's own recipe, `editor-pins.json` and every base
+  tag stay byte-identical: the editor's inputs are hashed into its tag, a profile's are not.
 
 **Depends on.** The editor's and the runner's plans, read-only.
 """
@@ -60,6 +75,11 @@ RECIPE = "docker/profile"
 #: that has a project entry (and of no other), so a profile's tag moves when they change.
 WARMERS = "prime"
 PROJECT = "project"
+EXTENSION = "editor-extension"
+#: Where an `editor-extension` archive is unpacked, one directory per entry id.
+EXTENSION_ROOT = "/opt/profile/editor-extensions"
+#: The settings seed block an `editor-extension` entry's `settings` are written into.
+SEED_BLOCK = "kotlin"
 VERIFICATION = "gradle/verification-metadata.xml"
 IMAGES = ("runner", "editor")
 PLACEHOLDER = "TO-BE-PINNED"
@@ -101,12 +121,63 @@ def unpinned(profile: dict) -> list[str]:
     """The ids of the entries a build still may not use: a placeholder, or a sha256 that is not one."""
     return [entry["id"] for entry in profile["adds"]
             if PLACEHOLDER in entry.get("coordinates", "") or PLACEHOLDER in entry.get("path", "")
+            or PLACEHOLDER in entry.get("url", "")
             or not _SHA256.match(entry.get("sha256", ""))]
 
 
 def projects(profile: dict) -> list[dict]:
     """The profile's `project` entries, in file order."""
     return [entry for entry in profile["adds"] if entry.get("kind") == PROJECT]
+
+
+def extensions(profile: dict, image: str | None = None) -> list[dict]:
+    """The profile's `editor-extension` entries, in file order; with `image`, only those it names."""
+    return [entry for entry in profile["adds"] if entry.get("kind") == EXTENSION
+            and (image is None or image in entry.get("images", []))]
+
+
+def check_extensions(name: str, profile: dict, platform: str | None = None) -> None:
+    """Refuse, by entry name, an `editor-extension` that cannot be installed as it is declared."""
+    for entry in profile["adds"]:
+        if entry.get("kind") != EXTENSION:
+            continue
+        label = f"profile {name!r} editor-extension {entry.get('id')!r}"
+        if not runner_plan.NAME.match(entry.get("id") or ""):
+            raise Refused(f"{label}: the id is a runtime-id-shaped word, the directory the archive is unpacked to")
+        images = entry.get("images")
+        if not images or not set(images) <= set(profile["images"]):
+            raise Refused(f"{label}: images {images!r} must name one or more of the profile's images {profile['images']}")
+        if not str(entry.get("url", "")).startswith(("https://", "file://")):
+            raise Refused(f"{label}: url {entry.get('url')!r} is an https address of a versioned archive")
+        if not isinstance(entry.get("settings", {}), dict):
+            raise Refused(f"{label}: settings is a mapping of setting names to values")
+        if platform and entry.get("platform") not in (None, platform):
+            raise Refused(f"{label}: the archive is for {entry['platform']}, and this build is for {platform}")
+        if not isinstance(entry.get("strip", 0), int) or entry.get("strip", 0) < 0:
+            raise Refused(f"{label}: strip is a number of leading path components, zero or more")
+        for patch in entry.get("patches", []):
+            texts = [t for pair in patch.get("replace", []) for t in pair]
+            if (not str(patch.get("file", "")).startswith("/opt/code-server/extensions/")
+                    or not _SHA256.match(patch.get("sha256", "")) or not _SHA256.match(patch.get("after", ""))
+                    or not texts or len(texts) % 2 or any("|" in t or "\n" in t for t in texts)):
+                raise Refused(f"{label}: a patch names a file under /opt/code-server/extensions/, its sha256 before and "
+                              f"after, and replacements without a '|' or a newline")
+
+
+def patch_lines(profile: dict, image: str) -> str:
+    """One `file|before|after|old|new...` line per patch of the image's extensions, for `apply_patches.pl`."""
+    return "\n".join("|".join([patch["file"], patch["sha256"], patch["after"], *[t for pair in patch["replace"] for t in pair]])
+                     for entry in extensions(profile, image) for patch in entry.get("patches", []))
+
+
+def seed_block(profile: dict, image: str) -> str:
+    """The `// @runtime kotlin` block the editor's settings seed gets: every `settings` of the image's extensions."""
+    members = []
+    for entry in extensions(profile, image):
+        members += [f"    {json.dumps(key)}: {json.dumps(value)}," for key, value in entry.get("settings", {}).items()]
+    if not members:
+        return ""
+    return "\n".join([f"    // @runtime {SEED_BLOCK}", *members, f"    // @end {SEED_BLOCK}"])
 
 
 def project_dir(root: Path, name: str, entry: dict) -> Path:
@@ -175,6 +246,30 @@ def tag_for(image: str, profile: str, base: str, names, arch: str, inputs: str) 
     return f"{repository}-{profile}:{label}-{arch}-{digest[:12]}"
 
 
+def _what(entry: dict) -> str:
+    """What an entry adds, as the `PROFILE_ADDS` label line names it."""
+    if "coordinates" in entry:
+        return entry["coordinates"]
+    if entry.get("kind") == EXTENSION:
+        return f"{EXTENSION}:{entry['url']}"
+    return f"{PROJECT}:{entry['path']}"
+
+
+def fetch_image(root: Path, names, platform: str) -> str:
+    """The pinned image the recipe's fetch stage runs in: the editor's own, named by `pins.json`."""
+    pins = runner_plan.load(root)
+    runner = runner_plan.plan(pins, editor_plan.selection(pins, names), platform, runner_plan.inputs_digest(root))
+    return runner.build_args["UNPACK_IMAGE"]
+
+
+def base_user(root: Path, image: str) -> str:
+    """The user the base image runs as, which the profile's root-only steps hand back: read from the base's recipe."""
+    if image == "runner":
+        return "root"
+    users = re.findall(r"^USER\s+(\S+)\s*$", (Path(root) / "docker" / "editor" / "Dockerfile").read_text(encoding="utf-8"), re.M)
+    return users[-1]
+
+
 def plan(root: Path, name: str, image: str, names, platform: str) -> Plan:
     """The profile's build for `image` over the declared set, or `Refused`."""
     if image not in IMAGES:
@@ -187,13 +282,16 @@ def plan(root: Path, name: str, image: str, names, platform: str) -> Plan:
     if missing:
         raise Refused(f"profile {name!r} layers on {profile['layers_on']}; declare {missing} as well")
     base = base_plan(root, image, names, platform)
-    adds = "\n".join(f"{e['id']}|{e['coordinates'] if 'coordinates' in e else PROJECT + ':' + e['path']}|{e['sha256']}"
-                     for e in profile["adds"])
+    check_extensions(name, profile, platform)
+    adds = "\n".join(f"{e['id']}|{_what(e)}|{e['sha256']}" for e in profile["adds"])
+    fetch = "\n".join(f"{e['id']}|{e['url']}|{e['sha256']}|{e.get('strip', 0)}" for e in extensions(profile, image))
     paths = tuple(e["path"] for e in projects(profile))
     for e in projects(profile):
         project_dir(root, name, e)
     tag = tag_for(image, name, base.tag, base.names, base.arch, inputs_digest(root, name))
-    args = {"PROFILE_NAME": name, "PROFILE_ADDS": adds, "BASE_IMAGE": base.tag, "PROFILE_PROJECTS": " ".join(paths)}
+    args = {"PROFILE_NAME": name, "PROFILE_ADDS": adds, "BASE_IMAGE": base.tag, "PROFILE_PROJECTS": " ".join(paths),
+            "PROFILE_EXTENSIONS": fetch, "PROFILE_SEED": seed_block(profile, image), "PROFILE_PATCHES": patch_lines(profile, image),
+            "FETCH_IMAGE": fetch_image(root, names, platform), "PROFILE_RESTORE_USER": base_user(root, image)}
     published = f"{PUBLISHED[image]}-{name}"
     return Plan(name, image, base.names, base.arch, base.platform, tag, base.tag, published, args, paths)
 

@@ -136,6 +136,26 @@ warmers. `profiles/fixture-libs.json` is a small fixture (a Kotlin module, JUnit
 commons-lang3 and kotlinx-coroutines, no framework) that exercises the kind end to end; it is not a
 course's profile.
 
+**The `editor-extension` entry kind.** An entry `{"kind": "editor-extension", "id", "url", "sha256",
+"images", "settings"}` names a `.zip` or `.tar.gz` archive that an editor extension needs and would
+otherwise download from the network at first use, pinned by an exact address and a sha256, and the
+images it belongs to. The recipe's fetch stage (`docker/profile/fetch_extension.py`) downloads it,
+refuses by entry name an archive whose bytes are not the pinned ones, and unpacks it (without its
+first `strip` path components) to `/opt/profile/editor-extensions/<id>/` in the images the entry
+names and in no other. `platform` (for an archive of machine code) refuses a build for another
+platform by name. `settings` are written as one `// @runtime kotlin` block into the editor's
+settings seed, so an editor of a set without the profile has neither the archive nor the setting.
+`patches` are exact-string edits of a file the base installed, each checked against the file's
+sha256 before and after (`apply_patches.pl`). The editor's own recipe, `editor-pins.json` and every
+base tag are untouched, because a profile's inputs are in no base's tag.
+`profiles/kotlin-editor.json` is the first use: the Kotlin language server `1.3.13`, a Temurin JDK
+`21.0.9+10` to run it on (its embedded compiler cannot read the runner's JDK 25 version string), and
+two patches that let the pinned `fwcd.kotlin` `0.2.36` activate on this code-server (it reads the
+`navigator` global, which the extension host rejects, and it waits on a first-run question).
+Measured on that profile's editor image, network cut off: a planted type error shows a diagnostic
+about 3.5 s after the page opens, a member completion on a `String` lists its members, the
+language server holds about 1 GiB with one `.kt` file open, and the image grows by 0.45 GB.
+
 ## Publishing an image
 
 `docker/publish.py` names an image `<namespace>/<published name>:<tag>`, where the published name is
