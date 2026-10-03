@@ -42,8 +42,8 @@ RECORDED = {
     ("fixture-libs", "runner"): "code-server-toolchain/runner-fixture-libs:gradle-java-kotlin-amd64-a4519ad7340e",
     ("fixture-libs", "editor"): "code-server-toolchain/editor-fixture-libs:gradle-java-kotlin-amd64-c1787d41c1b8",
     ("kotlin-editor", "editor"): "code-server-toolchain/editor-kotlin-editor:gradle-java-kotlin-amd64-db79c54d4663",
-    ("claude-sdks", "runner"): "code-server-toolchain/runner-claude-sdks:gradle-java-kotlin-node-python-amd64-2f506735b838",
-    ("claude-sdks", "editor"): "code-server-toolchain/editor-claude-sdks:gradle-java-kotlin-node-python-amd64-e86682cc32e5",
+    ("claude-sdks", "runner"): "code-server-toolchain/runner-claude-sdks:gradle-java-kotlin-node-python-amd64-c2fc7fc430ba",
+    ("claude-sdks", "editor"): "code-server-toolchain/editor-claude-sdks:gradle-java-kotlin-node-python-amd64-ee61f098d384",
 }
 
 
@@ -238,16 +238,6 @@ class NothingElseMoves(unittest.TestCase):
             self.assertEqual({key: package_kinds.plan(root, key[0], key[1], [], AMD64).tag for key in keys}, others)
             self.assertEqual({key: profile_plan.plan(root, key[0], key[1], [], AMD64).tag for key in RECORDED}, RECORDED)
 
-    def test_a_stub_entry_plans_and_the_build_refuses_it_by_name(self):
-        built = package_kinds.plan(ROOT, "claude-sdks", "runner", [], AMD64)
-        self.assertRegex(built.tag, r"^code-server-toolchain/runner-claude-sdks:gradle-java-kotlin-node-python-amd64-[0-9a-f]{12}$")
-        err = io.StringIO()
-        with mock.patch.object(packages_build.subprocess, "run", side_effect=AssertionError("Docker started")), \
-                contextlib.redirect_stderr(err):
-            self.assertEqual(packages_build.main(["--profile", "claude-sdks", "--image", "runner", "--base-digest", DIGEST]), 2)
-        self.assertIn("python-sdks", err.getvalue())
-
-
 class TheRecipe(unittest.TestCase):
     def text(self, name: str) -> str:
         return (ROOT / "docker" / "profile_packages" / name).read_text(encoding="utf-8")
@@ -258,7 +248,7 @@ class TheRecipe(unittest.TestCase):
     def test_the_fetch_is_the_only_stage_with_a_network_and_the_install_has_none(self):
         docker = self.text("Dockerfile")
         self.assertIn("RUN --network=none \\\n    --mount=type=bind,from=profile-files", docker)
-        self.assertEqual(docker.count("--network=none"), 1)
+        self.assertEqual(docker.count("--network=none"), 2)
         fetch = self.text("fetch.sh")
         self.assertIn("--require-hashes", fetch)
         self.assertIn("--only-binary=:all:", fetch)
@@ -279,10 +269,21 @@ class TheRecipe(unittest.TestCase):
         self.assertEqual(command[command.index("-t") + 1], built.tag)
         self.assertTrue(any(c.startswith("profile-files=") for c in command))
         self.assertTrue(any(c.startswith("packages-recipe=") for c in command))
+        self.assertTrue(any(c.startswith("warmers=") for c in command))
 
-    def test_a_package_only_profile_starts_from_the_base_and_a_mixed_one_from_its_profile_image(self):
+    def test_packages_and_projects_start_from_the_base_and_any_other_kind_from_the_profile_image(self):
         self.assertFalse(package_kinds.has_legacy_entries(profile_plan.load(ROOT, NAME)))
-        self.assertTrue(package_kinds.has_legacy_entries(profile_plan.load(ROOT, "claude-sdks")))
+        self.assertFalse(package_kinds.has_legacy_entries(profile_plan.load(ROOT, "claude-sdks")))
+        self.assertTrue(package_kinds.has_legacy_entries(profile_plan.load(ROOT, "jvm-frameworks")))
+
+    def test_the_project_stage_runs_only_for_a_profile_that_has_a_project_entry(self):
+        docker = self.text("Dockerfile")
+        self.assertIn("FROM projects-${PROFILE_HAS_PROJECTS} AS ready", docker)
+        self.assertEqual(docker.count("--network=none"), 2)
+        self.assertEqual(package_kinds.plan(ROOT, NAME, "runner", [], AMD64).build_args["PROFILE_HAS_PROJECTS"], "0")
+        self.assertEqual(package_kinds.plan(ROOT, "claude-sdks", "runner", [], AMD64).build_args["PROFILE_HAS_PROJECTS"], "1")
+        command = packages_build.docker_command(ROOT, package_kinds.plan(ROOT, "claude-sdks", "runner", [], AMD64), "start:image")
+        self.assertTrue(any(c.startswith("warmers=") for c in command))
 
 
 if __name__ == "__main__":

@@ -1,29 +1,33 @@
 {
   "profiles_api": 1,
   "name": "claude-sdks",
-  "about": "The Claude SDKs profile: the Python wheels, npm packages and JVM jars a Claude course's examples and practices need, offline, layered on the shared base so no shared base carries them. This file is a STUB. Every pin below is a placeholder marked TO-BE-PINNED; the profile plans and computes its tag from it, and refuses to build until each one is pinned. The Agent SDK's bundled Claude Code binaries are omitted by design (the Python one is removed by a recipe step after the hashed install, the npm one is an optional dependency that is skipped).",
+  "about": "The Claude SDKs profile: the Python wheels, npm packages and JVM jars a Claude course's examples and practices need, offline, layered on the shared base so no shared base carries them. Every input is pinned and checksummed: a hashed requirements file (linux/amd64), an npm lockfile with an integrity on every package, and a Gradle project whose verification metadata checks every jar. The Agent SDK's bundled Claude Code binaries are omitted by design (the Python one is removed after the hashed install, the npm one is an optional dependency that is skipped).",
   "layers_on": ["python", "node", "java", "gradle", "kotlin"],
   "images": ["runner", "editor"],
   "adds": [
     {
       "kind": "python-wheels",
       "id": "python-sdks",
-      "coordinates": "TO-BE-PINNED",
-      "sha256": "TO-BE-PINNED",
-      "remove_bundled_binary": true
+      "coordinates": "anthropic 1.11.0, mcp 2.2.0, claude-agent-sdk 0.2.163, pydantic 2.13.5 and their dependencies",
+      "requirements": "requirements.txt",
+      "sha256": "9fe5a160dfc40ee1d425de3a7fa84a035c571178fa1ba6fbef971e75ceb77a0c",
+      "platforms": ["linux/amd64"],
+      "imports": ["anthropic", "mcp", "claude_agent_sdk", "pydantic"],
+      "remove_files": ["claude_agent_sdk/_bundled/claude"]
     },
     {
       "kind": "npm-packages",
       "id": "node-sdks",
-      "coordinates": "TO-BE-PINNED",
-      "sha256": "TO-BE-PINNED",
-      "omit_optional": true
+      "path": "npm",
+      "sha256": "ea27940e0dd11881fcedb4bab00abf38120be8d60da5b330c68d68a5ba48c12e",
+      "omit_optional": true,
+      "imports": ["@anthropic-ai/sdk", "@anthropic-ai/claude-agent-sdk", "@modelcontextprotocol/sdk/client", "@modelcontextprotocol/sdk/server", "zod"]
     },
     {
       "kind": "project",
       "id": "jvm-sdks",
-      "path": "TO-BE-PINNED",
-      "sha256": "TO-BE-PINNED"
+      "path": "jvm",
+      "sha256": "6e5cc4dffba0ab5985b3e53be22ed37bca5bfb95e5646153f6b7b4ff94c10ba8"
     }
   ]
 }

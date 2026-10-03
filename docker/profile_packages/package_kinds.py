@@ -25,10 +25,14 @@ not `docker/profile/profile_build.py`, whose tag would not name the packages.
   paths under the install's `site-packages` deleted after the hashed install, each of which must exist
   (the declared omit flag: the wheel's own hash stays the pin). `allow_sdist` (optional) is a reason;
   without it a source distribution is refused.
-* `npm-packages`: `{"kind", "id", "path", "sha256", "omit_optional"?}`. `path` is a directory under
+* `project`: a Gradle multi-project under `profiles/<name>/`, as the profile recipe reads it, warmed here
+  into a read-only dependency cache and proved offline (see the Dockerfile). A profile whose entries are
+  only these three kinds never runs the profile recipe.
+* `npm-packages`: `{"kind", "id", "path", "sha256", "omit_optional"?, "imports"?}`. `path` is a directory under
   `profiles/<name>/` with `package.json` and `package-lock.json`, every package with an
   `integrity`; `sha256` is the lockfile's digest; `omit_optional` (default false) skips optional
-  dependencies, such as a platform binary.
+  dependencies, such as a platform binary. `imports` (optional) lists the specifiers the build proves
+  import and type-check, for a package whose bare name cannot be imported; by default each dependency's name.
 
 **Depends on.** `docker/profile/profile_plan.py`, read-only.
 """
@@ -60,6 +64,7 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _HASH = re.compile(r"^--hash=sha256:[0-9a-f]{64}$")
 _PIN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*(\[[A-Za-z0-9,._-]+\])?==[A-Za-z0-9][A-Za-z0-9._+!-]*$")
 _FILE = re.compile(r"^[A-Za-z0-9._@/+-]+$")
+_SPECIFIER = re.compile(r"^(@[a-z0-9._-]+/)?[a-z0-9._-]+(/[A-Za-z0-9._-]+)*$")
 _MODULE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
 
 
@@ -85,9 +90,20 @@ def has_packages(profile: dict) -> bool:
     return bool(wheels(profile) or npm(profile))
 
 
+def projects(profile: dict) -> list[dict]:
+    return profile_plan.projects(profile)
+
+
+def has_projects(profile: dict) -> bool:
+    return bool(projects(profile))
+
+
 def has_legacy_entries(profile: dict) -> bool:
-    """True when an entry of another kind (`project`, `editor-extension`...) needs the profile recipe's layer first."""
-    return any(e.get("kind") not in (WHEELS, NPM) for e in profile["adds"])
+    """True when an entry of another kind (`dependency`, `editor-extension`...) needs the profile recipe's layer first.
+
+    A `project` entry does not: this recipe warms it itself, so a profile of packages and projects never
+    runs the profile recipe's patch step."""
+    return any(e.get("kind") not in (WHEELS, NPM, profile_plan.PROJECT) for e in profile["adds"])
 
 
 def _file(root: Path, name: str, entry: dict, field: str) -> Path:
@@ -194,6 +210,9 @@ def check_npm(root: Path, name: str, profile: dict) -> None:
             raise Refused(f"{label}: the id is a runtime-id-shaped word")
         if not isinstance(entry.get("omit_optional", False), bool):
             raise Refused(f"{label}: omit_optional is true or false")
+        for spec in entry.get("imports", []):
+            if not isinstance(spec, str) or not _SPECIFIER.match(spec):
+                raise Refused(f"{label}: imports names {spec!r}, which is not a package specifier")
         directory = _file(root, name, entry, "path")
         if not directory.is_dir():
             raise Refused(f"{label}: {directory.relative_to(root).as_posix()} is not a directory")
@@ -253,8 +272,10 @@ def _flag(value) -> str:
 def build_args(profile: dict, base: profile_plan.Plan) -> dict[str, str]:
     lines = ["|".join([e["id"], e.get("requirements", ""), ",".join(e.get("imports", [])), ",".join(e.get("remove_files", [])),
                         _flag("allow_sdist" in e)]) for e in wheels(profile)]
-    packages = ["|".join([e["id"], e.get("path", ""), _flag(e.get("omit_optional", False))]) for e in npm(profile)]
+    packages = ["|".join([e["id"], e.get("path", ""), _flag(e.get("omit_optional", False))]
+                         + ([",".join(e["imports"])] if e.get("imports") else [])) for e in npm(profile)]
     return {"PROFILE_WHEELS": "\n".join(lines), "PROFILE_NPM": "\n".join(packages), "PROFILE_HAS_NPM": _flag(packages),
+            "PROFILE_PROJECTS": " ".join(e["path"] for e in projects(profile)), "PROFILE_HAS_PROJECTS": _flag(projects(profile)),
             "PROFILE_RESTORE_USER": base.build_args["PROFILE_RESTORE_USER"]}
 
 

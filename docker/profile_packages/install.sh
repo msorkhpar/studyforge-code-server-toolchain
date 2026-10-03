@@ -53,7 +53,7 @@ ENTRY
 done
 for line in $PROFILE_NPM; do
   [ -n "$line" ] || continue
-  IFS='|' read -r id path omit <<ENTRY
+  IFS='|' read -r id path omit imports <<ENTRY
 $line
 ENTRY
   flag=""
@@ -64,7 +64,14 @@ ENTRY
   (
     cd "$work"
     npm_config_cache="$P/npm-cache" npm ci --offline --ignore-scripts --no-audit --no-fund $flag
-    names="$(node -e 'const p=require("./package.json");console.log(Object.keys(p.dependencies||{}).join(" "))')"
+    # `imports` (optional) names the specifiers proved instead of the dependencies' own names, for a
+    # package whose bare name is not importable (its `exports` names a root file the package does not ship).
+    names="$imports"
+    if [ -z "$names" ]; then
+      names="$(node -e 'const p=require("./package.json");console.log(Object.keys(p.dependencies||{}).join(" "))')"
+    else
+      names="$(echo "$names" | tr ',' ' ')"
+    fi
     : > t.ts
     IFS=' '
     for dep in $names; do
