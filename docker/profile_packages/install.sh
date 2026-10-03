@@ -5,6 +5,39 @@ P=/opt/profile
 NL='
 '
 mkdir -p "$P"
+# ⭐ The editor's extensions (`editor-extension` entries with `install: vsix`): each archive was fetched and
+# checked against its pin, and is installed here with NO network into the extensions directory the editor
+# reads, the way the base installed its own. The install is proved by the extension's own id and version in
+# `--list-extensions`. The entry's settings go into the settings seed, as one block, and only where it exists.
+IFS_BEFORE="$IFS"
+for line in $PROFILE_VSIX; do
+  [ -n "$line" ] || continue
+  IFS='|' read -r id url sha provides <<ENTRY
+$line
+ENTRY
+  echo "install: editor-extension $id"
+  code-server --extensions-dir /opt/code-server/extensions --install-extension "$P/fetched/vsix/$id.vsix" > /tmp/vsix-install.log 2>&1 \
+    || { cat /tmp/vsix-install.log >&2; echo "install: editor-extension $id: the archive did not install" >&2; exit 1; }
+  rm -f /tmp/vsix-install.log
+  code-server --extensions-dir /opt/code-server/extensions --list-extensions --show-versions 2>/dev/null | grep -qx "$provides" \
+    || { echo "install: editor-extension $id: --list-extensions does not show $provides" >&2; exit 1; }
+  echo "proof: $provides is installed"
+done
+if [ -n "$PROFILE_VSIX" ]; then
+  if [ -n "$PROFILE_VSIX_SEED" ]; then
+    seed=/opt/code-server/seed/settings.json
+    test -f "$seed" || { echo "install: the editor has no settings seed at $seed" >&2; exit 1; }
+    printf '%s\n' "$PROFILE_VSIX_SEED" > /tmp/vsix-seed-block
+    sed -i '/^{$/r /tmp/vsix-seed-block' "$seed"
+    rm -f /tmp/vsix-seed-block
+    grep -q '@runtime kotlin' "$seed" || { echo "install: the settings block did not land in $seed" >&2; exit 1; }
+  fi
+  rm -rf /root/.local/share/code-server /root/.config/code-server
+  chown -R 1000:1000 /opt/code-server/extensions
+  chmod -R a+rX /opt/code-server/extensions
+fi
+rm -rf "$P/fetched/vsix"
+IFS="$IFS_BEFORE"
 mv "$P/fetched/wheelhouse" "$P/wheelhouse"
 mv "$P/fetched/requirements" "$P/requirements"
 mv "$P/fetched/npm-cache" "$P/npm-cache"

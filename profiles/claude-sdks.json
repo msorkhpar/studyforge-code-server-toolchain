@@ -1,7 +1,7 @@
 {
   "profiles_api": 1,
   "name": "claude-sdks",
-  "about": "The Claude SDKs profile: the Python wheels, npm packages and JVM jars a Claude course's examples and practices need, offline, layered on the shared base so no shared base carries them. Every input is pinned and checksummed: a hashed requirements file (linux/amd64), an npm lockfile with an integrity on every package, and a Gradle project whose verification metadata checks every jar. The Agent SDK's bundled Claude Code binaries are omitted by design (the Python one is removed after the hashed install, the npm one is an optional dependency that is skipped).",
+  "about": "The Claude SDKs profile: the Python wheels, npm packages and JVM jars a Claude course's examples and practices need, offline, layered on the shared base so no shared base carries them. Every input is pinned and checksummed: a hashed requirements file (linux/amd64), an npm lockfile with an integrity on every package, and a Gradle project whose verification metadata checks every jar. The Agent SDK's bundled Claude Code binaries are omitted by design (the Python one is removed after the hashed install, the npm one is an optional dependency that is skipped). The editor image also installs the basedpyright extension (MIT, its language server bundled in the archive), so a learner offline gets Python diagnostics and completion; the shared editor base has none.",
   "layers_on": ["python", "node", "java", "gradle", "kotlin"],
   "images": ["runner", "editor"],
   "adds": [
@@ -28,6 +28,16 @@
       "id": "jvm-sdks",
       "path": "jvm",
       "sha256": "6e5cc4dffba0ab5985b3e53be22ed37bca5bfb95e5646153f6b7b4ff94c10ba8"
+    },
+    {
+      "kind": "editor-extension",
+      "id": "basedpyright",
+      "install": "vsix",
+      "url": "https://open-vsx.org/api/detachhead/basedpyright/1.40.1/file/detachhead.basedpyright-1.40.1.vsix",
+      "sha256": "d6fb62728d1eda5549e3764461c4295edf27943e7ef0a5b17b6a35abc7f4c995",
+      "provides": "detachhead.basedpyright@1.40.1",
+      "images": ["editor"],
+      "settings": {"basedpyright.analysis.typeCheckingMode": "standard"}
     }
   ]
 }

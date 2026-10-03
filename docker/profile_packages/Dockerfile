@@ -16,6 +16,7 @@ FROM ${PROFILE_IMAGE} AS fetch
 USER root
 ARG PROFILE_WHEELS
 ARG PROFILE_NPM
+ARG PROFILE_VSIX
 RUN --mount=type=bind,from=profile-files,target=/files \
     --mount=type=bind,from=packages-recipe,target=/recipe \
     sh /recipe/fetch.sh
@@ -25,7 +26,9 @@ FROM ${PROFILE_IMAGE} AS installed
 USER root
 ARG PROFILE_WHEELS
 ARG PROFILE_NPM
-LABEL org.studyforge.profile.packages="${PROFILE_WHEELS}${PROFILE_NPM}"
+ARG PROFILE_VSIX
+ARG PROFILE_VSIX_SEED
+LABEL org.studyforge.profile.packages="${PROFILE_WHEELS}${PROFILE_NPM}${PROFILE_VSIX}"
 COPY --from=fetch /fetched /opt/profile/fetched
 RUN --network=none \
     --mount=type=bind,from=profile-files,target=/files \

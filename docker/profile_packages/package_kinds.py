@@ -28,6 +28,13 @@ not `docker/profile/profile_build.py`, whose tag would not name the packages.
 * `project`: a Gradle multi-project under `profiles/<name>/`, as the profile recipe reads it, warmed here
   into a read-only dependency cache and proved offline (see the Dockerfile). A profile whose entries are
   only these three kinds never runs the profile recipe.
+* `editor-extension` with `"install": "vsix"`: `{"kind", "id", "install", "url", "sha256", "provides", "images", "settings"?}`.
+  A `.vsix` an editor image installs into its extensions directory, offline, so the editor shows what the
+  extension provides (a language server's diagnostics) with no download at first use. `url` is an exact,
+  versioned https address of the archive, `sha256` its digest (checked in the fetch stage, which refuses a wrong
+  archive by the entry's name), `provides` the `publisher.name@version` that `--list-extensions` must show after
+  the install, `images` exactly `["editor"]`. `settings` are written into the editor's settings seed as one block.
+  An `editor-extension` entry without `install` is read as before, by the profile recipe, and moves nothing here.
 * `npm-packages`: `{"kind", "id", "path", "sha256", "omit_optional"?, "imports"?}`. `path` is a directory under
   `profiles/<name>/` with `package.json` and `package-lock.json`, every package with an
   `integrity`; `sha256` is the lockfile's digest; `omit_optional` (default false) skips optional
@@ -66,6 +73,8 @@ _PIN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*(\[[A-Za-z0-9,._-]+\])?==[A-Za-z0
 _FILE = re.compile(r"^[A-Za-z0-9._@/+-]+$")
 _SPECIFIER = re.compile(r"^(@[a-z0-9._-]+/)?[a-z0-9._-]+(/[A-Za-z0-9._-]+)*$")
 _MODULE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
+VSIX = "vsix"
+_PROVIDES = re.compile(r"^[a-z0-9][a-z0-9-]*\.[A-Za-z0-9][A-Za-z0-9-]*@[0-9][0-9A-Za-z.+-]*$")
 
 
 @dataclass(frozen=True)
@@ -86,8 +95,14 @@ def npm(profile: dict) -> list[dict]:
     return [e for e in profile["adds"] if e.get("kind") == NPM]
 
 
+def vsix(profile: dict, image: str | None = None) -> list[dict]:
+    """The profile's `editor-extension` entries that are installed by this recipe (`install: vsix`); with `image`, those it names."""
+    return [e for e in profile["adds"] if e.get("kind") == profile_plan.EXTENSION and e.get("install") == VSIX
+            and (image is None or image in e.get("images", []))]
+
+
 def has_packages(profile: dict) -> bool:
-    return bool(wheels(profile) or npm(profile))
+    return bool(wheels(profile) or npm(profile) or vsix(profile))
 
 
 def projects(profile: dict) -> list[dict]:
@@ -102,8 +117,8 @@ def has_legacy_entries(profile: dict) -> bool:
     """True when an entry of another kind (`dependency`, `editor-extension`...) needs the profile recipe's layer first.
 
     A `project` entry does not: this recipe warms it itself, so a profile of packages and projects never
-    runs the profile recipe's patch step."""
-    return any(e.get("kind") not in (WHEELS, NPM, profile_plan.PROJECT) for e in profile["adds"])
+    runs the profile recipe's patch step. Nor does an `editor-extension` with `install: vsix`: this recipe installs it."""
+    return any(e.get("kind") not in (WHEELS, NPM, profile_plan.PROJECT) and e.get("install") != VSIX for e in profile["adds"])
 
 
 def _file(root: Path, name: str, entry: dict, field: str) -> Path:
@@ -189,6 +204,28 @@ def check_wheels(root: Path, name: str, profile: dict, platform: str | None = No
             raise Refused(f"{label}: allow_sdist is a reason, a non-empty sentence; a source distribution is otherwise refused")
 
 
+def check_vsix(name: str, profile: dict) -> None:
+    """Refuse, by entry name, an `editor-extension` with an `install` this recipe cannot honour as declared."""
+    for entry in profile["adds"]:
+        if entry.get("kind") != profile_plan.EXTENSION or "install" not in entry:
+            continue
+        label = f"profile {name!r} editor-extension {entry.get('id')!r}"
+        if entry["install"] != VSIX:
+            raise Refused(f"{label}: install {entry['install']!r} is not one this recipe reads (only {VSIX!r})")
+        if not str(entry.get("url", "")).startswith("https://") or not str(entry["url"]).endswith(".vsix"):
+            raise Refused(f"{label}: url {entry.get('url')!r} is an https address of a versioned .vsix")
+        if not _SHA256.match(str(entry.get("sha256", ""))):
+            raise Refused(f"{label}: sha256 {entry.get('sha256')!r} is the 64 hex digits of the archive's digest")
+        if not _PROVIDES.match(str(entry.get("provides", ""))):
+            raise Refused(f"{label}: provides {entry.get('provides')!r} is the `publisher.name@version` the install must list")
+        if entry.get("images") != ["editor"]:
+            raise Refused(f"{label}: images {entry.get('images')!r}: an extension archive is installed in the editor image only")
+        if entry.get("patches") or entry.get("strip"):
+            raise Refused(f"{label}: patches and strip belong to an archive the profile recipe unpacks, not to install: vsix")
+        if any("\n" in str(key) + json.dumps(value) for key, value in entry.get("settings", {}).items()):
+            raise Refused(f"{label}: a setting holds a newline")
+
+
 def check_lockfile(label: str, where: str, lock: dict) -> None:
     packages = lock.get("packages")
     if not isinstance(packages, dict) or lock.get("lockfileVersion", 0) < 2:
@@ -239,6 +276,7 @@ def check(root: Path, name: str, profile: dict, platform: str | None = None) -> 
                 raise Refused(f"profile {name!r} {entry['kind']} {entry['id']!r} still reads {profile_plan.PLACEHOLDER}")
     check_wheels(root, name, profile, platform)
     check_npm(root, name, profile)
+    check_vsix(name, profile)
 
 
 def recipe_digest(root: Path, name: str, profile: dict) -> str:
@@ -269,12 +307,14 @@ def _flag(value) -> str:
     return "1" if value else "0"
 
 
-def build_args(profile: dict, base: profile_plan.Plan) -> dict[str, str]:
+def build_args(profile: dict, base: profile_plan.Plan, image: str = "") -> dict[str, str]:
     lines = ["|".join([e["id"], e.get("requirements", ""), ",".join(e.get("imports", [])), ",".join(e.get("remove_files", [])),
                         _flag("allow_sdist" in e)]) for e in wheels(profile)]
     packages = ["|".join([e["id"], e.get("path", ""), _flag(e.get("omit_optional", False))]
                          + ([",".join(e["imports"])] if e.get("imports") else [])) for e in npm(profile)]
-    return {"PROFILE_WHEELS": "\n".join(lines), "PROFILE_NPM": "\n".join(packages), "PROFILE_HAS_NPM": _flag(packages),
+    archives = ["|".join([e["id"], e["url"], e["sha256"], e["provides"]]) for e in vsix(profile, image)]
+    return {"PROFILE_VSIX": "\n".join(archives), "PROFILE_VSIX_SEED": profile_plan.seed_block(profile, image) if archives else "",
+            "PROFILE_WHEELS": "\n".join(lines), "PROFILE_NPM": "\n".join(packages), "PROFILE_HAS_NPM": _flag(packages),
             "PROFILE_PROJECTS": " ".join(e["path"] for e in projects(profile)), "PROFILE_HAS_PROJECTS": _flag(projects(profile)),
             "PROFILE_RESTORE_USER": base.build_args["PROFILE_RESTORE_USER"]}
 
@@ -284,4 +324,4 @@ def plan(root: Path, name: str, image: str, names, platform: str) -> Plan:
     root = Path(root)
     base = profile_plan.plan(root, name, image, names, platform)
     profile = profile_plan.load(root, name)
-    return Plan(name, image, tag(root, name, image, base, profile), base, build_args(profile, base))
+    return Plan(name, image, tag(root, name, image, base, profile), base, build_args(profile, base, image))
