@@ -42,8 +42,8 @@ RECORDED = {
     ("fixture-libs", "runner"): "code-server-toolchain/runner-fixture-libs:gradle-java-kotlin-amd64-a4519ad7340e",
     ("fixture-libs", "editor"): "code-server-toolchain/editor-fixture-libs:gradle-java-kotlin-amd64-c1787d41c1b8",
     ("kotlin-editor", "editor"): "code-server-toolchain/editor-kotlin-editor:gradle-java-kotlin-amd64-db79c54d4663",
-    ("claude-sdks", "runner"): "code-server-toolchain/runner-claude-sdks:gradle-java-kotlin-node-python-amd64-c2fc7fc430ba",
-    ("claude-sdks", "editor"): "code-server-toolchain/editor-claude-sdks:gradle-java-kotlin-node-python-amd64-ee61f098d384",
+    ("claude-sdks", "runner"): "code-server-toolchain/runner-claude-sdks:gradle-java-kotlin-node-python-amd64-4069e92f83df",
+    ("claude-sdks", "editor"): "code-server-toolchain/editor-claude-sdks:gradle-java-kotlin-node-python-amd64-467f25b40fba",
 }
 
 

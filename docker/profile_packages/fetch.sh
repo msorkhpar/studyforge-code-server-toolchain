@@ -1,8 +1,9 @@
-# The fetch stage's work (network on). Reads PROFILE_WHEELS and PROFILE_NPM, one entry per line:
+# The fetch stage's work (network on). Reads PROFILE_WHEELS, PROFILE_NPM and PROFILE_VSIX, one entry per line:
 #   wheels: id|requirements|imports|remove_files|allow_sdist
 #   npm:    id|path|omit_optional[|imports]
+#   vsix:   id|url|sha256|provides
 set -eu
-mkdir -p /fetched/wheelhouse /fetched/requirements /fetched/npm-cache
+mkdir -p /fetched/wheelhouse /fetched/requirements /fetched/npm-cache /fetched/vsix
 NL='
 '
 IFS="$NL"
@@ -31,5 +32,14 @@ ENTRY
   (cd "$work" && npm ci --ignore-scripts --no-audit --no-fund --cache /fetched/npm-cache $flag) \
     || { echo "fetch: npm-packages $id: npm ci refused the lockfile" >&2; exit 1; }
   rm -rf "$work"
+done
+for line in $PROFILE_VSIX; do
+  [ -n "$line" ] || continue
+  IFS='|' read -r id url sha provides <<ENTRY
+$line
+ENTRY
+  echo "fetch: editor-extension $id from $url"
+  python3 /recipe/fetch_vsix.py "$url" "/fetched/vsix/$id.vsix" "$sha" \
+    || { echo "fetch: editor-extension $id: the archive is missing or is not the pinned one" >&2; exit 1; }
 done
 rm -rf /root/.npm /root/.cache

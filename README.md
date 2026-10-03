@@ -143,6 +143,13 @@ edited for them, so the tag of a profile with neither kind is exactly what it wa
   packages and projects never runs `docker/profile/`'s patch step. A profile with no `project` entry never
   runs the stage.
 
+* `editor-extension` with `"install": "vsix"`: `{kind, id, install, url, sha256, provides, images: ["editor"], settings?}`.
+  A `.vsix` the editor image installs into its extensions directory, offline: fetched in the fetch stage
+  and refused by the entry's name unless its digest is `sha256`, installed with no network, and proved by
+  `provides` (`publisher.name@version`) in `--list-extensions`. `settings` land in the editor's settings
+  seed. An `editor-extension` with no `install` is the profile recipe's, as above, and unchanged. The
+  runner image of the profile installs nothing for it.
+
 A build refuses by entry and file name, before Docker starts, a missing file, a file that does not
 match its pin, a requirement without a hash, a range, a lockfile package without an integrity, and a
 platform the hashes do not cover. The build proves offline (`--network none`) that the imports work, that
@@ -164,6 +171,13 @@ mounted but the practice:
 ```sh
 IMAGE=<tag> PRACTICE=/path/to/practice-folder sh docs/measurements/claude-sdks-offline-proof.sh
 ```
+
+The editor image of `claude-sdks` shows diagnostics in a `.ts` file with the shared editor's own TypeScript
+support and, for a `.py` file, through the pinned `basedpyright` extension (MIT, its language server inside the
+archive); the shared editor carries a Python extension with no language server, so without it a Python file
+shows none. `docs/measurements/editor-diagnostics-offline.py <editor image>` proves both with the network cut
+off (an internal Docker network) in a headless browser, and fails if a planted error shows none or a clean
+file shows one.
 
 ⛔ A profile with a package entry is planned and built through `package_build.py`; the profile
 planner's own tag does not name the packages. `fixture-packages` is the fixture that proves both kinds.

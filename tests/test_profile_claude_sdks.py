@@ -41,7 +41,7 @@ class ThePlan(unittest.TestCase):
         profile = profile_plan.load(ROOT, NAME)
         self.assertEqual(profile["layers_on"], list(SET))
         self.assertEqual(profile["images"], ["runner", "editor"])
-        self.assertEqual(len(profile["adds"]), 3)
+        self.assertEqual(len(profile["adds"]), 4)
 
     def test_the_tag_has_the_profile_form_for_both_images(self):
         runner = profile_plan.plan(ROOT, NAME, "runner", [], AMD64)
@@ -76,9 +76,9 @@ class TheRealPins(unittest.TestCase):
         package_kinds.check(ROOT, NAME, profile, AMD64)
         profile_plan.check_projects(ROOT, NAME, profile)
 
-    def test_the_three_kinds_are_carried_and_no_file_holds_a_placeholder(self):
+    def test_the_kinds_are_carried_and_no_file_holds_a_placeholder(self):
         profile = profile_plan.load(ROOT, NAME)
-        self.assertEqual([e["kind"] for e in profile["adds"]], ["python-wheels", "npm-packages", "project"])
+        self.assertEqual([e["kind"] for e in profile["adds"]], ["python-wheels", "npm-packages", "project", "editor-extension"])
         for path in (ROOT / "profiles" / NAME).rglob("*"):
             if path.is_file():
                 self.assertNotIn(profile_plan.PLACEHOLDER, path.read_text(encoding="utf-8", errors="replace"), path)
