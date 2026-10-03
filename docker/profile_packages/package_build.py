@@ -43,7 +43,8 @@ def docker_command(root: Path, built: package_kinds.Plan, intermediate: str, lab
         command += ["--build-arg", f"{key}={args[key]}"]
     files = Path(root) / profile_plan.PROFILES_DIR / built.profile
     command += ["--build-context", f"profile-files={files}",
-                "--build-context", f"packages-recipe={Path(root) / package_kinds.RECIPE}"]
+                "--build-context", f"packages-recipe={Path(root) / package_kinds.RECIPE}",
+                "--build-context", f"warmers={Path(root) / profile_plan.WARMERS}"]
     return command + [str(profile_build.empty_context(root))]
 
 

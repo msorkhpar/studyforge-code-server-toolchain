@@ -1,6 +1,6 @@
 # The fetch stage's work (network on). Reads PROFILE_WHEELS and PROFILE_NPM, one entry per line:
 #   wheels: id|requirements|imports|remove_files|allow_sdist
-#   npm:    id|path|omit_optional
+#   npm:    id|path|omit_optional[|imports]
 set -eu
 mkdir -p /fetched/wheelhouse /fetched/requirements /fetched/npm-cache
 NL='
@@ -20,7 +20,7 @@ ENTRY
 done
 for line in $PROFILE_NPM; do
   [ -n "$line" ] || continue
-  IFS='|' read -r id path omit <<ENTRY
+  IFS='|' read -r id path omit imports <<ENTRY
 $line
 ENTRY
   flag=""

@@ -131,7 +131,14 @@ edited for them, so the tag of a profile with neither kind is exactly what it wa
   `package-lock.json` (every package with an `integrity`), `sha256` is the lockfile's digest. The fetch
   stage runs `npm ci` into a cache kept read-only at `/opt/profile/npm-cache` (named by
   `npm_config_cache`, with no `NODE_PATH`); `npm ci --offline` fills a course's `node_modules` from it.
-  `omit_optional` (default false) skips optional dependencies, such as a platform binary.
+  `omit_optional` (default false) skips optional dependencies, such as a platform binary. `imports`
+  (optional) lists the specifiers the build proves import and type-check, for a package whose bare name
+  cannot be imported; by default each dependency's name.
+* `project`: a Gradle multi-project under `profiles/<name>/`, as above. In a profile that also holds a
+  package entry it is warmed by this recipe into a read-only dependency cache (`GRADLE_RO_DEP_CACHE`) and
+  proved by a build of a fresh copy in an empty Gradle user home with no network, so a profile of
+  packages and projects never runs `docker/profile/`'s patch step. A profile with no `project` entry never
+  runs the stage.
 
 A build refuses by entry and file name, before Docker starts, a missing file, a file that does not
 match its pin, a requirement without a hash, a range, a lockfile package without an integrity, and a
@@ -143,6 +150,16 @@ that a fresh copy of the npm project installs, imports and type-checks.
 python3 docker/profile_packages/package_build.py --profile fixture-packages --image runner --print-tag
 python3 docker/profile_packages/package_build.py --profile fixture-packages --image runner --base-digest sha256:<base digest>
 IMAGE=<tag> NPM_DIR=profiles/fixture-packages/npm sh docs/measurements/package-profile-offline-proof.sh
+```
+
+The `claude-sdks` profile holds the Claude SDKs a course's practices use: the Python wheels (amd64) and
+npm packages above, and a Gradle project of three subprojects (the Java SDK jars with JUnit 5.10.2, the
+Kotlin SDK jars with the Java SDK and JUnit, and `kotlin.test`). Its offline proof runs a course practice
+in each of Python, TypeScript, Java and Kotlin, and an MCP server and client over stdio, with nothing
+mounted but the practice:
+
+```sh
+IMAGE=<tag> PRACTICE=/path/to/practice-folder sh docs/measurements/claude-sdks-offline-proof.sh
 ```
 
 ⛔ A profile with a package entry is planned and built through `package_build.py`; the profile

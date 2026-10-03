@@ -1,23 +1,31 @@
-"""The `claude-sdks` profile stub: it plans, computes its tag, and refuses to build until pinned.
+"""The `claude-sdks` profile: every input pinned and checksummed, planned and refused before Docker starts.
 
 Run from the component root: `python3 -m unittest tests.test_profile_claude_sdks -v`.
 
 Held: the profile layers on the course's base set (composition of existing pins), its tag has the
-profile form, a build is refused by entry name while any entry reads TO-BE-PINNED, a runtime
-outside the base set is refused by name, and adding the profile file moves no base tag and no
-other profile's tag.
+profile form, nothing in it is waiting to be pinned, the SDK versions are the ones the course reads,
+a changed checksum of each of the three kinds is refused by the entry's name before Docker starts, a
+runtime outside the base set is refused by name, and the profile moves no base tag and no other
+profile's tag.
 """
 
 from __future__ import annotations
 
+import contextlib
+import io
+import json
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(ROOT / "docker" / "profile"))
+sys.path.insert(0, str(ROOT / "docker" / "profile_packages"))
 
+import package_build  # noqa: E402
+import package_kinds  # noqa: E402
 import profile_build  # noqa: E402
 import profile_plan  # noqa: E402
 import test_profile as shared  # noqa: E402
@@ -28,7 +36,7 @@ AMD64, ARM64 = shared.AMD64, shared.ARM64
 DIGEST = shared.IMAGE_DIGEST
 
 
-class TheStubPlans(unittest.TestCase):
+class ThePlan(unittest.TestCase):
     def test_it_layers_on_the_course_base_set_and_names_both_images(self):
         profile = profile_plan.load(ROOT, NAME)
         self.assertEqual(profile["layers_on"], list(SET))
@@ -61,11 +69,79 @@ class TheStubPlans(unittest.TestCase):
             self.assertEqual(tag, profile_plan.plan(ROOT, NAME, image, [], AMD64).tag)
 
 
-class TheRefusals(unittest.TestCase):
-    def test_a_build_is_refused_naming_every_unpinned_entry(self):
+class TheRealPins(unittest.TestCase):
+    def test_nothing_is_waiting_and_every_check_passes(self):
         profile = profile_plan.load(ROOT, NAME)
-        self.assertEqual(profile_plan.unpinned(profile), ["python-sdks", "node-sdks", "jvm-sdks"])
-        self.assertEqual(profile_build.main(["--profile", NAME, "--image", "runner", "--base-digest", DIGEST]), 2)
+        self.assertEqual(profile_plan.unpinned(profile), [])
+        package_kinds.check(ROOT, NAME, profile, AMD64)
+        profile_plan.check_projects(ROOT, NAME, profile)
+
+    def test_the_three_kinds_are_carried_and_no_file_holds_a_placeholder(self):
+        profile = profile_plan.load(ROOT, NAME)
+        self.assertEqual([e["kind"] for e in profile["adds"]], ["python-wheels", "npm-packages", "project"])
+        for path in (ROOT / "profiles" / NAME).rglob("*"):
+            if path.is_file():
+                self.assertNotIn(profile_plan.PLACEHOLDER, path.read_text(encoding="utf-8", errors="replace"), path)
+        self.assertNotIn(profile_plan.PLACEHOLDER, (ROOT / "profiles" / f"{NAME}.json").read_text(encoding="utf-8"))
+
+    def test_the_pins_are_the_versions_the_course_reads(self):
+        requirements = (ROOT / "profiles" / NAME / "requirements.txt").read_text(encoding="utf-8")
+        for pin in ("anthropic==1.11.0", "mcp==2.2.0", "claude-agent-sdk==0.2.163", "pydantic==2.13.5"):
+            self.assertIn(pin + " \\\n", requirements)
+        manifest = json.loads((ROOT / "profiles" / NAME / "npm" / "package.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["dependencies"], {"@anthropic-ai/claude-agent-sdk": "0.3.287", "@anthropic-ai/sdk": "0.131.0",
+                                                    "@modelcontextprotocol/sdk": "1.31.0", "zod": "4.6.5"})
+        self.assertEqual(manifest["devDependencies"], {"typescript": "5.9.3"})
+        metadata = (ROOT / "profiles" / NAME / "jvm" / "gradle" / "verification-metadata.xml").read_text(encoding="utf-8")
+        for coordinate in ('name="anthropic-java" version="2.68.0"', 'name="mcp" version="2.0.1"', 'name="kotlin-sdk" version="0.15.0"',
+                           'name="junit-jupiter" version="5.10.2"', 'name="kotlin-test" version="2.4.20"'):
+            self.assertIn(coordinate, metadata)
+
+    def test_the_agent_sdk_binary_is_omitted_by_a_declared_step_in_each_language(self):
+        profile = profile_plan.load(ROOT, NAME)
+        wheel, packages = package_kinds.wheels(profile)[0], package_kinds.npm(profile)[0]
+        self.assertEqual(wheel["remove_files"], ["claude_agent_sdk/_bundled/claude"])
+        self.assertIs(packages["omit_optional"], True)
+        self.assertIn("@modelcontextprotocol/sdk/client", packages["imports"])
+        self.assertEqual(wheel["platforms"], ["linux/amd64"])
+
+    def test_the_plan_names_the_project_and_starts_from_the_base_not_the_profile_recipe(self):
+        built = package_kinds.plan(ROOT, NAME, "runner", [], AMD64)
+        self.assertEqual(built.build_args["PROFILE_PROJECTS"], "jvm")
+        self.assertEqual(built.build_args["PROFILE_HAS_PROJECTS"], "1")
+        self.assertFalse(package_kinds.has_legacy_entries(profile_plan.load(ROOT, NAME)))
+
+
+class TheRefusals(unittest.TestCase):
+    def refused(self, plant, entry: str):
+        import tempfile
+        with tempfile.TemporaryDirectory(dir=ROOT / ".work" if (ROOT / ".work").is_dir() else None) as tmp:
+            root = shared.context(tmp)
+            plant(root)
+            err = io.StringIO()
+            with mock.patch.object(package_build.subprocess, "run", side_effect=AssertionError("Docker started")), \
+                    contextlib.redirect_stderr(err):
+                code = package_build.main(["--root", str(root), "--profile", NAME, "--image", "runner", "--base-digest", DIGEST])
+            self.assertEqual(code, 2)
+            self.assertIn(entry, err.getvalue())
+
+    def test_a_changed_checksum_of_each_kind_is_refused_by_the_entry_name(self):
+        def append(name):
+            def plant(root):
+                with (root / "profiles" / NAME / name).open("a", encoding="utf-8") as handle:
+                    handle.write("\n")
+            return plant
+        self.refused(append("requirements.txt"), "python-sdks")
+        self.refused(append("npm/package-lock.json"), "node-sdks")
+        self.refused(append("jvm/gradle/verification-metadata.xml"), "jvm-sdks")
+
+    def test_a_placeholder_pin_is_refused_by_the_entry_name(self):
+        self.refused(lambda root: shared.edit_profile(root, NAME, lambda d: d["adds"][2].update(sha256=profile_plan.PLACEHOLDER)),
+                     "jvm-sdks")
+
+    def test_an_import_that_is_not_a_package_specifier_is_refused(self):
+        self.refused(lambda root: shared.edit_profile(root, NAME, lambda d: d["adds"][1].update(imports=["x; rm -rf /"])),
+                     "node-sdks")
 
     def test_a_set_missing_a_layered_runtime_is_refused_by_name(self):
         with self.assertRaises(profile_plan.Refused) as caught:
