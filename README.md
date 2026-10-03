@@ -114,6 +114,40 @@ python3 docker/profile/profile_build.py --profile jvm-frameworks --image runner 
 `--runtimes` is the base's declared set and defaults to what the profile layers on. A build is
 refused while any entry still reads `TO-BE-PINNED`.
 
+### Package entries: `python-wheels` and `npm-packages`
+
+Two entry kinds a profile may carry beside `project` and `editor-extension`. They are built by a
+second recipe, `docker/profile_packages/`, layered on the profile image; `docker/profile/` is not
+edited for them, so the tag of a profile with neither kind is exactly what it was.
+
+* `python-wheels`: `{kind, id, coordinates, requirements, sha256, platforms, imports?, remove_files?, allow_sdist?}`.
+  `requirements` is a file under `profiles/<name>/` of `name==version --hash=sha256:...` lines (every
+  dependency, no range) and `sha256` its digest. The fetch stage (the only one with a network) runs
+  `pip download --require-hashes --only-binary=:all:`; the wheelhouse is kept read-only at
+  `/opt/profile/wheelhouse` and installed with `pip install --no-index --find-links --require-hashes`.
+  `remove_files` (paths under `site-packages`) are deleted after the hashed install and must exist;
+  `allow_sdist` (a reason) lifts the wheels-only rule for the entry.
+* `npm-packages`: `{kind, id, path, sha256, omit_optional?}`. `path` holds `package.json` and
+  `package-lock.json` (every package with an `integrity`), `sha256` is the lockfile's digest. The fetch
+  stage runs `npm ci` into a cache kept read-only at `/opt/profile/npm-cache` (named by
+  `npm_config_cache`, with no `NODE_PATH`); `npm ci --offline` fills a course's `node_modules` from it.
+  `omit_optional` (default false) skips optional dependencies, such as a platform binary.
+
+A build refuses by entry and file name, before Docker starts, a missing file, a file that does not
+match its pin, a requirement without a hash, a range, a lockfile package without an integrity, and a
+platform the hashes do not cover. The build proves offline (`--network none`) that the imports work, that
+`pip check` passes, that a wheel outside the wheelhouse is refused, that no index was consulted, and
+that a fresh copy of the npm project installs, imports and type-checks.
+
+```sh
+python3 docker/profile_packages/package_build.py --profile fixture-packages --image runner --print-tag
+python3 docker/profile_packages/package_build.py --profile fixture-packages --image runner --base-digest sha256:<base digest>
+IMAGE=<tag> NPM_DIR=profiles/fixture-packages/npm sh docs/measurements/package-profile-offline-proof.sh
+```
+
+⛔ A profile with a package entry is planned and built through `package_build.py`; the profile
+planner's own tag does not name the packages. `fixture-packages` is the fixture that proves both kinds.
+
 **The `jvm-frameworks` profile** carries a JVM course's framework modules' libraries (Spring Boot,
 Spring Data with an embedded H2 database, Spring Security and Ktor), so no shared base carries them.
 It layers on `gradle,java,kotlin`. Its entries are placeholders until their coordinates and

@@ -1,14 +1,14 @@
 #!/bin/sh
-# W904: measure the Agent SDK's bundled Claude Code binaries. Run from the component root:
+# Measure the Agent SDK's bundled Claude Code binaries. Run from the component root:
 #   RUNNER=<a local runner image with python3, pip, node and npm> \
-#   /path/to/run-heavy.sh ccp-survey sh docs/measurements/w904-agent-binaries.sh
-# Scratch lives in .work/w904 (gitignored, under the project, no host /tmp). Phase 1 is online
+#   /path/to/run-heavy.sh ccp-survey sh docs/measurements/agent-sdk-bundled-binaries.sh
+# Scratch lives in .work/agent-sdk-measure (gitignored, under the project, no host /tmp). Phase 1 is online
 # (downloads); phase 2 runs with --network none.
 set -eu
 : "${RUNNER:?set RUNNER to a local image that has python3 and node}"
-W="$(pwd)/.work/w904"; rm -rf "$W"; mkdir -p "$W/home" "$W/proj"
+W="$(pwd)/.work/agent-sdk-measure"; rm -rf "$W"; mkdir -p "$W/home" "$W/proj"
 cat > "$W/proj/package.json" <<'JSON'
-{"name":"w904","version":"1.0.0","private":true,"type":"module",
+{"name":"agent-sdk-measure","version":"1.0.0","private":true,"type":"module",
  "dependencies":{"@anthropic-ai/claude-agent-sdk":"0.3.287","zod":"4.6.5"},
  "devDependencies":{"typescript":"5.9.3"}}
 JSON
