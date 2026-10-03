@@ -111,6 +111,9 @@ python3 docker/profile/profile_build.py --profile jvm-frameworks --image editor 
 python3 docker/profile/profile_build.py --profile jvm-frameworks --image runner --base-digest sha256:<base digest>
 ```
 
+A consumer asks for a profile's tag with the command `consuming.json` names under `profile_tag` (one command for both
+profile kinds; see `docs/consuming.md`, *Asking for a profile's tag*).
+
 `--runtimes` is the base's declared set and defaults to what the profile layers on. A build is
 refused while any entry still reads `TO-BE-PINNED`.
 

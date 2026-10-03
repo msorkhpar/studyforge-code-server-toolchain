@@ -1,10 +1,20 @@
 {
   "consuming_api": 1,
-  "provides": 5,
+  "provides": 6,
   "component": "code-server-toolchain",
   "not_yet_declared": [],
   "why_nothing_is_undeclared": "this component builds two images and both are declared here: the editor with the compose file a consumer renders, the runner with the run and exec lines a consumer issues, and each with what its tag promises. A hole found later is a finding against this file, and it is named in this list rather than left to a reader to discover",
   "releases": [
+    {
+      "provides": 6,
+      "summary": "a profile's tag is asked for by a command the contract names (profile_tag.printed_by), for both profile kinds: a profile with only project and editor-extension entries and one with python-wheels or npm-packages entries answer the same command, so a consumer holds no copy of how to ask",
+      "moves_every_tag": false,
+      "measured": "the editor's and the runner's inputs digests are unchanged from the release this follows, and so is every profile's tag: this release adds a key, a check and tests, and docker/profile and docker/profile_packages are untouched; for every profile that has no package entry the named command prints the tag docker/profile/profile_build.py prints",
+      "re_verify": [
+        "nothing in a running container: no build input changed, so every base tag and every profile tag you already pinned is still the tag this checkout computes",
+        "a consumer that asks for a profile's tag: read profile_tag.profile_tag_api first, render profile_tag.printed_by from its slots, and refuse a toolchain that has no profile_tag block"
+      ]
+    },
     {
       "provides": 5,
       "summary": "every image this component builds is printed as the docker build it is (consuming/builds.py), and a course layer (docker/prime/Dockerfile) warms one consumer's prime on an unprimed runner or editor, so consumers of one declared set share both bases and each carries only its own caches",
@@ -460,6 +470,34 @@
     "why_no_docker_socket": "spec 8.3: the Docker socket is never mounted into a serving process, not behind a flag and not only locally. A socket here would hand a graded run - which is a reader's unreviewed code - the host's daemon",
     "restart": "no",
     "why_restart_no": "the reader starts this container for a session of study and removes it after; a restart policy would bring a stranger's sources back up on every boot"
+  },
+  "profile_tag": {
+    "what_it_is": "how a consumer asks for the tag of one profile image for a declared set of runtimes, before anything is built",
+    "printed_by": [
+      "python3",
+      "docker/profile_packages/package_build.py",
+      "--profile",
+      "<profile>",
+      "--image",
+      "<runner|editor>",
+      "--runtimes",
+      "<the declared set>",
+      "--print-tag",
+      "--platform",
+      "<platform>"
+    ],
+    "profile_tag_api": 1,
+    "slots": {
+      "<profile>": "the profile's name, as the file under profiles/ spells it",
+      "<runner|editor>": "the image whose tag is wanted; ask once per image",
+      "<the declared set>": "the base's declared runtimes, comma separated",
+      "<platform>": "linux/amd64 or linux/arm64, the platform the tag is for"
+    },
+    "prints": "one line, <repository>:<tag>, and nothing else; the consumer keeps what follows the last colon",
+    "refuses": "exit status 2 with the reason on stderr and nothing on stdout, before any docker command: a profile this component does not have, one that is not built for the image, or one that layers on runtimes the declared set lacks",
+    "covers": "both profile kinds with this one command: a profile with python-wheels or npm-packages entries, and one with only project and editor-extension entries, whose tag is the one docker/profile/profile_build.py prints for it",
+    "runs_no_docker": true,
+    "why": "a consumer that needs a profile's tag to pin or to check a lock reads the command here and never a build script's own usage, so a recipe that moves its script moves this key and no consumer"
   },
   "builds": {
     "what_it_is": "each image this component builds, printed as the docker build its own build runs: the Dockerfile, the target, every ARG, the named contexts, the images it starts FROM, which of those this component builds itself, the tag and the input roots its context carries",
