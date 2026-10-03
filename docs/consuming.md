@@ -469,6 +469,21 @@ no profile changes. `python3 docker/profile/profile_build.py --profile <name> --
 --print-tag` prints the tag, and `--print-plan` the plan as JSON. The README's *Profile images*
 section describes the pins and the recipe.
 
+## Asking for a profile's tag
+
+⭐ **`profile_tag.printed_by` is the one command that prints the tag of a profile
+image** for a declared set, whichever kind of profile it is: one with
+`python-wheels` or `npm-packages` entries, or one with only `project` and
+`editor-extension` entries (for which it prints the tag
+`docker/profile/profile_build.py` prints). Fill its four slots
+(`profile_tag.slots`: the profile, the image, the declared set, the platform),
+run it once per image, and keep what follows the last colon of the one line it
+prints (`profile_tag.prints`). ⛔ A refusal is exit status 2 with the reason on
+stderr and nothing on stdout (`profile_tag.refuses`); the command starts no
+docker. The shape is versioned by `profile_tag.profile_tag_api`. ⛔ A consumer
+whose toolchain carries no `profile_tag` block refuses that toolchain, and does
+not fall back to a script's own usage.
+
 ## Building with compose, and one course layer per consumer
 
 ⭐ **`python3 consuming/builds.py <image> --runtimes <set>` prints a build as
