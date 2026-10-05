@@ -227,11 +227,20 @@ def plan(pins: dict, editor_pins: dict, runner: runner_plan.Plan, digest: str,
     if with_ls_jdk:
         ls_file = _file("kotlin_language_server_jdk", ls_jdk, arch)
         fetch.append(f"kotlin-ls-jdk.tgz|{ls_file['url']}|{ls_file['sha256']}")
+    ls = editor_pins["kotlin_language_server"]
+    with_ls = ls["for"] in declared
+    if with_ls != with_ls_jdk:
+        raise Refused("the Kotlin language server and its JDK are pinned for different runtimes")
+    if with_ls:
+        fetch.append(f"kotlin-ls.zip|{_file('kotlin_language_server', ls, arch)['url']}"
+                     f"|{_file('kotlin_language_server', ls, arch)['sha256']}")
     readline = editor_pins["readline"]
     face = editor_pins["face"]
     checks = runner.build_args["CHECKS"].splitlines()
     if with_ls_jdk:
         checks += [f"kotlin-ls-jdk|{c['command']}|{c['expect']}" for c in ls_jdk["checks"]]
+    if with_ls:
+        checks += [f"kotlin-ls|{c['command']}|{c['expect']}" for c in ls["checks"]]
     if with_typescript:
         checks += [f"typescript|{c['command']}|{c['expect'].format(version=typescript['version'])}"
                    for c in typescript["checks"]]
@@ -249,6 +258,13 @@ def plan(pins: dict, editor_pins: dict, runner: runner_plan.Plan, digest: str,
         # ⭐ The JDK the Kotlin language server runs on, only for a set that declares kotlin.
         "WITH_KOTLIN_LS_JDK": "yes" if with_ls_jdk else "no",
         "KOTLIN_LS_JDK_DIR": ls_jdk["dir"],
+        # ⭐ The server itself, its Machine settings (the JDK's and its own) and the extension patches.
+        "WITH_KOTLIN_LS": "yes" if with_ls else "no",
+        "KOTLIN_LS_DIR": ls["dir"],
+        "KOTLIN_LS_SETTINGS": json.dumps({"kotlin.java.home": ls_jdk["dir"], **ls["settings"]}, indent=4),
+        "KOTLIN_LS_PATCHES": "\n".join(
+            "|".join([p["file"], p["sha256"], p["after"]] + [text for pair in p["replace"] for text in pair])
+            for p in ls["patches"]),
         "WITH_READLINE": "yes" if readline["for"] in declared else "no",
         "READLINE_SNAPSHOT": readline["snapshot"],
         "READLINE_PACKAGES": " ".join(f"{k}={v}" for k, v in sorted(readline["packages"].items())),
@@ -314,7 +330,8 @@ def pins_findings(editor_pins: dict) -> list[str]:
     found: list[str] = []
     entries = [("base", editor_pins["base"]), ("typescript", editor_pins["typescript"]),
                ("readline", editor_pins["readline"]), ("face", editor_pins["face"]),
-               ("kotlin_language_server_jdk", editor_pins["kotlin_language_server_jdk"])] \
+               ("kotlin_language_server_jdk", editor_pins["kotlin_language_server_jdk"]),
+               ("kotlin_language_server", editor_pins["kotlin_language_server"])] \
         + sorted(editor_pins["extensions"].items())
     if not _DIGEST.match(editor_pins["base"].get("digest", "")):
         found.append("base: the image is pinned by a sha256 index digest")
@@ -328,6 +345,16 @@ def pins_findings(editor_pins: dict) -> list[str]:
     ls_jdk = editor_pins["kotlin_language_server_jdk"]
     if not ls_jdk.get("files") or not all(_SHA256.match(f.get("sha256", "")) for f in ls_jdk["files"].values()):
         found.append("kotlin_language_server_jdk: the JDK archive is pinned by a recorded sha256 for every platform")
+    ls = editor_pins["kotlin_language_server"]
+    if not ls.get("files") or not all(_SHA256.match(f.get("sha256", "")) for f in ls["files"].values()):
+        found.append("kotlin_language_server: the server archive is pinned by a recorded sha256")
+    if f"/{ls.get('version')}/" not in ls.get("files", {}).get("universal", {}).get("url", ""):
+        found.append("kotlin_language_server: the url names the pinned version")
+    for patch in ls.get("patches", []):
+        if not _SHA256.match(patch.get("sha256", "")) or not _SHA256.match(patch.get("after", "")):
+            found.append("kotlin_language_server: every extension patch is pinned by the file's sha256 before and after")
+    if not ls.get("settings", {}).get("kotlin.languageServer.path", "").startswith(ls.get("dir", "\0") + "/"):
+        found.append("kotlin_language_server: the extension is pointed at the server's own directory")
     face = editor_pins["face"]
     if not _SHA256.match(face.get("sha256", "")) or not face.get("files") \
             or not all(_SHA256.match(f.get("sha256", "")) for f in face["files"].values()):

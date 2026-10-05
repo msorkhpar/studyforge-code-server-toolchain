@@ -44,6 +44,12 @@ COPY docker/editor/fetch.py /fetch.py
 RUN printf '%s\n' "${FETCH}" > /tmp/fetch.txt \
  && python3 /fetch.py /tmp/fetch.txt /fetch \
  && rm /tmp/fetch.txt
+# The Kotlin language server is a .zip and the editor has no unzip: it is
+# unpacked here, after its sha256 was checked, and only when the set pins it.
+RUN if [ -e /fetch/kotlin-ls.zip ]; then \
+      python3 -c "import zipfile; zipfile.ZipFile('/fetch/kotlin-ls.zip').extractall('/fetch/kotlin-ls')" \
+   && rm /fetch/kotlin-ls.zip; \
+    fi
 
 # -------------------------------------------------------------------- lockdown
 # The practice-focus extension, this repository's own artifact and no
@@ -184,6 +190,36 @@ RUN --network=none --mount=type=bind,from=fetch,source=/fetch,target=/tmp/fetch 
     rm -rf /tmp/verify_extensions.js /root/.local/share/code-server /root/.config/code-server; \
     chown -R 1000:1000 /opt/code-server/extensions; \
     chmod -R a+rX /opt/code-server/extensions
+
+# ⭐ THE KOTLIN LANGUAGE SERVER IS IN THE IMAGE, so the extension never downloads it.
+# Measured: with no server on disk, fwcd.kotlin offered to "automatically download a
+# language server", started none, and a broken .kt file got no diagnostic; the course
+# runs offline. The pinned server (`kotlin_language_server`) is copied to its own tree
+# under /opt/code-server and the extension is pointed at it by `kotlin.languageServer.path`
+# in the MACHINE settings (the same file as `kotlin.java.home`, rewritten on every
+# start; the plan merges both into KOTLIN_LS_SETTINGS). A set path means the extension
+# downloads nothing; `kotlin.debugAdapter.enabled=false` stops its second download.
+# ⚠️ Two exact-string patches (each checked against the file's sha256 before and after,
+# `apply_patches.pl`) let the pinned extension activate on this code-server: it reads the
+# `navigator` global, which the extension host rejects, and waits on a first-run question.
+# ⭐ The server is RUN on the server JDK by the CHECKS step below (it logs its version
+# at start), or the image is not built. Nothing here runs for a set without kotlin.
+ARG WITH_KOTLIN_LS
+ARG KOTLIN_LS_DIR
+ARG KOTLIN_LS_SETTINGS
+ARG KOTLIN_LS_PATCHES
+COPY docker/profile/apply_patches.pl /tmp/apply_patches.pl
+RUN --network=none --mount=type=bind,from=fetch,source=/fetch,target=/tmp/fetch \
+    set -eu; \
+    if [ "${WITH_KOTLIN_LS}" = yes ]; then \
+      mkdir -p "${KOTLIN_LS_DIR}" /opt/code-server/seed; \
+      cp -a /tmp/fetch/kotlin-ls/server/. "${KOTLIN_LS_DIR}/"; \
+      chmod a+rx "${KOTLIN_LS_DIR}/bin/kotlin-language-server"; \
+      perl /tmp/apply_patches.pl "${KOTLIN_LS_PATCHES}"; \
+      printf '%s\n' "${KOTLIN_LS_SETTINGS}" > /opt/code-server/seed/machine-settings.json; \
+      chmod 644 /opt/code-server/seed/machine-settings.json; \
+    fi; \
+    rm -f /tmp/apply_patches.pl
 
 # ⛔ THE BUNDLED CHAT IS DELETED FROM THE PRODUCT, not hidden behind a setting.
 # ⚠️ It is a BUILT-IN of the code-server build -- it appears in no

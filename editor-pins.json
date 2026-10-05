@@ -107,6 +107,54 @@
     "why_not_single": "two published records of the same sha256",
     "note": "Runs ONLY the Kotlin language server (kotlin.java.home, written to the editor's Machine settings by the entrypoint on every start); the runner's JDK stays the default for builds and runs. The server's bundled Kotlin compiler cannot parse the version string of JDK 25 (IllegalArgumentException in CliJavaModuleFinder); the newest server release (1.3.13) is the one the extension downloads, so no server version fixes it."
   },
+  "kotlin_language_server": {
+    "version": "1.3.13",
+    "for": "kotlin",
+    "files": {
+      "universal": {
+        "url": "https://github.com/fwcd/kotlin-language-server/releases/download/1.3.13/server.zip",
+        "sha256": "4fe7d71d087b307c7869036171bd9d8c6a4284cd7c25b89098b0a24eb2d9b6d2"
+      }
+    },
+    "dir": "/opt/code-server/kotlin-ls",
+    "settings": {
+      "kotlin.languageServer.path": "/opt/code-server/kotlin-ls/bin/kotlin-language-server",
+      "kotlin.debugAdapter.enabled": false
+    },
+    "patches": [
+      {
+        "file": "/opt/code-server/extensions/fwcd.kotlin-0.2.36/dist/extension.js",
+        "sha256": "e8bd1f597b25d851f6700ec34b7d7c29834f01a7ab2daa9795a0790bf0e8f5e1",
+        "after": "036d35dc05cbcbfb1a09f1230d455801e294e3fac44d50dbfa2575bbbaeab750",
+        "replace": [
+          [
+            "typeof navigator",
+            "typeof void 0"
+          ],
+          [
+            "if(!g.getConfig().initialized){",
+            "if(!1){"
+          ]
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "command": "JAVA_HOME=/opt/code-server/kotlin-ls-jdk timeout 180 /opt/code-server/kotlin-ls/bin/kotlin-language-server < /dev/null",
+        "expect": "Kotlin Language Server: Version 1.3.13"
+      }
+    ],
+    "sources": [
+      {
+        "host": "github.com",
+        "what": "the fwcd/kotlin-language-server 1.3.13 release asset server.zip, the release the pinned fwcd.kotlin extension downloads at first use; downloaded, its sha256 recorded",
+        "taken": "2026-10-05"
+      }
+    ],
+    "single_source": true,
+    "why_single": "the project publishes the server only as a GitHub release asset (no marketplace carries it); its release lists no checksum file",
+    "note": "Baked into the image so the extension never downloads it: kotlin.languageServer.path (Machine settings, written by the entrypoint on every start) points the extension at it, and kotlin.debugAdapter.enabled=false stops the debug adapter download. It runs on kotlin_language_server_jdk. The two exact-string patches (each checked against the extension.js sha256 before and after) let the pinned extension activate on this code-server: it reads the navigator global, which the extension host rejects, and waits on a first-run question."
+  },
   "face": {
     "family": "JetBrains Mono",
     "release": "v2.304",
