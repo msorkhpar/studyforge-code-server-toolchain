@@ -35,15 +35,17 @@ import test_profile as shared  # noqa: E402
 AMD64 = "linux/amd64"
 NAME = "fixture-packages"
 DIGEST = shared.IMAGE_DIGEST
-#: Tags recorded BEFORE this layer existed, for amd64: (profile, image) -> tag.
+#: Tags recorded BEFORE this layer existed, for amd64: (profile, image) -> tag. The editor tags were
+#: moved once, on purpose, when the shared editor gained the Kotlin language server's own JDK 21 (every
+#: editor input moves every editor tag, and each profile's editor tag is derived from it); runner tags did not move.
 RECORDED = {
     ("jvm-frameworks", "runner"): "code-server-toolchain/runner-jvm-frameworks:gradle-java-kotlin-amd64-e0de42be2689",
-    ("jvm-frameworks", "editor"): "code-server-toolchain/editor-jvm-frameworks:gradle-java-kotlin-amd64-3d2ae58aa02d",
+    ("jvm-frameworks", "editor"): "code-server-toolchain/editor-jvm-frameworks:gradle-java-kotlin-amd64-e1142012b3c0",
     ("fixture-libs", "runner"): "code-server-toolchain/runner-fixture-libs:gradle-java-kotlin-amd64-a4519ad7340e",
-    ("fixture-libs", "editor"): "code-server-toolchain/editor-fixture-libs:gradle-java-kotlin-amd64-c1787d41c1b8",
-    ("kotlin-editor", "editor"): "code-server-toolchain/editor-kotlin-editor:gradle-java-kotlin-amd64-db79c54d4663",
+    ("fixture-libs", "editor"): "code-server-toolchain/editor-fixture-libs:gradle-java-kotlin-amd64-4d3116ef4c22",
+    ("kotlin-editor", "editor"): "code-server-toolchain/editor-kotlin-editor:gradle-java-kotlin-amd64-2ccae044ca63",
     ("claude-sdks", "runner"): "code-server-toolchain/runner-claude-sdks:gradle-java-kotlin-node-python-amd64-4069e92f83df",
-    ("claude-sdks", "editor"): "code-server-toolchain/editor-claude-sdks:gradle-java-kotlin-node-python-amd64-467f25b40fba",
+    ("claude-sdks", "editor"): "code-server-toolchain/editor-claude-sdks:gradle-java-kotlin-node-python-amd64-cd5e43226f11",
 }
 
 

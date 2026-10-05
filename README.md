@@ -360,6 +360,13 @@ tool writes caches into the mounted sources.
 extensions, and a shell that finds every toolchain. Build it from this
 directory, declaring the runtimes a corpus uses:
 
+A set that declares `kotlin` also carries a pinned Eclipse Temurin JDK 21 at
+`/opt/code-server/kotlin-ls-jdk` (`editor-pins.json`, `kotlin_language_server_jdk`), used only by the Kotlin
+language server: the server's bundled Kotlin compiler cannot parse JDK 25's version string and crashes at
+start. The entrypoint writes `kotlin.java.home` into the machine settings (`Machine/settings.json`) on every
+start, so a volume from an earlier image gets it too; builds and runs keep the runner's JDK. The Java language
+server needs no such setting. The extension downloads the language server itself on first use.
+
 ```sh
 python3 docker/editor/build.py --runtimes java,maven
 python3 docker/editor/build.py --runtimes java,maven --print-tag

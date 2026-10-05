@@ -106,6 +106,19 @@ else
     log "no keybindings seed in this image; the workbench keeps its defaults"
 fi
 
+# The image's machine-scope settings (today: the JDK the Kotlin language server
+# runs on), written every start like the keybindings: they are the image's, not
+# the reader's, and a volume from an earlier image must receive them. The
+# reader's own User/settings.json is untouched; a workspace setting still wins.
+SEED_MACHINE=/opt/code-server/seed/machine-settings.json
+machine="$user_data_dir/Machine/settings.json"
+if [ -e "$SEED_MACHINE" ]; then
+    log "writing the image's machine settings to $machine"
+    mkdir -p "$user_data_dir/Machine"
+    cp "$SEED_MACHINE" "$machine.seed-partial"
+    mv "$machine.seed-partial" "$machine"
+fi
+
 # ⛔ BUILDSHIP'S GRADLE VERSION LIST IS SEEDED, SO THE LANGUAGE SERVER NEVER
 # FETCHES IT. Measured: every session's Java language server connected to
 # services.gradle.org, whatever the Gradle settings said -- Buildship, inside

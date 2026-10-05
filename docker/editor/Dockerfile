@@ -131,6 +131,27 @@ RUN --network=none --mount=type=bind,from=fetch,source=/fetch,target=/tmp/fetch 
    && rm -rf /tmp/npm-home; \
     fi
 
+# ⭐ The Kotlin language server's own JDK. The server (downloaded by the
+# fwcd.kotlin extension) bundles a Kotlin compiler that cannot parse the version
+# string of the runner's JDK 25 (IllegalArgumentException in
+# CliJavaModuleFinder, five crashes, then the client gives up). So the server is
+# pointed at a JDK 21 by `kotlin.java.home`, and the runner's JDK stays the
+# default for builds and runs. ⚠️ The setting is a MACHINE settings file, seeded
+# below and rewritten by the entrypoint on every start: the user's settings seed
+# is written once per volume, so a volume from an earlier image would never get
+# it, and `configurationDefaults` in the workbench's product.json was measured
+# and is NOT honoured by the extension host. The tree sits under
+# /opt/code-server so /opt still holds only the declared set's trees.
+ARG WITH_KOTLIN_LS_JDK
+ARG KOTLIN_LS_JDK_DIR
+RUN --network=none --mount=type=bind,from=fetch,source=/fetch,target=/tmp/fetch \
+    if [ "${WITH_KOTLIN_LS_JDK}" = yes ]; then \
+      mkdir -p "${KOTLIN_LS_JDK_DIR}" /opt/code-server/seed \
+   && tar -xzf /tmp/fetch/kotlin-ls-jdk.tgz -C "${KOTLIN_LS_JDK_DIR}" --strip-components=1 \
+   && printf '{\n    "kotlin.java.home": "%s"\n}\n' "${KOTLIN_LS_JDK_DIR}" > /opt/code-server/seed/machine-settings.json \
+   && chmod 644 /opt/code-server/seed/machine-settings.json; \
+    fi
+
 # Extensions are installed at BUILD time into a directory IN the image, never
 # onto a volume: an extension on a volume outlives the image, and after an
 # upgrade the reader runs old extensions against a new toolchain.

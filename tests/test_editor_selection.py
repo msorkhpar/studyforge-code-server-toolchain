@@ -86,7 +86,8 @@ class TheJavaMavenSet(unittest.TestCase):
         for names in carried_sets():
             with self.subTest(names=names):
                 built = planned(names)
-                expected = set(names) | ({"typescript"} if "node" in names else set())
+                expected = set(names) | ({"typescript"} if "node" in names else set()) \
+                    | ({"kotlin-ls-jdk"} if "kotlin" in names else set())
                 self.assertEqual(check_names(built), expected)
                 lines = built.build_args["CHECKS"].splitlines()
                 for name in names:
