@@ -202,6 +202,9 @@ RUN --network=none --mount=type=bind,from=fetch,source=/fetch,target=/tmp/fetch 
 # ⚠️ Two exact-string patches (each checked against the file's sha256 before and after,
 # `apply_patches.pl`) let the pinned extension activate on this code-server: it reads the
 # `navigator` global, which the extension host rejects, and waits on a first-run question.
+# ⚠️ The server's compiler is Kotlin 2.1: a Kotlin 2.4 runtime on its classpath turned
+# every .kt file red. `kls-classpath` (seeded here, written to the reader's config by the
+# entrypoint) gives the server its own kotlin-stdlib instead; builds never read it.
 # ⭐ The server is RUN on the server JDK by the CHECKS step below (it logs its version
 # at start), or the image is not built. Nothing here runs for a set without kotlin.
 ARG WITH_KOTLIN_LS
@@ -209,9 +212,12 @@ ARG KOTLIN_LS_DIR
 ARG KOTLIN_LS_SETTINGS
 ARG KOTLIN_LS_PATCHES
 COPY docker/profile/apply_patches.pl /tmp/apply_patches.pl
+COPY docker/editor/kls-classpath /tmp/kls-classpath
 RUN --network=none --mount=type=bind,from=fetch,source=/fetch,target=/tmp/fetch \
     set -eu; \
     if [ "${WITH_KOTLIN_LS}" = yes ]; then \
+      mkdir -p /opt/code-server/seed; \
+      install -m 755 /tmp/kls-classpath /opt/code-server/seed/kls-classpath; \
       mkdir -p "${KOTLIN_LS_DIR}" /opt/code-server/seed; \
       cp -a /tmp/fetch/kotlin-ls/server/. "${KOTLIN_LS_DIR}/"; \
       chmod a+rx "${KOTLIN_LS_DIR}/bin/kotlin-language-server"; \
@@ -219,7 +225,7 @@ RUN --network=none --mount=type=bind,from=fetch,source=/fetch,target=/tmp/fetch 
       printf '%s\n' "${KOTLIN_LS_SETTINGS}" > /opt/code-server/seed/machine-settings.json; \
       chmod 644 /opt/code-server/seed/machine-settings.json; \
     fi; \
-    rm -f /tmp/apply_patches.pl
+    rm -f /tmp/apply_patches.pl /tmp/kls-classpath
 
 # ⛔ THE BUNDLED CHAT IS DELETED FROM THE PRODUCT, not hidden behind a setting.
 # ⚠️ It is a BUILT-IN of the code-server build -- it appears in no
