@@ -365,7 +365,12 @@ A set that declares `kotlin` also carries a pinned Eclipse Temurin JDK 21 at
 language server: the server's bundled Kotlin compiler cannot parse JDK 25's version string and crashes at
 start. The entrypoint writes `kotlin.java.home` into the machine settings (`Machine/settings.json`) on every
 start, so a volume from an earlier image gets it too; builds and runs keep the runner's JDK. The Java language
-server needs no such setting. The extension downloads the language server itself on first use.
+server needs no such setting. The language server itself (`kotlin_language_server`, release `1.3.13`, pinned by URL and
+sha256) is baked in at `/opt/code-server/kotlin-ls`, so the extension downloads nothing and a broken `.kt` file gets
+a diagnostic offline: `kotlin.languageServer.path` and `kotlin.debugAdapter.enabled=false` are written to the same
+machine settings, two exact-string patches (each checked against the extension file's sha256) let the pinned
+`fwcd.kotlin` activate on this code-server, and the build runs the server on the server JDK and expects its version
+line. A set without `kotlin` carries none of it.
 
 ```sh
 python3 docker/editor/build.py --runtimes java,maven
