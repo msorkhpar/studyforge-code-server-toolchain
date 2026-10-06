@@ -37,6 +37,7 @@ import fetch_extension  # noqa: E402
 import profile_build  # noqa: E402
 import profile_plan  # noqa: E402
 import test_compatibility_baseline as baseline  # noqa: E402
+import test_editor_plan  # noqa: E402
 import test_profile  # noqa: E402
 
 AMD64 = "linux/amd64"
@@ -45,6 +46,7 @@ ID = "kotlin-language-server"
 JDK = "kotlin-jdk"
 PATCHED = "/opt/code-server/extensions/fwcd.kotlin-0.2.36/dist/extension.js"
 IMAGE_DIGEST = "sha256:" + "c" * 64
+BAKED = "/opt/code-server/kotlin-ls/bin/kotlin-language-server"
 SERVER = "/opt/profile/editor-extensions/kotlin-language-server/server/bin/kotlin-language-server"
 
 
@@ -146,15 +148,38 @@ class TheSeedBlock(unittest.TestCase):
                 parsed = json.loads("\n".join(l for l in kept.splitlines() if not l.strip().startswith("//")))
                 self.assertEqual(parsed["kotlin.languageServer.path"], SERVER)
 
-    def test_the_editors_own_seed_and_recipe_know_no_server_and_no_setting(self):
-        for path in (ROOT / "docker" / "editor").rglob("*"):
+    def test_the_editors_own_seed_names_the_baked_server_and_no_profile_seed_points_elsewhere(self):
+        """The server is baked into the editor: its Machine settings seed names exactly that path, the recipe
+        seeds `kls-classpath` and the entrypoint writes it on every start; a profile seed may not move the path."""
+        editor = ROOT / "docker" / "editor"
+        epins = json.loads((ROOT / "editor-pins.json").read_text(encoding="utf-8"))
+        self.assertEqual(epins["kotlin_language_server"]["dir"] + "/bin/kotlin-language-server", BAKED)
+        machine = json.loads(test_editor_plan.planned().build_args["KOTLIN_LS_SETTINGS"])
+        self.assertEqual(machine["kotlin.languageServer.path"], BAKED)
+        self.assertTrue((editor / "kls-classpath").is_file())
+        self.assertIn("install -m 755 /tmp/kls-classpath /opt/code-server/seed/kls-classpath",
+                      (editor / "Dockerfile").read_text(encoding="utf-8"))
+        self.assertIn("SEED_KLS=/opt/code-server/seed/kls-classpath", (editor / "entrypoint.sh").read_text(encoding="utf-8"))
+        for path in editor.rglob("*"):
             if path.is_file() and "__pycache__" not in path.parts:
                 with self.subTest(file=path.name):
                     text = path.read_text(encoding="utf-8", errors="ignore")
-                    self.assertNotIn("languageServer.path", text)
-                    self.assertNotIn("kotlin-language-server", text)
-        self.assertNotIn("kotlin-language-server", (ROOT / "editor-pins.json").read_text(encoding="utf-8"))
+                    for value in re.findall(r'"kotlin\.languageServer\.path"\s*:\s*"([^"]*)"', text):
+                        self.assertEqual(value, BAKED)
+        for path in (editor / "seed").glob("*.json"):
+            with self.subTest(seed=path.name):  # the reader's own seeds stay clean: the path is a Machine setting
+                text = path.read_text(encoding="utf-8")
+                self.assertNotIn("languageServer.path", text)
+                self.assertNotIn("kotlin-language-server", text)
         self.assertNotIn("kotlin-language-server", (ROOT / "pins.json").read_text(encoding="utf-8"))
+        for path in sorted((ROOT / "profiles").glob("*.json")):
+            profile = profile_plan.load(ROOT, path.stem)
+            if "editor" not in profile.get("images", []):
+                continue
+            with self.subTest(profile=path.stem):
+                block = profile_plan.plan(ROOT, path.stem, "editor", [], AMD64).build_args["PROFILE_SEED"]
+                for value in re.findall(r'"kotlin\.languageServer\.path"\s*:\s*"([^"]*)"', block):
+                    self.assertEqual(value, BAKED)
 
 
 class ThePatches(unittest.TestCase):
