@@ -46,6 +46,10 @@ def runner_for(platform: str = "linux/amd64", pins: dict = PINS) -> runner_plan.
     return runner_plan.plan(pins, list(editor_plan.DEFAULT_SET), platform, DIGEST)
 
 
+def runner_for_names(names, platform: str = "linux/amd64") -> runner_plan.Plan:
+    return runner_plan.plan(PINS, editor_plan.selection(PINS, names), platform, DIGEST)
+
+
 def planned(epins: dict = EPINS, platform: str = "linux/amd64", pins: dict = PINS) -> editor_plan.EditorPlan:
     return editor_plan.plan(pins, epins, runner_for(platform, pins), DIGEST)
 
@@ -79,7 +83,7 @@ class TheEditorsPins(unittest.TestCase):
     def test_no_runtime_version_is_chosen_in_the_editors_pins(self):
         """pins.json is the ONE place a runtime version is chosen."""
         self.assertEqual(set(EPINS) & {"runtimes", "platforms"}, set())
-        self.assertEqual(set(EPINS), {"pins_api", "about", "base", "typescript", "readline", "face", "extensions"})
+        self.assertEqual(set(EPINS), {"pins_api", "about", "base", "typescript", "readline", "kotlin_language_server_jdk", "kotlin_language_server", "face", "extensions"})
 
     def test_the_readline_snapshot_is_the_one_pins_json_already_uses(self):
         self.assertEqual(EPINS["readline"]["snapshot"], PINS["runtimes"]["sqlite"]["snapshot"])
@@ -208,6 +212,78 @@ class TheTag(unittest.TestCase):
         self.assertRegex(tag, r"^code-server-toolchain/editor:gradle-java-kotlin-node-python-amd64-0{12}$")
 
 
+class TheKotlinLanguageServerJdk(unittest.TestCase):
+    """The Kotlin server runs on a JDK 21 of its own: the runner's JDK 25 crashes its bundled compiler."""
+
+    def test_a_set_with_kotlin_fetches_and_checks_the_jdk_and_a_set_without_it_does_not(self):
+        with_kotlin = planned().build_args
+        self.assertIn("kotlin-ls-jdk.tgz|", with_kotlin["FETCH"])
+        self.assertEqual(with_kotlin["WITH_KOTLIN_LS_JDK"], "yes")
+        self.assertIn("kotlin-ls-jdk|", with_kotlin["CHECKS"])
+        java_only = editor_plan.plan(PINS, EPINS, runner_for_names(["java"]), DIGEST).build_args
+        self.assertEqual(java_only["WITH_KOTLIN_LS_JDK"], "no")
+        self.assertNotIn("kotlin-ls-jdk", java_only["FETCH"] + java_only["CHECKS"])
+
+    def test_the_archive_is_pinned_by_sha256_for_both_platforms_and_a_planted_loss_is_found(self):
+        self.assertEqual(set(EPINS["kotlin_language_server_jdk"]["files"]), {"linux-x64", "linux-arm64"})
+        planted = copy.deepcopy(EPINS)
+        planted["kotlin_language_server_jdk"]["files"]["linux-x64"]["sha256"] = "0"
+        self.assertNotEqual(editor_plan.pins_findings(planted), [])
+
+    def test_the_setting_is_a_machine_file_written_every_start_and_not_the_users_seed(self):
+        self.assertIn("machine-settings.json", DOCKERFILE)
+        self.assertIn("Machine/settings.json", ENTRYPOINT)
+        self.assertNotIn("kotlin.java.home", SEED)
+
+
+class TheKotlinLanguageServer(unittest.TestCase):
+    """The server is baked in at build time, so the extension never downloads it and the course works offline."""
+    LS = EPINS["kotlin_language_server"]
+
+    def test_a_set_with_kotlin_fetches_patches_and_checks_the_server_and_a_set_without_it_does_not(self):
+        args = planned().build_args
+        self.assertIn("kotlin-ls.zip|" + self.LS["files"]["universal"]["url"] + "|" + self.LS["files"]["universal"]["sha256"],
+                      args["FETCH"])
+        self.assertEqual(args["WITH_KOTLIN_LS"], "yes")
+        self.assertIn("kotlin-ls|", args["CHECKS"])
+        self.assertIn("JAVA_HOME=" + EPINS["kotlin_language_server_jdk"]["dir"], self.LS["checks"][0]["command"])
+        java_only = editor_plan.plan(PINS, EPINS, runner_for_names(["java"]), DIGEST).build_args
+        self.assertEqual(java_only["WITH_KOTLIN_LS"], "no")
+        self.assertNotIn("kotlin-ls.zip", java_only["FETCH"])
+        self.assertNotIn("kotlin-ls|", java_only["CHECKS"])
+
+    def test_the_machine_settings_point_at_the_server_and_the_jdk_and_stop_the_downloads(self):
+        settings = json.loads(planned().build_args["KOTLIN_LS_SETTINGS"])
+        self.assertEqual(settings["kotlin.languageServer.path"], self.LS["dir"] + "/bin/kotlin-language-server")
+        self.assertEqual(settings["kotlin.java.home"], EPINS["kotlin_language_server_jdk"]["dir"])
+        self.assertIs(settings["kotlin.debugAdapter.enabled"], False)
+
+    def test_the_server_release_is_the_one_the_pinned_extension_names_and_each_patch_is_pinned(self):
+        self.assertEqual(self.LS["version"], "1.3.13")
+        patch = planned().build_args["KOTLIN_LS_PATCHES"].split("|")
+        self.assertIn("fwcd.kotlin-" + EPINS["extensions"]["fwcd.kotlin"]["version"], patch[0])
+        self.assertEqual(len(patch[1]), 64)
+        self.assertEqual(len(patch[2]), 64)
+
+    def test_planted_defects_in_the_server_pin_are_found(self):
+        plants = {
+            "sha": lambda p: p["kotlin_language_server"]["files"]["universal"].update(sha256="0"),
+            "version": lambda p: p["kotlin_language_server"].update(version="9.9.9"),
+            "patch hash": lambda p: p["kotlin_language_server"]["patches"][0].update(after="0"),
+            "path outside the tree": lambda p: p["kotlin_language_server"]["settings"].update(
+                {"kotlin.languageServer.path": "/usr/bin/x"}),
+        }
+        for label, plant in plants.items():
+            with self.subTest(plant=label):
+                planted = copy.deepcopy(EPINS)
+                plant(planted)
+                self.assertNotEqual(editor_plan.pins_findings(planted), [])
+
+    def test_the_dockerfile_unpacks_the_server_in_the_fetch_stage_and_patches_after_the_extensions(self):
+        self.assertLess(DOCKERFILE.index("kotlin-ls.zip"), DOCKERFILE.index("AS lockdown"))
+        self.assertLess(DOCKERFILE.index("--install-extension"), DOCKERFILE.index("apply_patches.pl"))
+
+
 class TheDockerfile(unittest.TestCase):
     def test_the_real_dockerfile_chooses_nothing_and_has_no_scratch_stage(self):
         self.assertEqual(runner_plan.dockerfile_findings(DOCKERFILE), [])
@@ -237,7 +313,8 @@ class TheDockerfile(unittest.TestCase):
         # and then placed beside the workbench's stylesheet, and the workbench's
         # own AI taken out of its bundles, and the static path's digest.
         offline = ("npm install -g --offline", "--install-extension", "/lockdown/lockdown.py", "prove",
-                   "python3 /face.py", "--mount=type=bind,from=face", "/tmp/no_ai.js", "static path: stable-")
+                   "python3 /face.py", "--mount=type=bind,from=face", "/tmp/no_ai.js", "static path: stable-",
+                   "kotlin-ls-jdk.tgz", "apply_patches.pl")
         self.assertEqual(body.count("RUN --network=none"), len(offline))
         for needle in offline:
             self.assertIn(needle, body)

@@ -1,0 +1,15 @@
+{
+  "profiles_api": 1,
+  "name": "fixture-libs",
+  "about": "A small fixture profile: one Gradle project (a Kotlin module, JUnit, three libraries, no framework) that proves the project entry kind end to end. It is not a course's profile; a course names it only to test a profile image.",
+  "layers_on": ["gradle", "java", "kotlin"],
+  "images": ["runner", "editor"],
+  "adds": [
+    {
+      "kind": "project",
+      "id": "libs",
+      "path": "project",
+      "sha256": "62040328697d92116fea595fc30897b6de9a0baeed2f67084736a902f7b47bd3"
+    }
+  ]
+}

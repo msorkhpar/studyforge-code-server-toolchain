@@ -84,6 +84,146 @@ of their own, so this one keeps saying exactly what `pins.json` says.
 
 Architectures: `linux/amd64` and `linux/arm64`. Any other is refused by name.
 
+## Profile images — adding a pinned input without moving a base tag
+
+Every runtime set's tag ends in one shared suffix per image: the digest over `pins.json` and
+`docker/minimal/` (the runner), and over those plus `docker/editor/`, `prime/` and `lockdown/` (the
+editor). One byte changed in any of them moves **every** tag, including every published base's. So
+an input that not every course needs does not enter them. It enters a **profile**: an image layered
+on a shared base for a declared set, with its own pins and its own tag.
+
+* **The pins** are `profiles/<name>.json`: `layers_on` (the runtimes the base set must contain),
+  `images` (`runner`, `editor`) and `adds` (each entry: `kind`, `id`, `coordinates`, `sha256`).
+  Nothing under `profiles/` or `docker/profile/` is an input of a base.
+* **The recipe** is `docker/profile/Dockerfile`: `FROM ${BASE_IMAGE}`, with no ARG default. A build
+  names the base by tag **and** image digest (`--base-digest sha256:<64 hex>`) and pulls nothing.
+* **The tag** is `<repository>-<profile>:<set>-<arch>-<12 hex>`, for example
+  `code-server-toolchain/runner-jvm-frameworks:gradle-java-kotlin-amd64-<12 hex>`. The 12 hex are a
+  digest of the profile's name, **the base's own tag**, the profile's file and `docker/profile/`.
+  So editing or adding a profile entry, or adding a whole new profile, moves no base tag and no
+  other profile's tag; a change to the base moves the profile's tag, because the base's tag is in it.
+* **Published names** are the base's published name plus the profile:
+  `studyforge-code-toolchain-runner-jvm-frameworks` and `studyforge-code-toolchain-editor-jvm-frameworks`.
+
+```sh
+python3 docker/profile/profile_build.py --profile jvm-frameworks --image runner --print-tag
+python3 docker/profile/profile_build.py --profile jvm-frameworks --image editor --print-plan   # JSON
+python3 docker/profile/profile_build.py --profile jvm-frameworks --image runner --base-digest sha256:<base digest>
+```
+
+A consumer asks for a profile's tag with the command `consuming.json` names under `profile_tag` (one command for both
+profile kinds; see `docs/consuming.md`, *Asking for a profile's tag*).
+
+`--runtimes` is the base's declared set and defaults to what the profile layers on. A build is
+refused while any entry still reads `TO-BE-PINNED`.
+
+### Package entries: `python-wheels` and `npm-packages`
+
+Two entry kinds a profile may carry beside `project` and `editor-extension`. They are built by a
+second recipe, `docker/profile_packages/`, layered on the profile image; `docker/profile/` is not
+edited for them, so the tag of a profile with neither kind is exactly what it was.
+
+* `python-wheels`: `{kind, id, coordinates, requirements, sha256, platforms, imports?, remove_files?, allow_sdist?}`.
+  `requirements` is a file under `profiles/<name>/` of `name==version --hash=sha256:...` lines (every
+  dependency, no range) and `sha256` its digest. The fetch stage (the only one with a network) runs
+  `pip download --require-hashes --only-binary=:all:`; the wheelhouse is kept read-only at
+  `/opt/profile/wheelhouse` and installed with `pip install --no-index --find-links --require-hashes`.
+  `remove_files` (paths under `site-packages`) are deleted after the hashed install and must exist;
+  `allow_sdist` (a reason) lifts the wheels-only rule for the entry.
+* `npm-packages`: `{kind, id, path, sha256, omit_optional?}`. `path` holds `package.json` and
+  `package-lock.json` (every package with an `integrity`), `sha256` is the lockfile's digest. The fetch
+  stage runs `npm ci` into a cache kept read-only at `/opt/profile/npm-cache` (named by
+  `npm_config_cache`, with no `NODE_PATH`); `npm ci --offline` fills a course's `node_modules` from it.
+  `omit_optional` (default false) skips optional dependencies, such as a platform binary. `imports`
+  (optional) lists the specifiers the build proves import and type-check, for a package whose bare name
+  cannot be imported; by default each dependency's name.
+* `project`: a Gradle multi-project under `profiles/<name>/`, as above. In a profile that also holds a
+  package entry it is warmed by this recipe into a read-only dependency cache (`GRADLE_RO_DEP_CACHE`) and
+  proved by a build of a fresh copy in an empty Gradle user home with no network, so a profile of
+  packages and projects never runs `docker/profile/`'s patch step. A profile with no `project` entry never
+  runs the stage.
+
+* `editor-extension` with `"install": "vsix"`: `{kind, id, install, url, sha256, provides, images: ["editor"], settings?}`.
+  A `.vsix` the editor image installs into its extensions directory, offline: fetched in the fetch stage
+  and refused by the entry's name unless its digest is `sha256`, installed with no network, and proved by
+  `provides` (`publisher.name@version`) in `--list-extensions`. `settings` land in the editor's settings
+  seed. An `editor-extension` with no `install` is the profile recipe's, as above, and unchanged. The
+  runner image of the profile installs nothing for it.
+
+A build refuses by entry and file name, before Docker starts, a missing file, a file that does not
+match its pin, a requirement without a hash, a range, a lockfile package without an integrity, and a
+platform the hashes do not cover. The build proves offline (`--network none`) that the imports work, that
+`pip check` passes, that a wheel outside the wheelhouse is refused, that no index was consulted, and
+that a fresh copy of the npm project installs, imports and type-checks.
+
+```sh
+python3 docker/profile_packages/package_build.py --profile fixture-packages --image runner --print-tag
+python3 docker/profile_packages/package_build.py --profile fixture-packages --image runner --base-digest sha256:<base digest>
+IMAGE=<tag> NPM_DIR=profiles/fixture-packages/npm sh docs/measurements/package-profile-offline-proof.sh
+```
+
+The `claude-sdks` profile holds the Claude SDKs a course's practices use: the Python wheels (amd64) and
+npm packages above, and a Gradle project of three subprojects (the Java SDK jars with JUnit 5.10.2, the
+Kotlin SDK jars with the Java SDK and JUnit, and `kotlin.test`). Its offline proof runs a course practice
+in each of Python, TypeScript, Java and Kotlin, and an MCP server and client over stdio, with nothing
+mounted but the practice:
+
+```sh
+IMAGE=<tag> PRACTICE=/path/to/practice-folder sh docs/measurements/claude-sdks-offline-proof.sh
+```
+
+The editor image of `claude-sdks` shows diagnostics in a `.ts` file with the shared editor's own TypeScript
+support and, for a `.py` file, through the pinned `basedpyright` extension (MIT, its language server inside the
+archive); the shared editor carries a Python extension with no language server, so without it a Python file
+shows none. `docs/measurements/editor-diagnostics-offline.py <editor image>` proves both with the network cut
+off (an internal Docker network) in a headless browser, and fails if a planted error shows none or a clean
+file shows one.
+
+⛔ A profile with a package entry is planned and built through `package_build.py`; the profile
+planner's own tag does not name the packages. `fixture-packages` is the fixture that proves both kinds.
+
+**The `jvm-frameworks` profile** carries a JVM course's framework modules' libraries (Spring Boot,
+Spring Data with an embedded H2 database, Spring Security and Ktor), so no shared base carries them.
+It layers on `gradle,java,kotlin`. Its entries are placeholders until their coordinates and
+checksums are pinned; its tag is computed today, and its dependencies are not yet fetched or warmed.
+A new runtime that needs its own image is added the same way, as its own profile file.
+
+**The `project` entry kind.** An entry `{"kind": "project", "id", "path", "sha256"}` names a Gradle
+multi-project directory `profiles/<name>/<path>/` (one subproject per distinct dependency set) and
+the sha256 of its `gradle/verification-metadata.xml`. The directory's bytes, and the warmers in
+`prime/` that warm it, are folded into that profile's tag (and into no other profile's or base's);
+`dependency` entries and the `TO-BE-PINNED` rule are unchanged. Before Docker starts, a build
+refuses by entry and file name a directory or checksum file that is missing or does not match the
+pin. The recipe then warms each project with `prime/warm-gradle.sh warm` (the course layer's own
+warm step, network on, every file checked against the project's metadata), keeps the warmed
+`modules-2` as a read-only cache at `/opt/profile/gradle-ro-cache` named by `GRADLE_RO_DEP_CACHE`
+(the image sets no `GRADLE_USER_HOME`, so a course prime layered on it keeps its own), and proves
+with `--network=none` that a fresh copy of each project builds in an EMPTY Gradle user home that
+has only that cache. The named contexts `profile-projects` and `warmers` carry the project and the
+warmers. `profiles/fixture-libs.json` is a small fixture (a Kotlin module, JUnit, Gson,
+commons-lang3 and kotlinx-coroutines, no framework) that exercises the kind end to end; it is not a
+course's profile.
+
+**The `editor-extension` entry kind.** An entry `{"kind": "editor-extension", "id", "url", "sha256",
+"images", "settings"}` names a `.zip` or `.tar.gz` archive that an editor extension needs and would
+otherwise download from the network at first use, pinned by an exact address and a sha256, and the
+images it belongs to. The recipe's fetch stage (`docker/profile/fetch_extension.py`) downloads it,
+refuses by entry name an archive whose bytes are not the pinned ones, and unpacks it (without its
+first `strip` path components) to `/opt/profile/editor-extensions/<id>/` in the images the entry
+names and in no other. `platform` (for an archive of machine code) refuses a build for another
+platform by name. `settings` are written as one `// @runtime kotlin` block into the editor's
+settings seed, so an editor of a set without the profile has neither the archive nor the setting.
+`patches` are exact-string edits of a file the base installed, each checked against the file's
+sha256 before and after (`apply_patches.pl`). The editor's own recipe, `editor-pins.json` and every
+base tag are untouched, because a profile's inputs are in no base's tag.
+`profiles/kotlin-editor.json` is the first use: the Kotlin language server `1.3.13`, a Temurin JDK
+`21.0.9+10` to run it on (its embedded compiler cannot read the runner's JDK 25 version string), and
+two patches that let the pinned `fwcd.kotlin` `0.2.36` activate on this code-server (it reads the
+`navigator` global, which the extension host rejects, and it waits on a first-run question).
+Measured on that profile's editor image, network cut off: a planted type error shows a diagnostic
+about 3.5 s after the page opens, a member completion on a `String` lists its members, the
+language server holds about 1 GiB with one `.kt` file open, and the image grows by 0.45 GB.
+
 ## Publishing an image
 
 `docker/publish.py` names an image `<namespace>/<published name>:<tag>`, where the published name is
@@ -219,6 +359,18 @@ tool writes caches into the mounted sources.
 `docker/editor/` builds code-server with the runner's toolchains, pinned
 extensions, and a shell that finds every toolchain. Build it from this
 directory, declaring the runtimes a corpus uses:
+
+A set that declares `kotlin` also carries a pinned Eclipse Temurin JDK 21 at
+`/opt/code-server/kotlin-ls-jdk` (`editor-pins.json`, `kotlin_language_server_jdk`), used only by the Kotlin
+language server: the server's bundled Kotlin compiler cannot parse JDK 25's version string and crashes at
+start. The entrypoint writes `kotlin.java.home` into the machine settings (`Machine/settings.json`) on every
+start, so a volume from an earlier image gets it too; builds and runs keep the runner's JDK. The Java language
+server needs no such setting. The language server itself (`kotlin_language_server`, release `1.3.13`, pinned by URL and
+sha256) is baked in at `/opt/code-server/kotlin-ls`, so the extension downloads nothing and a broken `.kt` file gets
+a diagnostic offline: `kotlin.languageServer.path` and `kotlin.debugAdapter.enabled=false` are written to the same
+machine settings, two exact-string patches (each checked against the extension file's sha256) let the pinned
+`fwcd.kotlin` activate on this code-server, and the build runs the server on the server JDK and expects its version
+line. A set without `kotlin` carries none of it.
 
 ```sh
 python3 docker/editor/build.py --runtimes java,maven

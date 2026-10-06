@@ -1,0 +1,39 @@
+{
+  "profiles_api": 1,
+  "name": "jvm-frameworks",
+  "about": "The framework profile: the dependencies a JVM course's framework modules need, layered on the shared base so no shared base carries them. This file is a STUB. Every coordinate below is a placeholder marked TO-BE-PINNED; the profile plans and computes its tag from it, and refuses to build until each one is pinned.",
+  "layers_on": ["gradle", "java", "kotlin"],
+  "images": ["runner", "editor"],
+  "adds": [
+    {
+      "kind": "dependency",
+      "id": "spring-boot",
+      "coordinates": "org.springframework.boot:spring-boot-starter:TO-BE-PINNED",
+      "sha256": "TO-BE-PINNED"
+    },
+    {
+      "kind": "dependency",
+      "id": "spring-data-jpa",
+      "coordinates": "org.springframework.boot:spring-boot-starter-data-jpa:TO-BE-PINNED",
+      "sha256": "TO-BE-PINNED"
+    },
+    {
+      "kind": "dependency",
+      "id": "h2",
+      "coordinates": "com.h2database:h2:TO-BE-PINNED",
+      "sha256": "TO-BE-PINNED"
+    },
+    {
+      "kind": "dependency",
+      "id": "spring-security",
+      "coordinates": "org.springframework.boot:spring-boot-starter-security:TO-BE-PINNED",
+      "sha256": "TO-BE-PINNED"
+    },
+    {
+      "kind": "dependency",
+      "id": "ktor",
+      "coordinates": "io.ktor:ktor-server-core:TO-BE-PINNED",
+      "sha256": "TO-BE-PINNED"
+    }
+  ]
+}

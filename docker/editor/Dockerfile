@@ -44,6 +44,12 @@ COPY docker/editor/fetch.py /fetch.py
 RUN printf '%s\n' "${FETCH}" > /tmp/fetch.txt \
  && python3 /fetch.py /tmp/fetch.txt /fetch \
  && rm /tmp/fetch.txt
+# The Kotlin language server is a .zip and the editor has no unzip: it is
+# unpacked here, after its sha256 was checked, and only when the set pins it.
+RUN if [ -e /fetch/kotlin-ls.zip ]; then \
+      python3 -c "import zipfile; zipfile.ZipFile('/fetch/kotlin-ls.zip').extractall('/fetch/kotlin-ls')" \
+   && rm /fetch/kotlin-ls.zip; \
+    fi
 
 # -------------------------------------------------------------------- lockdown
 # The practice-focus extension, this repository's own artifact and no
@@ -131,6 +137,27 @@ RUN --network=none --mount=type=bind,from=fetch,source=/fetch,target=/tmp/fetch 
    && rm -rf /tmp/npm-home; \
     fi
 
+# ⭐ The Kotlin language server's own JDK. The server (downloaded by the
+# fwcd.kotlin extension) bundles a Kotlin compiler that cannot parse the version
+# string of the runner's JDK 25 (IllegalArgumentException in
+# CliJavaModuleFinder, five crashes, then the client gives up). So the server is
+# pointed at a JDK 21 by `kotlin.java.home`, and the runner's JDK stays the
+# default for builds and runs. ⚠️ The setting is a MACHINE settings file, seeded
+# below and rewritten by the entrypoint on every start: the user's settings seed
+# is written once per volume, so a volume from an earlier image would never get
+# it, and `configurationDefaults` in the workbench's product.json was measured
+# and is NOT honoured by the extension host. The tree sits under
+# /opt/code-server so /opt still holds only the declared set's trees.
+ARG WITH_KOTLIN_LS_JDK
+ARG KOTLIN_LS_JDK_DIR
+RUN --network=none --mount=type=bind,from=fetch,source=/fetch,target=/tmp/fetch \
+    if [ "${WITH_KOTLIN_LS_JDK}" = yes ]; then \
+      mkdir -p "${KOTLIN_LS_JDK_DIR}" /opt/code-server/seed \
+   && tar -xzf /tmp/fetch/kotlin-ls-jdk.tgz -C "${KOTLIN_LS_JDK_DIR}" --strip-components=1 \
+   && printf '{\n    "kotlin.java.home": "%s"\n}\n' "${KOTLIN_LS_JDK_DIR}" > /opt/code-server/seed/machine-settings.json \
+   && chmod 644 /opt/code-server/seed/machine-settings.json; \
+    fi
+
 # Extensions are installed at BUILD time into a directory IN the image, never
 # onto a volume: an extension on a volume outlives the image, and after an
 # upgrade the reader runs old extensions against a new toolchain.
@@ -163,6 +190,42 @@ RUN --network=none --mount=type=bind,from=fetch,source=/fetch,target=/tmp/fetch 
     rm -rf /tmp/verify_extensions.js /root/.local/share/code-server /root/.config/code-server; \
     chown -R 1000:1000 /opt/code-server/extensions; \
     chmod -R a+rX /opt/code-server/extensions
+
+# ⭐ THE KOTLIN LANGUAGE SERVER IS IN THE IMAGE, so the extension never downloads it.
+# Measured: with no server on disk, fwcd.kotlin offered to "automatically download a
+# language server", started none, and a broken .kt file got no diagnostic; the course
+# runs offline. The pinned server (`kotlin_language_server`) is copied to its own tree
+# under /opt/code-server and the extension is pointed at it by `kotlin.languageServer.path`
+# in the MACHINE settings (the same file as `kotlin.java.home`, rewritten on every
+# start; the plan merges both into KOTLIN_LS_SETTINGS). A set path means the extension
+# downloads nothing; `kotlin.debugAdapter.enabled=false` stops its second download.
+# ⚠️ Two exact-string patches (each checked against the file's sha256 before and after,
+# `apply_patches.pl`) let the pinned extension activate on this code-server: it reads the
+# `navigator` global, which the extension host rejects, and waits on a first-run question.
+# ⚠️ The server's compiler is Kotlin 2.1: a Kotlin 2.4 runtime on its classpath turned
+# every .kt file red. `kls-classpath` (seeded here, written to the reader's config by the
+# entrypoint) gives the server its own kotlin-stdlib instead; builds never read it.
+# ⭐ The server is RUN on the server JDK by the CHECKS step below (it logs its version
+# at start), or the image is not built. Nothing here runs for a set without kotlin.
+ARG WITH_KOTLIN_LS
+ARG KOTLIN_LS_DIR
+ARG KOTLIN_LS_SETTINGS
+ARG KOTLIN_LS_PATCHES
+COPY docker/profile/apply_patches.pl /tmp/apply_patches.pl
+COPY docker/editor/kls-classpath /tmp/kls-classpath
+RUN --network=none --mount=type=bind,from=fetch,source=/fetch,target=/tmp/fetch \
+    set -eu; \
+    if [ "${WITH_KOTLIN_LS}" = yes ]; then \
+      mkdir -p /opt/code-server/seed; \
+      install -m 755 /tmp/kls-classpath /opt/code-server/seed/kls-classpath; \
+      mkdir -p "${KOTLIN_LS_DIR}" /opt/code-server/seed; \
+      cp -a /tmp/fetch/kotlin-ls/server/. "${KOTLIN_LS_DIR}/"; \
+      chmod a+rx "${KOTLIN_LS_DIR}/bin/kotlin-language-server"; \
+      perl /tmp/apply_patches.pl "${KOTLIN_LS_PATCHES}"; \
+      printf '%s\n' "${KOTLIN_LS_SETTINGS}" > /opt/code-server/seed/machine-settings.json; \
+      chmod 644 /opt/code-server/seed/machine-settings.json; \
+    fi; \
+    rm -f /tmp/apply_patches.pl /tmp/kls-classpath
 
 # ⛔ THE BUNDLED CHAT IS DELETED FROM THE PRODUCT, not hidden behind a setting.
 # ⚠️ It is a BUILT-IN of the code-server build -- it appears in no

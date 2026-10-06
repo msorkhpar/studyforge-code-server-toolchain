@@ -118,6 +118,7 @@ def findings(contract: dict) -> list[str]:
     block = contract.get(runner.BLOCK, {})
     found += [f"{runner.BLOCK}: {finding}"
               for finding in runner.findings(block) + _tag_findings(block)]
+    found += _profile_tag_findings(contract)
     found += _release_findings(contract)
     return found
 
@@ -243,6 +244,30 @@ def _tag_findings(editor: dict) -> list[str]:
             found.append(f"image.tag.{key} is empty: what a tag promises is stated, not inferred")
     if not (tag.get("upgrade") or {}).get("re_verify"):
         found.append("image.tag.upgrade names nothing to re-verify, which is not an upgrade note")
+    return found
+
+
+def _profile_tag_findings(contract: dict) -> list[str]:
+    """The command that prints a profile's tag names every slot a consumer fills, and prints a tag."""
+    block = contract.get("profile_tag")
+    if not isinstance(block, dict):
+        return ["profile_tag is absent: a consumer has no command that prints a profile's tag"]
+    command = block.get("printed_by") or []
+    found = []
+    for slot in ("<profile>", "<runner|editor>", "<the declared set>", "<platform>"):
+        if slot not in command:
+            found.append(f"profile_tag.printed_by names no {slot} slot")
+        if slot not in (block.get("slots") or {}):
+            found.append(f"profile_tag.slots does not say what {slot} is")
+    if "--print-tag" not in command:
+        found.append("profile_tag.printed_by is not a command that prints a tag")
+    if not isinstance(block.get("profile_tag_api"), int):
+        found.append("profile_tag.profile_tag_api is absent: a consumer cannot tell which shape it reads")
+    if block.get("runs_no_docker") is not True:
+        found.append("profile_tag does not say its command runs no docker")
+    for key in ("prints", "refuses", "covers"):
+        if not block.get(key):
+            found.append(f"profile_tag.{key} is empty: what the command answers is stated, not inferred")
     return found
 
 

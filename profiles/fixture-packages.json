@@ -1,0 +1,26 @@
+{
+  "profiles_api": 1,
+  "name": "fixture-packages",
+  "about": "A small fixture profile: one python-wheels entry (the Agent SDK for Python with its dependencies, its bundled binary removed after the hashed install) and one npm-packages entry (the Agent SDK for Node, zod and typescript, optional packages skipped). It proves the two entry kinds end to end. It is not a course's profile; a course names it only to test a profile image.",
+  "layers_on": ["python", "node"],
+  "images": ["runner", "editor"],
+  "adds": [
+    {
+      "kind": "python-wheels",
+      "id": "py-sdk",
+      "coordinates": "claude-agent-sdk==0.2.163 and its dependencies",
+      "requirements": "requirements.txt",
+      "sha256": "c456b9367466fcd7d2e4c9696c80f68b1999f6f16f5b7fac79e327f4f97537b8",
+      "platforms": ["linux/amd64"],
+      "imports": ["claude_agent_sdk", "mcp", "pydantic"],
+      "remove_files": ["claude_agent_sdk/_bundled/claude"]
+    },
+    {
+      "kind": "npm-packages",
+      "id": "node-sdk",
+      "path": "npm",
+      "sha256": "21decde9c3337a4f4c97d96785cf0f0b973804fee1540044b3568b6beba6d26d",
+      "omit_optional": true
+    }
+  ]
+}

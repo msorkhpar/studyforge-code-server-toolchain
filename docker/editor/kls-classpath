@@ -1,0 +1,14 @@
+#!/bin/sh
+# The Kotlin language server's classpath, and only the server's: builds and runs never read
+# this file. The server's own compiler (2.1) cannot read a newer Kotlin runtime, so a project
+# that compiles with a later Kotlin showed every file red ("compiled with an incompatible
+# version of Kotlin"). The server finds this script before Gradle or kotlinc and takes the
+# classpath from it: its own matching kotlin-stdlib, then every library jar of the offline
+# Gradle caches except Kotlin's own.
+{
+  ls /opt/code-server/kotlin-ls/lib/kotlin-stdlib-[0-9]*.jar
+  for d in "${GRADLE_RO_DEP_CACHE:-}" "${GRADLE_USER_HOME:-$HOME/.gradle}/caches"; do
+    [ -n "$d" ] && [ -d "$d/modules-2/files-2.1" ] && find "$d/modules-2/files-2.1" -name '*.jar' \
+      ! -name '*-sources.jar' ! -name '*-javadoc.jar' ! -path '*/files-2.1/org.jetbrains.kotlin/*'
+  done
+} 2>/dev/null | awk '!seen[$0]++' | paste -sd: -
