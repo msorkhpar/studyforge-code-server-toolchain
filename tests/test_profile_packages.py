@@ -40,12 +40,12 @@ DIGEST = shared.IMAGE_DIGEST
 #: editor input moves every editor tag, and each profile's editor tag is derived from it); runner tags did not move.
 RECORDED = {
     ("jvm-frameworks", "runner"): "code-server-toolchain/runner-jvm-frameworks:gradle-java-kotlin-amd64-e0de42be2689",
-    ("jvm-frameworks", "editor"): "code-server-toolchain/editor-jvm-frameworks:gradle-java-kotlin-amd64-e1142012b3c0",
+    ("jvm-frameworks", "editor"): "code-server-toolchain/editor-jvm-frameworks:gradle-java-kotlin-amd64-56185b2d903b",
     ("fixture-libs", "runner"): "code-server-toolchain/runner-fixture-libs:gradle-java-kotlin-amd64-a4519ad7340e",
-    ("fixture-libs", "editor"): "code-server-toolchain/editor-fixture-libs:gradle-java-kotlin-amd64-4d3116ef4c22",
-    ("kotlin-editor", "editor"): "code-server-toolchain/editor-kotlin-editor:gradle-java-kotlin-amd64-2ccae044ca63",
+    ("fixture-libs", "editor"): "code-server-toolchain/editor-fixture-libs:gradle-java-kotlin-amd64-6c76680223b7",
+    ("kotlin-editor", "editor"): "code-server-toolchain/editor-kotlin-editor:gradle-java-kotlin-amd64-134c22d78b7b",
     ("claude-sdks", "runner"): "code-server-toolchain/runner-claude-sdks:gradle-java-kotlin-node-python-amd64-4069e92f83df",
-    ("claude-sdks", "editor"): "code-server-toolchain/editor-claude-sdks:gradle-java-kotlin-node-python-amd64-cd5e43226f11",
+    ("claude-sdks", "editor"): "code-server-toolchain/editor-claude-sdks:gradle-java-kotlin-node-python-amd64-181b7e17dbf2",
 }
 
 

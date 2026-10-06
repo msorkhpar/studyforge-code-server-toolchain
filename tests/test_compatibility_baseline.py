@@ -27,6 +27,9 @@ or a copy of one of its projects):
 ⭐ The editor's digest moved once on purpose, when the Kotlin language server was given
 its own JDK 21 (a new editor pin, a Dockerfile step and an entrypoint step): every editor
 input moves every editor tag, and no runner tag moved. The runner literals are unchanged.
+It moved once more when the Kotlin language server itself was baked into the editor
+(a pinned server, its activation patches, its classpath script and the Machine settings
+the entrypoint writes): again every editor tag and no runner tag.
 
 ⛔ Regenerate a literal ONLY on purpose, in a change that says why a published tag
 is allowed to move. A primed tag also reads the fixture projects, so editing a
@@ -49,7 +52,7 @@ FIXTURE = ROOT / "tests" / "fixtures" / "prime"
 SCRIPT = {"runner": ROOT / "docker" / "minimal" / "build.py", "editor": ROOT / "docker" / "editor" / "build.py"}
 REPOSITORY = {"runner": "code-server-toolchain/runner", "editor": "code-server-toolchain/editor"}
 #: The digest of each image's build inputs, the suffix every unprimed tag ends with.
-DIGEST = {"runner": "f8f1db0be48a", "editor": "dfccda94afd6"}
+DIGEST = {"runner": "f8f1db0be48a", "editor": "b32ceaf453ce"}
 
 SETS = {
     "java": "java",
@@ -63,9 +66,9 @@ ARCH = {"linux/amd64": "amd64", "linux/arm64": "arm64"}
 #: (image, declared set, prime projects kept, expected tag after the repository).
 PRIMED = (
     ("runner", "java,maven", ("maven",), "java-maven-amd64-fb008dba19a8"),
-    ("editor", "java,maven", ("maven",), "java-maven-amd64-dc12941bc566"),
+    ("editor", "java,maven", ("maven",), "java-maven-amd64-00fc6e8a9d63"),
     ("runner", "gradle,java,maven", ("gradle", "maven"), "gradle-java-maven-amd64-1d07cdf617ac"),
-    ("editor", "gradle,java,maven", ("gradle", "maven"), "gradle-java-maven-amd64-f1b3d7b0fa5d"),
+    ("editor", "gradle,java,maven", ("gradle", "maven"), "gradle-java-maven-amd64-158bf6af615b"),
 )
 
 
