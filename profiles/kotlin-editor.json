@@ -20,7 +20,7 @@
         "editor"
       ],
       "settings": {
-        "kotlin.languageServer.path": "/opt/profile/editor-extensions/kotlin-language-server/server/bin/kotlin-language-server",
+        "kotlin.languageServer.path": "/opt/code-server/kotlin-ls/bin/kotlin-language-server",
         "kotlin.java.home": "/opt/profile/editor-extensions/kotlin-jdk",
         "kotlin.debugAdapter.enabled": false
       },

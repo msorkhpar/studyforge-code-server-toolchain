@@ -47,7 +47,7 @@ JDK = "kotlin-jdk"
 PATCHED = "/opt/code-server/extensions/fwcd.kotlin-0.2.36/dist/extension.js"
 IMAGE_DIGEST = "sha256:" + "c" * 64
 BAKED = "/opt/code-server/kotlin-ls/bin/kotlin-language-server"
-SERVER = "/opt/profile/editor-extensions/kotlin-language-server/server/bin/kotlin-language-server"
+SERVER = "/opt/code-server/kotlin-ls/bin/kotlin-language-server"
 
 
 def context(tmp) -> Path:
