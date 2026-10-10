@@ -53,6 +53,8 @@ from pathlib import Path
 COMPONENT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(COMPONENT / "docker" / "editor"))
 import editor_plan  # noqa: E402
+sys.path.insert(0, str(COMPONENT / "consuming"))
+import prime_files  # noqa: E402
 
 runner_plan = editor_plan.runner_plan
 prime_contract = editor_plan.prime_contract
@@ -83,7 +85,7 @@ class Refused(ValueError):
 
 def _read_prime(prime) -> prime_contract.Prime | None:
     """The prime at `prime`, read for its shape, or `None` when there is none."""
-    return prime_contract.read(prime) if prime is not None else None
+    return prime_files.read(prime) if prime is not None else None
 
 
 def _runner(root: Path, names, platform: str, prime=None) -> runner_plan.Plan:
