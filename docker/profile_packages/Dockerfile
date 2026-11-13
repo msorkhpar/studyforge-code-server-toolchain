@@ -7,6 +7,7 @@
 ARG PROFILE_IMAGE
 ARG PROFILE_HAS_NPM
 ARG PROFILE_HAS_PROJECTS
+ARG PROFILE_TELEMETRY_OFF
 
 # ------------------------------------ the fetch stage: the ONLY stage with a network
 # Wheels are downloaded with `--require-hashes` (and `--only-binary=:all:` unless the entry says
@@ -21,13 +22,23 @@ RUN --mount=type=bind,from=profile-files,target=/files \
     --mount=type=bind,from=packages-recipe,target=/recipe \
     sh /recipe/fetch.sh
 
+# ------------------------------------ telemetry off, for every process in the image
+# ⭐ An `npm-packages` entry with `telemetry_off: true` sets the cross-tool opt-out (`DO_NOT_TRACK`) and
+# OpenSpec's own switch, before anything is installed or run, so neither the build's checks nor any later
+# process reports anything. A profile without it gets neither variable. A new CLI's switch is added here.
+FROM ${PROFILE_IMAGE} AS start-telemetry-0
+FROM ${PROFILE_IMAGE} AS start-telemetry-1
+ENV DO_NOT_TRACK=1 OPENSPEC_TELEMETRY=0
+
 # ------------------------------------ the offline install and proof
-FROM ${PROFILE_IMAGE} AS installed
+FROM start-telemetry-${PROFILE_TELEMETRY_OFF} AS installed
 USER root
 ARG PROFILE_WHEELS
 ARG PROFILE_NPM
 ARG PROFILE_VSIX
 ARG PROFILE_VSIX_SEED
+ARG PROFILE_NPM_BINS
+ARG PROFILE_NPM_CHECKS
 LABEL org.studyforge.profile.packages="${PROFILE_WHEELS}${PROFILE_NPM}${PROFILE_VSIX}"
 COPY --from=fetch /fetched /opt/profile/fetched
 RUN --network=none \
@@ -81,5 +92,17 @@ ENV npm_config_cache=/opt/profile/npm-cache
 FROM ready AS env-npm-0
 
 FROM env-npm-${PROFILE_HAS_NPM}
+# ⭐ Each `npm-packages` entry's `proof` script, run with NO network as a NON-ROOT user with no passwd entry
+# (1000:1000), the way a learner's run starts the runner (`--user <uid>:<gid>`): a command the entry put on
+# PATH works for that user, not only for root. It leaves nothing behind.
+ARG PROFILE_NPM_PROOFS
+USER 1000:1000
+RUN --network=none \
+    --mount=type=bind,from=profile-files,target=/files \
+    set -eu; \
+    for proof in ${PROFILE_NPM_PROOFS}; do \
+      echo "proof: ${proof} as uid $(id -u)"; \
+      sh "/files/${proof}"; \
+    done
 ARG PROFILE_RESTORE_USER
 USER ${PROFILE_RESTORE_USER}

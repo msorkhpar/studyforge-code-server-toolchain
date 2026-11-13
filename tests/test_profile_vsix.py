@@ -128,7 +128,7 @@ class TheRecipe(unittest.TestCase):
         self.assertIn("--install-extension", install)
         self.assertIn("--list-extensions --show-versions", install)
         docker = self.text("Dockerfile")
-        self.assertEqual(docker.count("--network=none"), 2)
+        self.assertEqual(docker.count("--network=none"), 3)  # install, project proof, npm proofs
         self.assertIn("RUN --network=none \\\n    --mount=type=bind,from=profile-files", docker)
         self.assertNotIn("curl", install)
         self.assertEqual(profile_plan.runner_plan.dockerfile_findings(docker), [])

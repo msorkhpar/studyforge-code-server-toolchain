@@ -250,7 +250,8 @@ class TheRecipe(unittest.TestCase):
     def test_the_fetch_is_the_only_stage_with_a_network_and_the_install_has_none(self):
         docker = self.text("Dockerfile")
         self.assertIn("RUN --network=none \\\n    --mount=type=bind,from=profile-files", docker)
-        self.assertEqual(docker.count("--network=none"), 2)
+        # the offline install, the offline project proof, and the npm entries' proofs as a non-root user
+        self.assertEqual(docker.count("--network=none"), 3)
         fetch = self.text("fetch.sh")
         self.assertIn("--require-hashes", fetch)
         self.assertIn("--only-binary=:all:", fetch)
@@ -281,7 +282,7 @@ class TheRecipe(unittest.TestCase):
     def test_the_project_stage_runs_only_for_a_profile_that_has_a_project_entry(self):
         docker = self.text("Dockerfile")
         self.assertIn("FROM projects-${PROFILE_HAS_PROJECTS} AS ready", docker)
-        self.assertEqual(docker.count("--network=none"), 2)
+        self.assertEqual(docker.count("--network=none"), 3)
         self.assertEqual(package_kinds.plan(ROOT, NAME, "runner", [], AMD64).build_args["PROFILE_HAS_PROJECTS"], "0")
         self.assertEqual(package_kinds.plan(ROOT, "claude-sdks", "runner", [], AMD64).build_args["PROFILE_HAS_PROJECTS"], "1")
         command = packages_build.docker_command(ROOT, package_kinds.plan(ROOT, "claude-sdks", "runner", [], AMD64), "start:image")

@@ -1,0 +1,27 @@
+{
+  "about": "Exact-string edits applied to the HiGHS 1.14.0 source archive before highspy is built with CUPDLP_GPU=ON, each file checked by its sha256 before and after (docker/variant_gpu/edit_source.py). python-highs.cmake: HiGHS's Python build compiles no CUDA source even with CUPDLP_GPU=ON, so the module would hold unresolved cuPDLP-C GPU symbols; the edit links the C++ build's own cudalin library. cuda/CMakeLists.txt: the library is built for sm_75, sm_80 and sm_86 only; sm_120 (Blackwell) is added, because PTX from this CUDA 13.3 compiler cannot be JIT-compiled by a driver that reports an older CUDA 13 line. No version label is added: the module reports highspy 1.14.0, as the profile's wheel does, so a program that checks its pins or prints versions gives the same answer on both images; /opt/gpu/variant.json and libcudalin beside the module say it is the CUDA build.",
+  "edits": [
+    {
+      "file": "cmake/python-highs.cmake",
+      "sha256": "8f793420e7750ba6c2668e0f1668d9b0d171e8e7d60f4eafb98d2da2c6cdad35",
+      "after": "eaff67e700ad8b0133692169b81e3588be5a9be1002191bd9b62b2d357c35d1e",
+      "replace": [
+        [
+          "install(TARGETS _core DESTINATION highspy)\n",
+          "install(TARGETS _core DESTINATION highspy)\n\n# optimization-gpu: the GPU PDLP (cuPDLP-C on CUDA) linked into the Python module. HiGHS's own Python\n# build compiles no CUDA source even with CUPDLP_GPU=ON; this adds the C++ build's `cudalin` library,\n# links it and the CUDA libraries into `_core`, and installs it beside `_core` (found by $ORIGIN).\nif (CUPDLP_GPU)\n  set(CUPDLP_INCLUDE_DIR \"${PROJECT_SOURCE_DIR}/highs/pdlp/cupdlp/\")\n  add_subdirectory(highs/pdlp/cupdlp/cuda EXCLUDE_FROM_ALL)\n  target_link_libraries(_core PRIVATE cudalin ${CUDA_LIBRARY})\n  install(TARGETS cudalin LIBRARY DESTINATION highspy)\nendif()\n"
+        ]
+      ]
+    },
+    {
+      "file": "highs/pdlp/cupdlp/cuda/CMakeLists.txt",
+      "sha256": "09d4153c385a0fa00d9c71ccf88acd57fa622c3a019e8b7a69f7a7f2dca628a4",
+      "after": "74353ce9dc9f65797fcca3373553984c7655fbc6a4627eb4180fe6c056e0cb5a",
+      "replace": [
+        [
+          "CUDA_ARCHITECTURES \"75;80;86\" )",
+          "CUDA_ARCHITECTURES \"75;80;86;120\" )"
+        ]
+      ]
+    }
+  ]
+}

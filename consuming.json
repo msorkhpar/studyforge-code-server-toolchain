@@ -1,10 +1,20 @@
 {
   "consuming_api": 1,
-  "provides": 6,
+  "provides": 7,
   "component": "code-server-toolchain",
   "not_yet_declared": [],
   "why_nothing_is_undeclared": "this component builds two images and both are declared here: the editor with the compose file a consumer renders, the runner with the run and exec lines a consumer issues, and each with what its tag promises. A hole found later is a finding against this file, and it is named in this list rather than left to a reader to discover",
   "releases": [
+    {
+      "provides": 7,
+      "summary": "a profile may have an optional GPU variant (variants/<name>.json, layered on the profile's own image), and variant_choice names the one command that picks between the CPU image and the variant: the variant only when its image is present and a probe with --gpus all lists a GPU, the CPU image otherwise with no error, TOOLCHAIN_VARIANT=cpu|gpu forcing either",
+      "moves_every_tag": false,
+      "measured": "every base tag and every profile tag is unchanged: the variant's file is under variants/, its recipe under docker/variant_gpu/, and neither is an input of any base or profile (tests/test_variant_gpu.py edits both and recomputes every base and profile tag); the optimization runner's tag is the one the release before printed",
+      "re_verify": [
+        "nothing in a running container: no build input of a base or a profile changed, so every tag you already pinned is still the tag this checkout computes",
+        "a consumer that offers the GPU path: render variant_choice.chosen_by, put its docker_args before the image in docker run, and keep the CPU image as the default; read variant_choice.variant_choice_api first"
+      ]
+    },
     {
       "provides": 6,
       "summary": "a profile's tag is asked for by a command the contract names (profile_tag.printed_by), for both profile kinds: a profile with only project and editor-extension entries and one with python-wheels or npm-packages entries answer the same command, so a consumer holds no copy of how to ask",
@@ -498,6 +508,59 @@
     "covers": "both profile kinds with this one command: a profile with python-wheels or npm-packages entries, and one with only project and editor-extension entries, whose tag is the one docker/profile/profile_build.py prints for it",
     "runs_no_docker": true,
     "why": "a consumer that needs a profile's tag to pin or to check a lock reads the command here and never a build script's own usage, so a recipe that moves its script moves this key and no consumer"
+  },
+  "variant_choice": {
+    "what_it_is": "how a consumer picks, at run time, between a profile's own (CPU) image and its optional GPU variant",
+    "variant_choice_api": 1,
+    "chosen_by": [
+      "python3",
+      "consuming/variant.py",
+      "--profile",
+      "<profile>",
+      "--image",
+      "<runner|editor>",
+      "--runtimes",
+      "<the declared set>",
+      "--choose"
+    ],
+    "listed_by": [
+      "python3",
+      "consuming/variant.py",
+      "--profile",
+      "<profile>",
+      "--image",
+      "<runner|editor>",
+      "--runtimes",
+      "<the declared set>",
+      "--list"
+    ],
+    "variant_tag_printed_by": [
+      "python3",
+      "docker/variant_gpu/variant_build.py",
+      "--variant",
+      "<variant>",
+      "--image",
+      "<runner|editor>",
+      "--runtimes",
+      "<the declared set>",
+      "--print-tag"
+    ],
+    "slots": {
+      "<profile>": "the profile's name, as profile_tag names it",
+      "<runner|editor>": "the image; a GPU variant is built for the runner only",
+      "<the declared set>": "the base's declared runtimes, comma separated",
+      "<variant>": "the variant's name, as the file under variants/ spells it"
+    },
+    "prints": "one JSON line: variant (gpu or cpu), name, image (<repository>:<tag>), docker_args (put before the image in docker run: --gpus all for the variant, nothing for the CPU image), docker_host (the DOCKER_HOST to run it on, or null for the current context) and reason",
+    "engine": "the variant is looked up, probed and run on a Docker engine that reaches a GPU: TOOLCHAIN_GPU_DOCKER_HOST when set; else the current context when its docker info lists an nvidia runtime; else the local socket unix:///var/run/docker.sock when it exists and lists one. When the current context is a Docker context without GPU passthrough, the variant runs on the engine this rule names instead, one whose nvidia runtime reaches the GPU. The CPU image always runs on the current context",
+    "rule": "the GPU variant only when (a) its image is present locally (docker image inspect) and (b) docker run --rm --gpus all --network none --entrypoint nvidia-smi <variant image> -L exits 0 and lists a GPU; otherwise the profile's own image, with no error",
+    "environment": {
+      "TOOLCHAIN_VARIANT": "auto (the default) follows the rule; cpu always takes the profile's image and starts no container; gpu takes the variant and refuses, exit 2 with the reason on stderr, when the image is absent or the probe fails",
+      "TOOLCHAIN_GPU_DOCKER_HOST": "a DOCKER_HOST value naming the engine the variant runs on; unset, the engine rule decides"
+    },
+    "in_the_container": "a consumer passes the choice in as TOOLCHAIN_VARIANT=<variant>; the variant image also carries /opt/gpu/variant.json (its highspy, CUDA runtime and cuOpt versions and cuOpt's interpreter), and a program asks the CUDA driver for the device itself rather than trusting either",
+    "never": "the variant is never the default when its image is absent or no GPU is reached, and a CPU image never receives --gpus",
+    "why": "every consumer falls back the same way, so a learner without a GPU or without the optional download runs the course unchanged"
   },
   "builds": {
     "what_it_is": "each image this component builds, printed as the docker build its own build runs: the Dockerfile, the target, every ARG, the named contexts, the images it starts FROM, which of those this component builds itself, the tag and the input roots its context carries",

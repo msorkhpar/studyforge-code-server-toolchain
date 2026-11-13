@@ -484,6 +484,27 @@ docker. The shape is versioned by `profile_tag.profile_tag_api`. ⛔ A consumer
 whose toolchain carries no `profile_tag` block refuses that toolchain, and does
 not fall back to a script's own usage.
 
+## Choosing the CPU image or its GPU variant
+
+A profile may have an optional GPU variant (`variants/<name>.json`, layered on the profile's own image).
+⭐ **`variant_choice.chosen_by` is the one command that picks the image to run**: fill its slots
+(`variant_choice.slots`), run it, and use the one JSON line it prints (`variant_choice.prints`): `image`, and
+`docker_args` to put before the image in `docker run` (`--gpus all` for the variant, nothing otherwise).
+The rule (`variant_choice.rule`): the variant only when its image is present locally and a probe with
+`--gpus all` lists a GPU; otherwise the profile's own image, with no error. **Which engine** (`variant_choice.engine`): the
+variant is looked up, probed and run on a Docker engine that reaches a GPU, named by `docker_host` in the
+printed line: `TOOLCHAIN_GPU_DOCKER_HOST` when set, else the current context when it lists an `nvidia`
+runtime, else the local socket `unix:///var/run/docker.sock` when it does. When the current context is a
+Docker context without GPU passthrough, the variant runs on an engine whose `nvidia` runtime reaches the GPU:
+set `DOCKER_HOST` to `docker_host` for that `docker run`, and load or build the variant there. The CPU
+image always runs on the current context (`docker_host` is null). ⛔ The variant is never the
+default otherwise, and a CPU image never receives `--gpus` (`variant_choice.never`). `TOOLCHAIN_VARIANT`
+forces either (`variant_choice.environment`): `cpu` starts no container, `gpu` refuses with exit status 2
+when the variant cannot run. Pass the choice into the container as `TOOLCHAIN_VARIANT=<variant>`; a
+program still asks the driver for its device (`variant_choice.in_the_container`). The variant's own tag is
+printed by `variant_choice.variant_tag_printed_by`, and the shape is versioned by
+`variant_choice.variant_choice_api`.
+
 ## Building with compose, and one course layer per consumer
 
 ⭐ **`python3 consuming/builds.py <image> --runtimes <set>` prints a build as

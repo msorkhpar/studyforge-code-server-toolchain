@@ -119,6 +119,44 @@ ENTRY
   )
   rm -rf "$work"
 done
+# ⭐ `bins`: the entry's lockfile, installed offline from the same read-only cache into a home of its own, and
+# each named command linked into /usr/local/bin, so every user has it on PATH (a global install, by lockfile).
+for line in $PROFILE_NPM_BINS; do
+  [ -n "$line" ] || continue
+  IFS='|' read -r id path omit bins <<ENTRY
+$line
+ENTRY
+  flag=""
+  [ "$omit" = "1" ] && flag="--omit=optional"
+  home="$P/npm-global/$id"
+  echo "install: npm-packages $id on PATH: $bins"
+  mkdir -p "$home"
+  cp "/files/$path/package.json" "/files/$path/package-lock.json" "$home/"
+  (cd "$home" && npm_config_cache="$P/npm-cache" npm ci --offline --ignore-scripts --no-audit --no-fund $flag) > /tmp/npm-global.log 2>&1 \
+    || { cat /tmp/npm-global.log >&2; echo "install: npm-packages $id: the offline install for PATH failed" >&2; exit 1; }
+  rm -f /tmp/npm-global.log
+  IFS=','
+  for bin in $bins; do
+    target="$home/node_modules/.bin/$bin"
+    [ -x "$target" ] || { echo "install: npm-packages $id: the install has no command $bin" >&2; exit 1; }
+    [ ! -e "/usr/local/bin/$bin" ] || { echo "install: npm-packages $id: /usr/local/bin/$bin already exists" >&2; exit 1; }
+    ln -s "$target" "/usr/local/bin/$bin"
+    echo "proof: $bin is on PATH ($(command -v "$bin"))"
+  done
+  IFS="$NL"
+  chmod -R a+rX,a-w "$home"
+done
+# ⭐ `checks`: each command must print exactly the pinned answer, here, with no network.
+for line in $PROFILE_NPM_CHECKS; do
+  [ -n "$line" ] || continue
+  IFS='|' read -r id command expect <<ENTRY
+$line
+ENTRY
+  actual="$(sh -c "$command" 2>&1)" || { echo "$actual" >&2; echo "install: npm-packages $id: $command failed" >&2; exit 1; }
+  [ "$actual" = "$expect" ] || { echo "install: npm-packages $id: $command printed [$actual], the pin is [$expect]" >&2; exit 1; }
+  echo "proof: $command prints $actual"
+done
+if [ -d "$P/npm-global" ]; then chmod a+rX,a-w "$P/npm-global"; fi
 rm -rf /root/.npm /root/.cache
 chmod -R a+rX,a-w "$P/wheelhouse" "$P/requirements" "$P/npm-cache"
 chmod a+rX,a-w "$P"

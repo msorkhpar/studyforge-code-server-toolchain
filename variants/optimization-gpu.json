@@ -1,0 +1,61 @@
+{
+  "variants_api": 1,
+  "name": "optimization-gpu",
+  "about": "The GPU variant of the optimization profile: the same runner image, plus HiGHS built with CUDA (its cuPDLP-C GPU PDLP) as highspy, and NVIDIA cuOpt in a venv of its own. It is optional: no default image carries CUDA or changes size, and a learner downloads it only to use a GPU. HiGHS 1.14.0, the version the profile pins as a wheel, is built from its source archive with CUPDLP_GPU=ON and installed as highspy 1.14.0 in place of that wheel (same version string; /opt/gpu/variant.json names the build), so every CPU solve runs the same HiGHS release; the build stage holds the compiler (g++, cmake, make from a pinned Debian snapshot), and the image does not. cuOpt 26.10.0 (cuopt-cu13) and its whole closure live in /opt/gpu/cuopt, because cudf 26.10, which cuOpt imports to solve an LP, needs pandas below 3.1 and numba holds numpy at 2.4.6, and the profile pins pandas 3.1.0 and numpy 2.5.4; a program runs cuOpt with /opt/gpu/cuopt/bin/python, in a process of its own. The CUDA 13.3 libraries are installed once, in that venv, and highspy finds them by its RUNPATH. CUDA 13.3 is the lowest line cuOpt 26.10 accepts (libcudf and libcuopt need nvJitLink 13.3); a 13.0 or newer driver runs it by CUDA's minor-version compatibility, and the HiGHS kernels carry machine code for sm_75, sm_80, sm_86 and sm_120 so none of them needs the driver to JIT-compile PTX. cuOpt's closure itself declares nvcc (cudf's numba-cuda-mlir requires cuda-toolkit[nvcc]), so the venv holds the nvcc wheel as a runtime dependency of cudf; no compiler for the image's own builds is present. Every input is pinned and checksummed (linux/amd64, CPython 3.14, resolved from releases published on or before 28 October 2026), and no license file is added.",
+  "layers_on_profile": "optimization",
+  "images": [
+    "runner"
+  ],
+  "device": "gpu",
+  "cuda": {
+    "major": 13,
+    "toolkit": "13.3",
+    "driver_at_least": "13.0",
+    "architectures": "75;80;86;120"
+  },
+  "venv": "/opt/gpu/cuopt",
+  "build_tools": {
+    "snapshot": "20260824T000000Z",
+    "packages": [
+      "g++=4:14.2.0-1",
+      "cmake=3.31.6-2",
+      "make=4.4.1-2",
+      "ninja-build=1.12.1-1"
+    ]
+  },
+  "build_jobs": 4,
+  "adds": [
+    {
+      "kind": "source-build",
+      "id": "highspy-cuda",
+      "coordinates": "HiGHS 1.14.0 built with CUPDLP_GPU=ON for sm_75, sm_80, sm_86 and sm_120, installed as highspy 1.14.0 (no version label) in place of the profile's highspy 1.14.0",
+      "url": "https://github.com/ERGO-Code/HiGHS/releases/download/v1.14.0/source-archive.tar.gz",
+      "sha256": "15a01f53ee5d6124b33bd12a6c1bd59ea8e2238a0acda634fa038b864020a0c6",
+      "edits": "highs-edits.json",
+      "edits_sha256": "ef04c1665b8a4ab3908bcd47d0ff99f44c695b3be2a2242d510b8be30a891e5a",
+      "build_requirements": "highs-build.txt",
+      "build_requirements_sha256": "67ff0fcf3d10014164a304be527a072dab945763de8bc8e9982098adb48e27e8",
+      "replaces": "highspy==1.14.0",
+      "imports": [
+        "highspy"
+      ]
+    },
+    {
+      "kind": "venv-wheels",
+      "id": "cuda-toolkit",
+      "coordinates": "CUDA 13.3 wheels: nvcc 13.3.73 with its crt headers and NVVM, cudart 13.3.29, cuBLAS 13.6.0.2, cuSPARSE 12.8.2.51, CCCL 13.3.3; they compile HiGHS in the build stage and are installed once, in the cuOpt venv",
+      "requirements": "cuda-toolkit.txt",
+      "sha256": "b21a9876597f022a27b0327d094a96044c6bee9096225463dee349e45049c89a"
+    },
+    {
+      "kind": "venv-wheels",
+      "id": "cuopt",
+      "coordinates": "cuopt-cu13 26.10.0, cudf-cu13 26.10.2, cupy-cuda13x 14.2.0, numba 0.64.0, numba-cuda 0.30.4, pandas 3.0.6, numpy 2.4.6, scipy 1.18.1 and the rest of their closure",
+      "requirements": "cuopt.txt",
+      "sha256": "c6f2a28e10ab531268b277743d839eb36ec104d25d9fc030ee18edac4587cdeb",
+      "imports": [
+        "cuopt"
+      ]
+    }
+  ]
+}

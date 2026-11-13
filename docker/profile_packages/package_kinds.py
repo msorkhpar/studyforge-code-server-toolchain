@@ -40,6 +40,12 @@ not `docker/profile/profile_build.py`, whose tag would not name the packages.
   `integrity`; `sha256` is the lockfile's digest; `omit_optional` (default false) skips optional
   dependencies, such as a platform binary. `imports` (optional) lists the specifiers the build proves
   import and type-check, for a package whose bare name cannot be imported; by default each dependency's name.
+  Four optional fields put a package's command on `PATH` (a global install, from the same lockfile):
+  `bins` names commands a locked package declares in its `bin`; the build installs the lockfile offline into
+  `/opt/profile/npm-global/<id>` and links each into `/usr/local/bin`. `checks` are `{"command", "expect"}`
+  pairs: the command runs at build time with no network and must print exactly `expect`. `proof` is a script
+  under `profiles/<name>/`, run at build time as the image's own (non-root) user with no network.
+  `telemetry_off: true` sets `DO_NOT_TRACK=1` and `OPENSPEC_TELEMETRY=0` for every process in the image.
 
 **Depends on.** `docker/profile/profile_plan.py`, read-only.
 """
@@ -74,6 +80,7 @@ _FILE = re.compile(r"^[A-Za-z0-9._@/+-]+$")
 _SPECIFIER = re.compile(r"^(@[a-z0-9._-]+/)?[a-z0-9._-]+(/[A-Za-z0-9._-]+)*$")
 _MODULE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
 VSIX = "vsix"
+_BIN = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 _PROVIDES = re.compile(r"^[a-z0-9][a-z0-9-]*\.[A-Za-z0-9][A-Za-z0-9-]*@[0-9][0-9A-Za-z.+-]*$")
 
 
@@ -266,6 +273,35 @@ def check_npm(root: Path, name: str, profile: dict) -> None:
         except ValueError as error:
             raise Refused(f"{label}: {shown} is not JSON: {error}") from None
         check_lockfile(label, shown, data)
+        check_global(root, name, entry, label, shown, data)
+
+
+def check_global(root: Path, name: str, entry: dict, label: str, shown: str, lock: dict) -> None:
+    """Refuse, by entry name, `bins`, `checks`, `proof` or `telemetry_off` that cannot be honoured as declared."""
+    bins = entry.get("bins", [])
+    if not isinstance(bins, list) or not all(isinstance(b, str) and _BIN.match(b) for b in bins) or len(set(bins)) != len(bins):
+        raise Refused(f"{label}: bins {bins!r} is a list of distinct command names")
+    declared = set()
+    for value in lock.get("packages", {}).values():
+        if isinstance(value.get("bin"), dict):
+            declared |= set(value["bin"])
+    for command in bins:
+        if command not in declared:
+            raise Refused(f"{label}: bins names {command!r}, which no package in {shown} declares in its `bin`")
+    checks = entry.get("checks", [])
+    if not isinstance(checks, list):
+        raise Refused(f"{label}: checks is a list of {{command, expect}}")
+    for check in checks:
+        if not isinstance(check, dict) or set(check) != {"command", "expect"} or not all(
+                isinstance(check[k], str) and check[k].strip() and "\n" not in check[k] and "|" not in check[k]
+                for k in ("command", "expect")):
+            raise Refused(f"{label}: check {check!r} is {{command, expect}}, one line each, with no `|`")
+    if "proof" in entry:
+        path = _file(root, name, entry, "proof")
+        if not path.is_file():
+            raise Refused(f"{label}: proof {path.relative_to(root).as_posix()} is missing")
+    if not isinstance(entry.get("telemetry_off", False), bool):
+        raise Refused(f"{label}: telemetry_off is true or false")
 
 
 def check(root: Path, name: str, profile: dict, platform: str | None = None) -> None:
@@ -289,6 +325,8 @@ def recipe_digest(root: Path, name: str, profile: dict) -> str:
     for entry in npm(profile):
         directory = _lenient(root, name, entry, "path")
         files += [directory / MANIFEST, directory / LOCKFILE]
+        if "proof" in entry:
+            files.append(_lenient(root, name, entry, "proof"))
     files = [f for f in files if f.is_file()]
     digest = hashlib.sha256()
     profile_plan._fold(digest, root, files)
@@ -313,7 +351,15 @@ def build_args(profile: dict, base: profile_plan.Plan, image: str = "") -> dict[
     packages = ["|".join([e["id"], e.get("path", ""), _flag(e.get("omit_optional", False))]
                          + ([",".join(e["imports"])] if e.get("imports") else [])) for e in npm(profile)]
     archives = ["|".join([e["id"], e["url"], e["sha256"], e["provides"]]) for e in vsix(profile, image)]
-    return {"PROFILE_VSIX": "\n".join(archives), "PROFILE_VSIX_SEED": profile_plan.seed_block(profile, image) if archives else "",
+    bins = ["|".join([e["id"], e.get("path", ""), _flag(e.get("omit_optional", False)), ",".join(e["bins"])])
+            for e in npm(profile) if e.get("bins")]
+    # lenient here, as the tag is: a malformed check plans, and `check` refuses it before Docker starts
+    checks = ["|".join([e["id"], str(c.get("command", "")), str(c.get("expect", ""))])
+              for e in npm(profile) for c in e.get("checks", []) if isinstance(c, dict)]
+    return {"PROFILE_NPM_BINS": "\n".join(bins), "PROFILE_NPM_CHECKS": "\n".join(checks),
+            "PROFILE_NPM_PROOFS": " ".join(e["proof"] for e in npm(profile) if e.get("proof")),
+            "PROFILE_TELEMETRY_OFF": _flag(any(e.get("telemetry_off") for e in npm(profile))),
+"PROFILE_VSIX": "\n".join(archives), "PROFILE_VSIX_SEED": profile_plan.seed_block(profile, image) if archives else "",
             "PROFILE_WHEELS": "\n".join(lines), "PROFILE_NPM": "\n".join(packages), "PROFILE_HAS_NPM": _flag(packages),
             "PROFILE_PROJECTS": " ".join(e["path"] for e in projects(profile)), "PROFILE_HAS_PROJECTS": _flag(projects(profile)),
             "PROFILE_RESTORE_USER": base.build_args["PROFILE_RESTORE_USER"]}

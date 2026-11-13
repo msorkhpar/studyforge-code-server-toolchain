@@ -1,0 +1,17 @@
+# optimization-gpu, the CUDA toolkit wheels: the part of cuOpt's closure that also compiles HiGHS (nvcc, its crt headers and NVVM, cudart, cuBLAS, cuSPARSE, CCCL), linux/amd64, CPython 3.14
+# resolved with cuopt.txt as one closure: uv pip compile (cuopt-cu13==26.10.0, every CUDA 13 component held below 13.4) --python-version 3.14 --python-platform x86_64-manylinux_2_28 --exclude-newer 28 October 2026 --only-binary :all:, then one hash per package: the linux/amd64 wheel pip selects
+# 13.3 is the lowest line cuOpt 26.10 accepts (libcudf and libcuopt need nvjitlink >= 13.3); a driver reporting CUDA 13.0 or newer runs it by CUDA's minor-version compatibility
+nvidia-cublas==13.6.0.2 \
+    --hash=sha256:b82c80c886cea6da6e149a5c3bdba274f12b7e4ec4b00a050b916b0446fb4153
+nvidia-cuda-cccl==13.3.3.4.1 \
+    --hash=sha256:cc0adc188d570b09f4d606c7dc05a42aa3d8aa082e0d60f7bbfc5b6435f627c6
+nvidia-cuda-crt==13.3.73 \
+    --hash=sha256:df14a17ae1c5c3171265411212246654d780f89344ea85344466c6b955247543
+nvidia-cuda-nvcc==13.3.73 \
+    --hash=sha256:f483af83166c4fa356a21606076d553b0b4ceaebbd9912e537545080db695bdd
+nvidia-cuda-runtime==13.3.29 \
+    --hash=sha256:e04420616e72f563167a7733272992d7e6df6dc5cb54b2f94f9f1520ea9e30c1
+nvidia-cusparse==12.8.2.51 \
+    --hash=sha256:65cbcc4e37a34fca4ee7df2fd57da103593842cda1bbb4a144664ecfe59873a5
+nvidia-nvvm==13.3.73 \
+    --hash=sha256:0e28e0858a3475e11ac67d35301cd5bf82666a1c0dc4ec4e80ceaf3a5fd1dea8

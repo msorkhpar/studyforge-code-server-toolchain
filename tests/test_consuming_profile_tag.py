@@ -26,6 +26,7 @@ PROFILES = {
     "fixture-libs": "legacy",
     "fixture-packages": "packages",
     "claude-sdks": "packages",
+    "optimization": "packages",
 }
 
 

@@ -1,0 +1,9 @@
+{
+  "name": "optimization-openspec",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The OpenSpec CLI, installed on PATH in the optimization profile's images.",
+  "dependencies": {
+    "@fission-ai/openspec": "2.0.0"
+  }
+}

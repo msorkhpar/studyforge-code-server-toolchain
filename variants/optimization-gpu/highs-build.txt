@@ -1,0 +1,8 @@
+# optimization-gpu, the tools that build highspy from the HiGHS source in the build stage only: scikit-build-core, pybind11, pathspec (packaging and numpy are the image's own), CPython 3.14
+# resolved with: uv pip compile --python-version 3.14 --python-platform x86_64-manylinux_2_28 --exclude-newer 28 October 2026 --only-binary :all: against the optimization profile's pins; one hash per package
+scikit-build-core==1.1.1 \
+    --hash=sha256:6f6d6cf600e2e9639fd258ecd11cfc19bd189354b968916a519c6793e7e26237
+pybind11==3.1.0 \
+    --hash=sha256:b8488090f8acffbcb6b5d6a85571a6827a0a2981ffb75e5a0b27b87c4a6b7dd0
+pathspec==1.1.1 \
+    --hash=sha256:a00ce642f577bf7f473932318056212bc4f8bfdf53128c78bbd5af0b9b20b189

@@ -136,7 +136,12 @@ edited for them, so the tag of a profile with neither kind is exactly what it wa
   `npm_config_cache`, with no `NODE_PATH`); `npm ci --offline` fills a course's `node_modules` from it.
   `omit_optional` (default false) skips optional dependencies, such as a platform binary. `imports`
   (optional) lists the specifiers the build proves import and type-check, for a package whose bare name
-  cannot be imported; by default each dependency's name.
+  cannot be imported; by default each dependency's name. Four optional fields put a package's command on
+  `PATH`: `bins` (commands a locked package declares in its `bin`, installed offline from the same cache into
+  `/opt/profile/npm-global/<id>` and linked into `/usr/local/bin`), `checks` (`{command, expect}`: run at build
+  time with no network, the output must be exactly `expect`), `proof` (a script under `profiles/<name>/`, run at
+  build time with no network as a non-root user, uid 1000 with no passwd entry) and `telemetry_off` (`true`
+  sets `DO_NOT_TRACK=1` and `OPENSPEC_TELEMETRY=0` for every process in the image).
 * `project`: a Gradle multi-project under `profiles/<name>/`, as above. In a profile that also holds a
   package entry it is warmed by this recipe into a read-only dependency cache (`GRADLE_RO_DEP_CACHE`) and
   proved by a build of a fresh copy in an empty Gradle user home with no network, so a profile of
@@ -178,6 +183,24 @@ archive); the shared editor carries a Python extension with no language server, 
 shows none. `docs/measurements/editor-diagnostics-offline.py <editor image>` proves both with the network cut
 off (an internal Docker network) in a headless browser, and fails if a planted error shows none or a clean
 file shows one.
+
+The `optimization` profile holds the Python wheels an integer-programming course needs (amd64): OR-Tools
+9.15.6755 (MathOpt, CP-SAT, GLOP, PDLP and its bundled HiGHS and SCIP), highspy, gurobipy with no license
+(the wheel's bundled license file is removed after install; a learner mounts their own and points
+`GRB_LICENSE_FILE` at it), Pyomo, PuLP with its bundled CBC, numpy, scipy, pandas, numpy-financial, matplotlib,
+pydantic, Hypothesis, FastAPI with httpx, boto3 and moto's S3 mock. It layers on `python` and `node` (the
+pinned Node.js tarball), and puts the OpenSpec CLI 2.0.0 on `PATH` as `openspec` (from a lockfile, telemetry
+off), for the course's Spec-Driven Development module; the build checks both versions and runs
+`openspec init --tools none` and `openspec validate --all --strict` as a non-root user with no network. Two pins
+are holds, each said in the requirements file: highspy stays at 1.14.0, because 1.15 and the HiGHS that
+OR-Tools bundles cannot be loaded in one process (undefined symbols, in either import order), and PuLP
+stays at 3.3.2, the last line that ships CBC and the classic API. Its editor image carries the same
+`basedpyright` extension as `claude-sdks`. The offline proof solves a small model with every solver and
+imports OR-Tools and highspy in both orders:
+
+```sh
+IMAGE=<tag> sh docs/measurements/optimization-offline-proof.sh
+```
 
 ⛔ A profile with a package entry is planned and built through `package_build.py`; the profile
 planner's own tag does not name the packages. `fixture-packages` is the fixture that proves both kinds.
@@ -223,6 +246,89 @@ two patches that let the pinned `fwcd.kotlin` `0.2.36` activate on this code-ser
 Measured on that profile's editor image, network cut off: a planted type error shows a diagnostic
 about 3.5 s after the page opens, a member completion on a `String` lists its members, the
 language server holds about 1 GiB with one `.kt` file open, and the image grows by 0.45 GB.
+
+## GPU variants — an optional image layered on a profile's
+
+A **variant** is an image layered on a PROFILE's image (not on a shared base), for what only a device-specific
+image may carry. It is optional: no base or profile image carries any of it, and a consumer that never asks
+for it never downloads it.
+
+* **The pins** are `variants/<name>.json` (`layers_on_profile`, `images`, `adds`) and the pinned files under
+  `variants/<name>/`. **The recipe** is `docker/variant_gpu/`. Neither is an input of any base or profile, so
+  adding or editing a variant moves no other tag; a change to the profile moves the variant's tag.
+* **The tag** is `<repository>-<variant>:<set>-<arch>-<12 hex>`, the 12 hex a digest of the variant's name,
+  **the profile image's own tag** and the variant's inputs. Published name: the profile's plus the suffix,
+  `studyforge-code-toolchain-runner-optimization-gpu`.
+* **The choice** between the CPU image and the variant is made by `consuming/variant.py --choose`
+  (`consuming.json`, `variant_choice`): the variant only when its image is present and
+  `docker run --rm --gpus all --network none --entrypoint nvidia-smi <image> -L` lists a GPU, the CPU image
+  otherwise with no error. `TOOLCHAIN_VARIANT=cpu|gpu` forces either; `gpu` refuses when it cannot run.
+  The variant is looked up and run on an engine that reaches a GPU (`docker_host` in the printed line):
+  `TOOLCHAIN_GPU_DOCKER_HOST`, else the current context if it lists an `nvidia` runtime, else the local
+  socket `unix:///var/run/docker.sock` when its engine lists one (for a Docker context without GPU
+  passthrough). The CPU image stays on the current context.
+
+```sh
+python3 docker/variant_gpu/variant_build.py --variant optimization-gpu --image runner --print-tag
+python3 docker/variant_gpu/variant_build.py --variant optimization-gpu --image runner \
+    --base-digest sha256:<the optimization runner image's digest> --label <project>
+python3 docker/variant_gpu/variant_build.py ... --target highs-check   # the HiGHS half alone, no cuOpt
+python3 consuming/variant.py --profile optimization --image runner --runtimes python --choose
+sh docs/measurements/optimization-gpu-probe.sh <gpu image>              # needs docker run --gpus all
+```
+
+**`optimization-gpu`** (runner only, linux/amd64) is the `optimization` profile's runner plus:
+
+* **HiGHS 1.14.0 built with CUDA** (`CUPDLP_GPU=ON`, its cuPDLP-C GPU PDLP) as `highspy 1.14.0`, in
+  place of the profile's `highspy 1.14.0` wheel: the same HiGHS release, so every CPU solve is the profile's.
+  HiGHS's own Python build compiles no CUDA even with `CUPDLP_GPU=ON`, so two exact-string edits, each
+  checked by its sha256 before and after (`variants/optimization-gpu/highs-edits.json`), link the C++ build's
+  `cudalin` library into the module, add sm_120 (Blackwell) to the architectures the kernels are built for
+  (HiGHS lists sm_75, sm_80 and sm_86 only). No version label is added: the module reports 1.14.0, as the
+  profile's wheel does, so a pin check or a printed version reads the same on both images. The compiler (g++,
+  cmake, make and ninja from the pinned Debian snapshot, nvcc from the pinned CUDA wheels) lives in the
+  `highs-build` stage only; the image receives one wheel from it.
+* **NVIDIA cuOpt 26.10.0** (`cuopt-cu13`) in a venv of its own, `/opt/gpu/cuopt` (`CUOPT_PYTHON`): cudf
+  26.10, which cuOpt imports to solve an LP, needs pandas below 3.1, and numba holds numpy at 2.4.6, while
+  the profile pins pandas 3.1.0 and numpy 2.5.4, so the two closures cannot share one environment. A
+  program runs cuOpt with that interpreter, in a process of its own.
+* **CUDA 13.3**, installed once, in that venv; highspy finds it by its RUNPATH. 13.3 is the lowest line
+  cuOpt 26.10 accepts (libcudf and libcuopt need nvJitLink 13.3); a 13.0 or newer driver runs it by
+  CUDA's minor-version compatibility, and the HiGHS kernels carry machine code for every architecture
+  they name, so none needs the driver to compile PTX. cuOpt's closure itself declares nvcc
+  (cudf's numba-cuda-mlir requires `cuda-toolkit[nvcc]`), so the venv holds the nvcc wheel as a runtime
+  dependency of cudf.
+* `/opt/gpu/variant.json`: the highspy, CUDA runtime and cuOpt versions and cuOpt's interpreter.
+
+What a CPU can check is proved at build time, with no network: the module resolves every library, solves an
+LP by simplex and by interior point to the known optimum, and loads beside OR-Tools in one process in both
+import orders (the conflict that holds highspy 1.15 out of the profile is not here). ⚠️ PDLP in the CUDA
+build has no CPU path: with no GPU it stops the process (`cusparseCreate(): CUDA context cannot be
+initialized`, then SIGSEGV), so a program asks for a GPU before it sets `solver="pdlp"`.
+
+Measured on one machine with an 8 GB laptop NVIDIA GPU and a laptop CPU (CUDA runtime 13.3 under a driver
+reporting an older CUDA 13 line; the HiGHS half, `--target highs-check`) with
+`docs/measurements/optimization-gpu-probe.sh`: HiGHS's GPU PDLP solves the 2-variable
+LP to -11 exactly in 80 iterations, a 90,000-variable transportation LP in 1,800 iterations and 0.40 s
+(interior point on the CPU: 0.55 s; OR-Tools' CPU PDLP: 1.13 s) and a 1,000,000-variable one in 520
+iterations and 1.6 s (interior point: 10.3 s; OR-Tools' CPU PDLP: 11.2 s), each within a relative 2.2e-9 of
+the interior point objective. Every repeat, in one process and in a new container, gave the same bits:
+objective and every primal value. The first GPU solve in a process takes about 0.2 s more (CUDA start-up).
+⚠️ With `output_flag` on, cuPDLP-C prints its own log on stdout (`Solving with cuPDLP-C`, the CUDA versions,
+the iterations) even when `log_to_console` is false and the log goes to a file; `output_flag` off silences it.
+
+cuOpt, measured the same way on that machine (`docs/measurements/optimization-gpu-probe.sh <image> cuopt`, the
+full variant; image 9.7 GB, of which the cuOpt venv is 4.5 GB): the 90,000-variable transportation LP by
+PDLP in 2,900 iterations and 0.19 s of solver time, the 1,000,000-variable one in 1,100 iterations and 0.93 s,
+each repeated bit for bit, and each about a relative 3e-5 from the optimum (cuOpt's default tolerance is 1e-4;
+HiGHS's PDLP above lands within 2e-9). Its default LP method races PDLP, barrier and dual simplex, so two
+runs of one LP can be answered by different methods with different values. A 300-binary GridCap-like MILP
+(5 budget rows, 30 exclusive pairs) reached the default gap in 14.6 s and 30.0 s on two runs, with
+objectives equal to about 1e-16 relative and different plans; HiGHS on one CPU thread took 44 s and
+repeated bit for bit. GPU parts, by cuOpt's log: a GPU feasibility-jump heuristic and PDLP in the concurrent
+root LP; branch and bound, cuts and most heuristics run on the CPU. `mip_determinism_mode` was far slower
+and, stopped by a time limit, did not repeat either. ⚠️ cuOpt logs to stdout by default, and its log names
+the card's UUID, the CPU model and RAM use: a program sets `log_to_console` false.
 
 ## Publishing an image
 

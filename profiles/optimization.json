@@ -1,0 +1,83 @@
+{
+  "profiles_api": 1,
+  "name": "optimization",
+  "about": "The optimization profile: the Python wheels an integer-programming course's examples and practices need, offline, layered on the shared base so no shared base carries them. OR-Tools (MathOpt, CP-SAT, GLOP, PDLP and the SCIP and HiGHS backends it bundles), highspy, gurobipy with no license (the license file the wheel bundles is removed after install; a learner mounts their own and points GRB_LICENSE_FILE at it), Pyomo, PuLP with its bundled CBC, numpy, scipy, pandas, numpy-financial, matplotlib, pydantic, Hypothesis, FastAPI with httpx for its TestClient, boto3 and moto's S3 mock. Every input is pinned and checksummed in a hashed requirements file (linux/amd64, CPython 3.14), PuLP is held at 3.3.2, the last line that bundles CBC and keeps the classic API (4.x rewrote its core and ships no CBC); highspy is held at 1.14.0, because 1.15 and the HiGHS that OR-Tools bundles cannot load in one process; resolved from releases published on or before 2026-10-28. Node.js (the shared base's pinned node runtime) and the OpenSpec CLI 2.0.0 (@fission-ai/openspec, from a lockfile with an integrity on every package) on PATH as `openspec`, for the course's Spec-Driven Development module; telemetry is off for every process (DO_NOT_TRACK=1, OPENSPEC_TELEMETRY=0). The editor image also installs the basedpyright extension (MIT, its language server bundled in the archive), so a learner offline gets Python diagnostics and completion; the shared editor base has none.",
+  "layers_on": [
+    "python",
+    "node"
+  ],
+  "images": [
+    "runner",
+    "editor"
+  ],
+  "adds": [
+    {
+      "kind": "python-wheels",
+      "id": "python-optimization",
+      "coordinates": "ortools 9.15.6755, highspy 1.14.0, gurobipy 13.0.3, pyomo 6.10.1, pulp 3.3.2, numpy 2.5.4, scipy 1.18.1, pandas 3.1.0, numpy-financial 1.1.0, matplotlib 3.11.2, pydantic 2.14.1, hypothesis 6.170.13, fastapi 0.162.0, httpx 0.28.1, boto3 1.43.121, moto 5.2.5 and their dependencies",
+      "requirements": "requirements.txt",
+      "sha256": "c4a70306fcf01196547c7f629df561fa0ea54bd80b5921c646c3ae19a7b40599",
+      "platforms": [
+        "linux/amd64"
+      ],
+      "imports": [
+        "ortools.math_opt.python.mathopt",
+        "ortools.sat.python.cp_model",
+        "highspy",
+        "gurobipy",
+        "pyomo.environ",
+        "pulp",
+        "numpy",
+        "scipy",
+        "pandas",
+        "numpy_financial",
+        "matplotlib",
+        "pydantic",
+        "hypothesis",
+        "fastapi",
+        "httpx",
+        "boto3",
+        "moto"
+      ],
+      "remove_files": [
+        "gurobipy/.libs/gurobi.lic"
+      ]
+    },
+    {
+      "kind": "npm-packages",
+      "id": "openspec",
+      "path": "openspec",
+      "sha256": "ddb63c2aea2f78e483f476a72fd90b807d4772ad72459a13271e14fbbd37b585",
+      "omit_optional": false,
+      "bins": [
+        "openspec"
+      ],
+      "checks": [
+        {
+          "command": "node --version",
+          "expect": "v24.21.0"
+        },
+        {
+          "command": "openspec --version",
+          "expect": "2.0.0"
+        }
+      ],
+      "proof": "openspec/proof.sh",
+      "telemetry_off": true
+    },
+    {
+      "kind": "editor-extension",
+      "id": "basedpyright",
+      "install": "vsix",
+      "url": "https://open-vsx.org/api/detachhead/basedpyright/1.40.1/file/detachhead.basedpyright-1.40.1.vsix",
+      "sha256": "d6fb62728d1eda5549e3764461c4295edf27943e7ef0a5b17b6a35abc7f4c995",
+      "provides": "detachhead.basedpyright@1.40.1",
+      "images": [
+        "editor"
+      ],
+      "settings": {
+        "basedpyright.analysis.typeCheckingMode": "standard"
+      }
+    }
+  ]
+}
